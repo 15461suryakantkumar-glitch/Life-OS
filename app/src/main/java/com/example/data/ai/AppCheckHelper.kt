@@ -21,6 +21,10 @@ fun configureAppCheck(context: Context, intent: Intent?) {
         if (FirebaseApp.getApps(context).isEmpty()) {
             FirebaseApp.initializeApp(context)
         }
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            Log.d(TAG, "FirebaseApp not configured; running in local-first offline mode.")
+            return
+        }
 
         if (BuildConfig.DEBUG) {
             val debugToken = intent?.getStringExtra(DEBUG_TOKEN_EXTRA)

@@ -55,10 +55,19 @@ class XpLevelGlanceWidget : GlanceAppWidget() {
             val tasks = db.taskDao().getAllTasksOnce()
             val habits = db.habitDao().getAllHabitsOnce()
             val today = DateTimeUtils.todayEpochDay()
-            val tRatio = (tasks.count { it.isCompleted }.toFloat() / tasks.size.coerceAtLeast(1)) * 40f
-            val hRatio = (habits.count { it.isCompletedOn(today) }.toFloat() / habits.size.coerceAtLeast(1)) * 30f
-            val fRatio = (p.focusMinutesLoggedToday.toFloat() / p.dailyFocusGoalMinutes.coerceAtLeast(30)).coerceAtMost(1f) * 20f
-            val score = (tRatio + hRatio + fRatio + 10f).toInt().coerceIn(12, 100)
+            val screenMinutes = db.appUsageDao().observeAllLogs().first()
+                .filter { it.dateEpochDay == today }
+                .sumOf { it.minutesUsed }
+            val score = com.example.util.ProductivityCalculator.computeScore(
+                totalTasks = tasks.size,
+                completedTasks = tasks.count { it.isCompleted },
+                totalHabits = habits.size,
+                completedHabitsToday = habits.count { it.isCompletedOn(today) },
+                focusMinutesToday = p.focusMinutesLoggedToday,
+                dailyFocusGoalMinutes = p.dailyFocusGoalMinutes,
+                screenMinutesToday = screenMinutes,
+                dailyScreenLimitMinutes = p.dailyScreenLimitMinutes
+            )
             p to score
         }
 

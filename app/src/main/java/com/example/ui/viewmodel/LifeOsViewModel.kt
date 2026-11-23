@@ -12,12 +12,10 @@ import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.ChallengeEntity
-import com.example.data.local.DashboardWidgetType
 import com.example.data.local.FriendEntity
 import com.example.data.local.HabitEntity
 import com.example.data.local.LifeOsDatabase
 import com.example.data.local.LifeOsSeeder
-import com.example.data.local.LocalDemoSocialBridge
 import com.example.data.local.PetAccessory
 import com.example.data.local.QuickNoteEntity
 import com.example.data.local.RecurrencePattern
@@ -27,8 +25,12 @@ import com.example.data.local.TaskPriority
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesState
 import com.example.data.local.WidgetConfigEntity
+import com.example.data.social.FriendSyncCodec
+import com.example.data.social.FriendSyncManager
+import com.example.data.social.NearbyFriendPeer
 import com.example.ui.theme.ThemeAccentPreset
 import com.example.util.DateTimeUtils
+import com.example.util.ProductivityCalculator
 import com.example.widgets.LifeOsWidgetUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,12 +50,12 @@ data class AchievementBadge(
 
 object BadgeCatalog {
     val all = listOf(
-        AchievementBadge("FIRST_LAUNCH", "Command Online", "Initialized your LIFE OS command center", 50),
+        AchievementBadge("FIRST_LAUNCH", "Command Online", "Initialized your LIFE OS command center", 0),
         AchievementBadge("STREAK_3", "3-Day Ignition", "Maintained a 3-day active streak", 75),
         AchievementBadge("TASK_MASTER_5", "Execution Engine", "Completed 5 or more tasks", 100),
         AchievementBadge("DEEP_FOCUS", "Flow Architect", "Logged 60+ minutes of deep focus", 120),
         AchievementBadge("LEVEL_5", "Cyber Sentinel", "Reached Level 5 & evolved NOVA", 200),
-        AchievementBadge("AI_COMMANDER", "Neural Sync", "Executed a command via LIFE AI", 80)
+        AchievementBadge("AI_COMMANDER", "Neural Sync", "Executed a command via LIFE AI", 0)
     )
 }
 
@@ -80,8 +82,11 @@ data class LifeOsUiState(
     val aiErrorMessage: String? = null,
     val petReactionBanner: String? = null,
     val statusSnackbar: String? = null,
-    val usageStatsStatusLabel: String = "Manual & Sample Mode (OS UsageStats Disabled)",
-    val cloudSyncStatusLabel: String = "Local-First Mode · Firebase Auth & Firestore Adapter Ready"
+    val usageStatsStatusLabel: String = "Manual Tracking Active",
+    val isOnline: Boolean = false,
+    val isCloudAiAvailable: Boolean = false,
+    val isPeerRadarActive: Boolean = false,
+    val nearbyPeers: List<NearbyFriendPeer> = emptyList()
 ) {
     val todayEpochDay: Long get() = DateTimeUtils.todayEpochDay()
 
@@ -100,24 +105,28 @@ data class LifeOsUiState(
     val distractingMinutesToday: Int
         get() = todayUsageLogs.filter { it.isDistracting }.sumOf { it.minutesUsed }
 
+    val completedChallengesCount: Int
+        get() = challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
+
     val productivityScore: Int
-        get() {
-            val totalTasks = tasks.size.coerceAtLeast(1)
-            val taskRatio = (tasks.count { it.isCompleted }.toFloat() / totalTasks) * 40f
-            val habitTotal = habits.size.coerceAtLeast(1)
-            val habitRatio = (habits.count { it.isCompletedOn(todayEpochDay) }.toFloat() / habitTotal) * 30f
-            val focusRatio = (prefs.focusMinutesLoggedToday.toFloat() / prefs.dailyFocusGoalMinutes.coerceAtLeast(30)).coerceAtMost(1f) * 20f
-            val wellnessPenalty = if (totalScreenMinutesToday > prefs.dailyScreenLimitMinutes) 0f else 10f
-            return (taskRatio + habitRatio + focusRatio + wellnessPenalty).toInt().coerceIn(12, 100)
-        }
+        get() = ProductivityCalculator.computeScore(
+            totalTasks = tasks.size,
+            completedTasks = completedTasksCount,
+            totalHabits = habits.size,
+            completedHabitsToday = habits.count { it.isCompletedOn(todayEpochDay) },
+            focusMinutesToday = prefs.focusMinutesLoggedToday,
+            dailyFocusGoalMinutes = prefs.dailyFocusGoalMinutes,
+            screenMinutesToday = totalScreenMinutesToday,
+            dailyScreenLimitMinutes = prefs.dailyScreenLimitMinutes
+        )
 }
 
 class LifeOsViewModel(application: Application) : AndroidViewModel(application) {
     private val db = LifeOsDatabase.getInstance(application)
     private val prefsRepo = UserPreferencesRepository(application)
-    private val aiRepo = LifeAiRepository()
+    private val aiRepo = LifeAiRepository(application)
     private val usageBridge = AndroidUsageStatsBridge(application)
-    private val socialBridge = LocalDemoSocialBridge()
+    private val friendSyncManager = FriendSyncManager(application)
 
     private val studyTimerState = MutableStateFlow(StudyTimerState())
     private val aiLoadingState = MutableStateFlow(false)
@@ -151,6 +160,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val snackbar: String?
     )
 
+    private data class SocialNetworkFlows(
+        val isOnline: Boolean,
+        val isPeerRadarActive: Boolean,
+        val nearbyPeers: List<NearbyFriendPeer>
+    )
+
     private val coreFlow = combine(
         prefsRepo.preferencesFlow,
         db.taskDao().observeAllTasks(),
@@ -181,11 +196,25 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         TransientFlows(timer, loading, err, petReact, snack)
     }
 
+    private val socialNetworkFlow = combine(
+        friendSyncManager.observeNetworkOnline(),
+        friendSyncManager.isPeerRadarActive,
+        friendSyncManager.nearbyPeers
+    ) { online, radar, peers ->
+        SocialNetworkFlows(online, radar, peers)
+    }
+
     val uiState: StateFlow<LifeOsUiState> = combine(
         coreFlow,
         secondaryFlow,
-        transientFlow
-    ) { core, sec, trans ->
+        transientFlow,
+        socialNetworkFlow
+    ) { core, sec, trans, social ->
+        val completedChal = sec.challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
+        val totalChal = sec.challenges.size.coerceAtLeast(1)
+        friendSyncManager.updateOutgoingToken(
+            FriendSyncCodec.buildShareToken(core.prefs, completedChal, totalChal)
+        )
         LifeOsUiState(
             isPrefsLoaded = true,
             prefs = core.prefs,
@@ -204,7 +233,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             petReactionBanner = trans.petReaction,
             statusSnackbar = trans.snackbar,
             usageStatsStatusLabel = usageBridge.getSourceStatusLabel(),
-            cloudSyncStatusLabel = socialBridge.syncModeLabel
+            isOnline = social.isOnline,
+            isCloudAiAvailable = social.isOnline && aiRepo.isCloudAiAvailable(),
+            isPeerRadarActive = social.isPeerRadarActive,
+            nearbyPeers = social.nearbyPeers
         )
     }.stateIn(
         scope = viewModelScope,
@@ -217,6 +249,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             LifeOsSeeder.seedInitialDataIfNeeded(db)
             LifeOsWidgetUpdater.updateAllWidgets(getApplication())
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        friendSyncManager.stopNearbyPeerSync()
     }
 
     private fun syncHomeWidgets() {
@@ -235,6 +272,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAiError() {
         aiErrorState.value = null
+    }
+
+    fun showMessage(message: String) {
+        snackbarState.value = message
     }
 
     // --- ONBOARDING & LOCAL SESSION ---
@@ -262,6 +303,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun signOutLocalSession() {
         viewModelScope.launch {
+            friendSyncManager.stopNearbyPeerSync()
             prefsRepo.signOutSession()
             snackbarState.value = "Signed out of local session"
         }
@@ -527,6 +569,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         snackbarState.value = "Logged ${minutes}m focus · +$xp XP"
         val resetMins = studyTimerState.value.selectedMinutes
         studyTimerState.value = StudyTimerState(resetMins, resetMins * 60, false)
+        syncHomeWidgets()
     }
 
     // --- DIGITAL WELLNESS ---
@@ -555,18 +598,23 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     // --- DIGITAL PET & CHALLENGES ---
     fun interactWithPet(action: String) {
         viewModelScope.launch {
+            val currentPrefs = uiState.value.prefs
             when (action) {
+                "TAP" -> {
+                    petReactionState.value = "${currentPrefs.petName} pulses brightly! Mood ${currentPrefs.petHappiness}% · Energy ${currentPrefs.petEnergy}% · Complete tasks, habits, or focus sprints to earn XP."
+                    return@launch
+                }
                 "FEED" -> {
-                    prefsRepo.awardXpAndBoostPet(xpDelta = 5, happinessDelta = 6, energyDelta = 12)
-                    petReactionState.value = "${uiState.value.prefs.petName} absorbed energy core! (+12 Energy)"
+                    prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 4, energyDelta = 12)
+                    petReactionState.value = "${currentPrefs.petName} recharged (+12% Energy · 0 XP)"
                 }
                 "PLAY" -> {
-                    prefsRepo.awardXpAndBoostPet(xpDelta = 10, happinessDelta = 12, energyDelta = -5)
-                    petReactionState.value = "${uiState.value.prefs.petName} is hyped! (+12 Happiness, +10 XP)"
+                    prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 10, energyDelta = -4)
+                    petReactionState.value = "${currentPrefs.petName} cheered up (+10% Mood · 0 XP)"
                 }
                 "REST" -> {
-                    prefsRepo.awardXpAndBoostPet(xpDelta = 0, happinessDelta = 3, energyDelta = 18)
-                    petReactionState.value = "${uiState.value.prefs.petName} entered recharge mode (+18 Energy)"
+                    prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 2, energyDelta = 18)
+                    petReactionState.value = "${currentPrefs.petName} entered recharge mode (+18% Energy)"
                 }
             }
             syncHomeWidgets()
@@ -612,36 +660,127 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         if (state.prefs.focusMinutesLoggedToday >= 60) {
             prefsRepo.unlockBadge("DEEP_FOCUS")
         }
+        if (state.prefs.dailyStreak >= 3) {
+            prefsRepo.unlockBadge("STREAK_3")
+        }
         if (state.prefs.level >= 5) {
             prefsRepo.unlockBadge("LEVEL_5")
         }
     }
 
-    // --- FRIENDS ---
-    fun addDemoFriend(name: String, handle: String, xp: Int, streak: Int) {
+    // --- FRIENDS & ONLINE / PEER SYNC ---
+    fun buildMyShareToken(): String {
+        val state = uiState.value
+        return FriendSyncCodec.buildShareToken(
+            prefs = state.prefs,
+            challengesCompleted = state.completedChallengesCount,
+            challengesTotal = state.challenges.size.coerceAtLeast(1)
+        )
+    }
+
+    fun buildMyInviteLink(): String {
+        val state = uiState.value
+        return FriendSyncCodec.buildInviteLink(
+            prefs = state.prefs,
+            challengesCompleted = state.completedChallengesCount,
+            challengesTotal = state.challenges.size.coerceAtLeast(1)
+        )
+    }
+
+    fun addFriendByUsername(name: String, handle: String, friendCode: String = "") {
         if (name.isBlank()) return
         viewModelScope.launch {
-            val cleanHandle = handle.trim().ifEmpty { "@${name.trim().lowercase().replace(" ", "")}" }
-            val computedLevel = (xp.coerceAtLeast(100) / 250) + 1
-            db.friendDao().insertFriend(
-                FriendEntity(
-                    displayName = name.trim(),
-                    handle = if (cleanHandle.startsWith("@")) cleanHandle else "@$cleanHandle",
-                    level = computedLevel,
-                    xp = xp.coerceIn(100, 9999),
-                    streakDays = streak.coerceIn(0, 365),
-                    focusMinutesToday = 35,
-                    sharesStats = true,
-                    statusText = "Joined via local invite"
-                )
+            val cleanName = name.trim()
+            val rawHandle = handle.trim().ifEmpty { "@${cleanName.lowercase().replace(" ", "")}" }
+            val cleanHandle = if (rawHandle.startsWith("@")) rawHandle else "@$rawHandle"
+            val code = friendCode.trim().uppercase().ifBlank {
+                UserPreferencesRepository.generateFriendCode(cleanHandle, cleanName)
+            }
+            val existing = db.friendDao().findByCodeOrHandle(code, cleanHandle)
+            val entity = FriendEntity(
+                id = existing?.id ?: 0L,
+                displayName = cleanName,
+                handle = cleanHandle,
+                friendCode = code,
+                level = existing?.level ?: 1,
+                xp = existing?.xp ?: 0,
+                streakDays = existing?.streakDays ?: 0,
+                focusMinutesToday = existing?.focusMinutesToday ?: 0,
+                challengesCompleted = existing?.challengesCompleted ?: 0,
+                challengesTotal = existing?.challengesTotal ?: 4,
+                petStageName = existing?.petStageName ?: "Spark Wisp",
+                sharesStats = true,
+                statusText = if (existing == null) "Awaiting sync packet" else existing.statusText
             )
-            snackbarState.value = "${name.trim()} added to local leaderboard"
+            db.friendDao().insertFriend(entity)
+            snackbarState.value = "${cleanName} connected"
+        }
+    }
+
+    fun importFriendFromInput(rawInput: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        val parsed = FriendSyncCodec.parseInput(rawInput)
+        if (parsed == null) {
+            snackbarState.value = "Invalid invite link or friend code"
+            onResult(false, "Paste a valid LIFEOS1 sync token, invite link, or LIFE-XXXX code.")
+            return
+        }
+        viewModelScope.launch {
+            val existing = db.friendDao().findByCodeOrHandle(parsed.friendCode, parsed.handle)
+            val entity = parsed.toFriendEntity(existingId = existing?.id ?: 0L)
+            db.friendDao().insertFriend(entity)
+            val msg = if (existing != null) {
+                "Updated ${entity.displayName}'s synced progress"
+            } else {
+                "Connected ${entity.displayName} (${entity.handle})"
+            }
+            snackbarState.value = msg
+            onResult(true, msg)
+        }
+    }
+
+    fun toggleNearbyPeerRadar() {
+        val state = uiState.value
+        if (state.isPeerRadarActive) {
+            friendSyncManager.stopNearbyPeerSync()
+            snackbarState.value = "Nearby Wi-Fi discovery paused"
+        } else if (!state.isOnline) {
+            snackbarState.value = "Connect to Wi-Fi or internet to discover nearby peers"
+        } else {
+            val label = state.prefs.userHandle.ifBlank { state.prefs.userName.ifBlank { "Operator" } }
+            friendSyncManager.startNearbyPeerSync(
+                scope = viewModelScope,
+                serviceLabel = label,
+                outgoingToken = buildMyShareToken()
+            )
+            snackbarState.value = "Scanning local Wi-Fi for LIFE OS peers..."
+        }
+    }
+
+    fun stopNearbyPeerRadar() {
+        friendSyncManager.stopNearbyPeerSync()
+    }
+
+    fun syncWithNearbyPeer(peer: NearbyFriendPeer) {
+        viewModelScope.launch {
+            val parsed = friendSyncManager.fetchFromNearbyPeer(peer)
+            if (parsed == null) {
+                snackbarState.value = "Could not fetch progress from ${peer.serviceName}"
+                return@launch
+            }
+            val existing = db.friendDao().findByCodeOrHandle(parsed.friendCode, parsed.handle)
+            val entity = parsed.toFriendEntity(
+                existingId = existing?.id ?: 0L,
+                statusNote = "Synced over Wi-Fi"
+            )
+            db.friendDao().insertFriend(entity)
+            snackbarState.value = "Synced ${entity.displayName} (Lv.${entity.level} · ${entity.xp} XP)"
         }
     }
 
     fun removeFriend(friend: FriendEntity) {
         viewModelScope.launch {
             db.friendDao().deleteFriend(friend)
+            snackbarState.value = "Removed ${friend.displayName}"
         }
     }
 
@@ -657,8 +796,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
             val current = uiState.value
             val today = DateTimeUtils.todayEpochDay()
-            val pendingSummary = current.tasks
-                .filter { !it.isCompleted }
+            val pendingTasks = current.tasks.filter { !it.isCompleted }
+            val pendingSummary = pendingTasks
                 .take(8)
                 .joinToString("; ") { "${it.title} (${it.priority.label})" }
             val eventsSummary = current.events
@@ -672,10 +811,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 totalXp = current.prefs.totalXp,
                 dailyStreak = current.prefs.dailyStreak,
                 pendingTasksSummary = pendingSummary,
+                pendingTaskTitles = pendingTasks.map { it.title },
                 completedTasksCount = current.completedTasksCount,
                 upcomingEventsSummary = eventsSummary,
                 screenTimeTodayMinutes = current.totalScreenMinutesToday,
-                focusMinutesToday = current.prefs.focusMinutesLoggedToday
+                focusMinutesToday = current.prefs.focusMinutesLoggedToday,
+                dailyFocusGoalMinutes = current.prefs.dailyFocusGoalMinutes,
+                habitsCompletedToday = current.habits.count { it.isCompletedOn(today) },
+                habitsTotal = current.habits.size,
+                productivityScore = current.productivityScore
             )
 
             when (val result = aiRepo.processPrompt(clean, snapshot)) {
@@ -698,6 +842,18 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                             )
                             badge = "Task Created · $title"
                         }
+                        "CREATE_HABIT" -> {
+                            val title = result.title ?: clean.take(40)
+                            db.habitDao().insertHabit(
+                                HabitEntity(
+                                    title = title,
+                                    categoryName = result.category.name,
+                                    targetPerWeek = 7,
+                                    xpReward = 25
+                                )
+                            )
+                            badge = "Habit Created · $title"
+                        }
                         "CREATE_EVENT" -> {
                             val title = result.title ?: clean.take(40)
                             val startMin = result.startHour * 60 + result.startMinute
@@ -716,7 +872,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                         "ORGANIZE_TOMORROW" -> {
                             val pending = current.tasks.filter { !it.isCompleted }.take(3)
                             pending.forEachIndexed { idx, task ->
-                                val startMin = 540 + idx * 120 // 9 AM, 11 AM, 1 PM
+                                val startMin = 540 + idx * 120
                                 db.calendarEventDao().insertEvent(
                                     CalendarEventEntity(
                                         title = task.title,
@@ -770,9 +926,14 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updatePrivacy(shareXp: Boolean, shareStreaks: Boolean, shareFocus: Boolean) {
+    fun updatePrivacy(
+        shareXp: Boolean,
+        shareStreaks: Boolean,
+        shareFocus: Boolean,
+        shareChallenges: Boolean
+    ) {
         viewModelScope.launch {
-            prefsRepo.updatePrivacy(shareXp, shareStreaks, shareFocus)
+            prefsRepo.updatePrivacy(shareXp, shareStreaks, shareFocus, shareChallenges)
         }
     }
 
@@ -784,6 +945,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetAllLocalData() {
         viewModelScope.launch {
+            friendSyncManager.stopNearbyPeerSync()
             db.taskDao().clearAll()
             db.calendarEventDao().clearAll()
             db.habitDao().clearAll()
@@ -791,15 +953,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.challengeDao().clearAll()
             db.friendDao().clearAll()
             db.aiMessageDao().clearAll()
+            db.quickNoteDao().saveNote(QuickNoteEntity(id = 1, content = ""))
             prefsRepo.resetDefaults()
-            // Re-seed clean starter workspace
-            db.widgetConfigDao().upsertAll(
-                DashboardWidgetType.entries.mapIndexed { idx, t ->
-                    WidgetConfigEntity(t.name, idx, true)
-                }
-            )
             LifeOsSeeder.seedInitialDataIfNeeded(db)
-            snackbarState.value = "Workspace reset to fresh defaults"
+            snackbarState.value = "Workspace reset to clean slate"
             syncHomeWidgets()
         }
     }

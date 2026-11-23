@@ -140,13 +140,16 @@ fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "LIFE OS · COMMAND · ${state.prefs.userHandle}",
+                                text = buildString {
+                                    append("LIFE OS")
+                                    if (state.prefs.userHandle.isNotBlank()) append(" · ${state.prefs.userHandle}")
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName}",
+                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Operator" }}",
                                 style = MaterialTheme.typography.headlineLarge,
                                 color = InkPrimary,
                                 maxLines = 2
@@ -260,7 +263,7 @@ fun HomeScreen(
                 )
                 QuickModuleChip(
                     label = "Friends",
-                    sub = "${state.friends.size + 1} Ranked",
+                    sub = if (state.friends.isEmpty()) "0 Connected" else "${state.friends.size} Connected",
                     icon = Icons.Filled.Groups,
                     accent = AmberWarning,
                     onClick = { onNavigateToSection("friends") },

@@ -130,6 +130,9 @@ interface FriendDao {
     @Query("SELECT * FROM friends ORDER BY xp DESC")
     fun observeAllFriends(): Flow<List<FriendEntity>>
 
+    @Query("SELECT * FROM friends WHERE (friendCode != '' AND friendCode = :code) OR LOWER(handle) = LOWER(:handle) LIMIT 1")
+    suspend fun findByCodeOrHandle(code: String, handle: String): FriendEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFriend(friend: FriendEntity)
 

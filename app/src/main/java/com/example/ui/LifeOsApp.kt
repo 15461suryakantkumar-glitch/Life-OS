@@ -72,7 +72,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GrowthScreen
@@ -112,6 +117,8 @@ enum class LifeOsSection(
 fun LifeOsApp(
     initialRoute: String? = null,
     onConsumeInitialRoute: () -> Unit = {},
+    incomingFriendPayload: String? = null,
+    onConsumeIncomingFriendPayload: () -> Unit = {},
     viewModel: LifeOsViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -131,6 +138,21 @@ fun LifeOsApp(
                 }
             }
             onConsumeInitialRoute()
+        }
+    }
+
+    LaunchedEffect(incomingFriendPayload, state.prefs.isSignedIn) {
+        val payload = incomingFriendPayload
+        if (!payload.isNullOrBlank() && state.prefs.isSignedIn) {
+            viewModel.importFriendFromInput(payload)
+            currentSection = LifeOsSection.FRIENDS
+            onConsumeIncomingFriendPayload()
+        }
+    }
+
+    LaunchedEffect(currentSection) {
+        if (currentSection != LifeOsSection.FRIENDS) {
+            viewModel.stopNearbyPeerRadar()
         }
     }
 
@@ -310,74 +332,86 @@ fun LifeOsApp(
                     }
 
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        when (currentSection) {
-                            LifeOsSection.HOME -> HomeScreen(
-                                state = state,
-                                onToggleTask = viewModel::toggleTaskCompleted,
-                                onToggleHabit = viewModel::toggleHabitToday,
-                                onSelectTimerPreset = viewModel::selectTimerDuration,
-                                onToggleTimer = viewModel::toggleStudyTimer,
-                                onResetTimer = viewModel::resetStudyTimer,
-                                onFinishTimerEarly = viewModel::finishStudySessionEarly,
-                                onUpdateNote = viewModel::updateQuickNote,
-                                onInteractPet = viewModel::interactWithPet,
-                                onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
-                                onMoveWidget = viewModel::moveWidget,
-                                onNavigateToSection = navigateToRoute,
-                                onQuickAddTaskClick = {
-                                    openCreateTaskImmediately = true
-                                    currentSection = LifeOsSection.TASKS
-                                }
-                            )
-                            LifeOsSection.TASKS -> TasksScreen(
-                                state = state,
-                                openCreateDialogImmediately = openCreateTaskImmediately,
-                                onConsumeCreateDialogFlag = { openCreateTaskImmediately = false },
-                                onToggleTask = viewModel::toggleTaskCompleted,
-                                onSaveTask = viewModel::saveTask,
-                                onDeleteTask = viewModel::deleteTask
-                            )
-                            LifeOsSection.CALENDAR -> CalendarScreen(
-                                state = state,
-                                onSaveEvent = viewModel::saveCalendarEvent,
-                                onDeleteEvent = viewModel::deleteCalendarEvent
-                            )
-                            LifeOsSection.WELLNESS -> WellnessScreen(
-                                state = state,
-                                onAddManualUsage = viewModel::addManualUsageLog,
-                                onDeleteUsage = viewModel::deleteUsageLog
-                            )
-                            LifeOsSection.GROWTH -> GrowthScreen(
-                                state = state,
-                                onInteractPet = viewModel::interactWithPet,
-                                onEquipAccessory = viewModel::equipPetAccessory,
-                                onClaimChallenge = viewModel::claimChallenge,
-                                onToggleHabit = viewModel::toggleHabitToday,
-                                onAddHabit = viewModel::addHabit
-                            )
-                            LifeOsSection.FRIENDS -> FriendsScreen(
-                                state = state,
-                                onAddFriend = viewModel::addDemoFriend,
-                                onRemoveFriend = viewModel::removeFriend,
-                                onOpenPrivacySettings = { currentSection = LifeOsSection.SETTINGS }
-                            )
-                            LifeOsSection.LIFE_AI -> LifeAiScreen(
-                                state = state,
-                                onSendPrompt = viewModel::sendAiPrompt,
-                                onDismissError = viewModel::clearAiError
-                            )
-                            LifeOsSection.SETTINGS -> SettingsScreen(
-                                state = state,
-                                onUpdateProfile = viewModel::updateProfile,
-                                onUpdatePetName = viewModel::updatePetName,
-                                onUpdateAccent = viewModel::updateAccentPreset,
-                                onUpdatePrivacy = viewModel::updatePrivacy,
-                                onUpdateNotifications = viewModel::updateNotifications,
-                                onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
-                                onMoveWidget = viewModel::moveWidget,
-                                onSignOut = viewModel::signOutLocalSession,
-                                onResetData = viewModel::resetAllLocalData
-                            )
+                        AnimatedContent(
+                            targetState = currentSection,
+                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                            label = "life_os_section_transition"
+                        ) { section ->
+                            when (section) {
+                                LifeOsSection.HOME -> HomeScreen(
+                                    state = state,
+                                    onToggleTask = viewModel::toggleTaskCompleted,
+                                    onToggleHabit = viewModel::toggleHabitToday,
+                                    onSelectTimerPreset = viewModel::selectTimerDuration,
+                                    onToggleTimer = viewModel::toggleStudyTimer,
+                                    onResetTimer = viewModel::resetStudyTimer,
+                                    onFinishTimerEarly = viewModel::finishStudySessionEarly,
+                                    onUpdateNote = viewModel::updateQuickNote,
+                                    onInteractPet = viewModel::interactWithPet,
+                                    onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
+                                    onMoveWidget = viewModel::moveWidget,
+                                    onNavigateToSection = navigateToRoute,
+                                    onQuickAddTaskClick = {
+                                        openCreateTaskImmediately = true
+                                        currentSection = LifeOsSection.TASKS
+                                    }
+                                )
+                                LifeOsSection.TASKS -> TasksScreen(
+                                    state = state,
+                                    openCreateDialogImmediately = openCreateTaskImmediately,
+                                    onConsumeCreateDialogFlag = { openCreateTaskImmediately = false },
+                                    onToggleTask = viewModel::toggleTaskCompleted,
+                                    onSaveTask = viewModel::saveTask,
+                                    onDeleteTask = viewModel::deleteTask
+                                )
+                                LifeOsSection.CALENDAR -> CalendarScreen(
+                                    state = state,
+                                    onSaveEvent = viewModel::saveCalendarEvent,
+                                    onDeleteEvent = viewModel::deleteCalendarEvent
+                                )
+                                LifeOsSection.WELLNESS -> WellnessScreen(
+                                    state = state,
+                                    onAddManualUsage = viewModel::addManualUsageLog,
+                                    onDeleteUsage = viewModel::deleteUsageLog
+                                )
+                                LifeOsSection.GROWTH -> GrowthScreen(
+                                    state = state,
+                                    onInteractPet = viewModel::interactWithPet,
+                                    onEquipAccessory = viewModel::equipPetAccessory,
+                                    onClaimChallenge = viewModel::claimChallenge,
+                                    onToggleHabit = viewModel::toggleHabitToday,
+                                    onAddHabit = viewModel::addHabit
+                                )
+                                LifeOsSection.FRIENDS -> FriendsScreen(
+                                    state = state,
+                                    myShareToken = viewModel.buildMyShareToken(),
+                                    myInviteLink = viewModel.buildMyInviteLink(),
+                                    onImportInvite = viewModel::importFriendFromInput,
+                                    onAddFriendByUsername = viewModel::addFriendByUsername,
+                                    onToggleNearbyRadar = viewModel::toggleNearbyPeerRadar,
+                                    onSyncNearbyPeer = viewModel::syncWithNearbyPeer,
+                                    onRemoveFriend = viewModel::removeFriend,
+                                    onUpdatePrivacy = viewModel::updatePrivacy,
+                                    onShowMessage = viewModel::showMessage
+                                )
+                                LifeOsSection.LIFE_AI -> LifeAiScreen(
+                                    state = state,
+                                    onSendPrompt = viewModel::sendAiPrompt,
+                                    onDismissError = viewModel::clearAiError
+                                )
+                                LifeOsSection.SETTINGS -> SettingsScreen(
+                                    state = state,
+                                    onUpdateProfile = viewModel::updateProfile,
+                                    onUpdatePetName = viewModel::updatePetName,
+                                    onUpdateAccent = viewModel::updateAccentPreset,
+                                    onUpdatePrivacy = viewModel::updatePrivacy,
+                                    onUpdateNotifications = viewModel::updateNotifications,
+                                    onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
+                                    onMoveWidget = viewModel::moveWidget,
+                                    onSignOut = viewModel::signOutLocalSession,
+                                    onResetData = viewModel::resetAllLocalData
+                                )
+                            }
                         }
                     }
                 }

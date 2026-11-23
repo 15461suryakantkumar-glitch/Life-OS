@@ -152,12 +152,21 @@ data class FriendEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val displayName: String,
     val handle: String,
-    val level: Int,
-    val xp: Int,
-    val streakDays: Int,
-    val focusMinutesToday: Int,
+    val friendCode: String = "",
+    val level: Int = 1,
+    val xp: Int = 0,
+    val streakDays: Int = 0,
+    val focusMinutesToday: Int = 0,
+    val challengesCompleted: Int = 0,
+    val challengesTotal: Int = 4,
+    val petStageName: String = "Spark Wisp",
     val sharesStats: Boolean = true,
-    val statusText: String = "In deep focus"
+    val shareXp: Boolean = true,
+    val shareStreaks: Boolean = true,
+    val shareFocus: Boolean = true,
+    val shareChallenges: Boolean = true,
+    val statusText: String = "Connected",
+    val lastSyncedAtMillis: Long = System.currentTimeMillis()
 )
 
 @Entity(tableName = "ai_messages")

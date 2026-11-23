@@ -56,6 +56,7 @@ import com.example.data.local.PetAccessory
 import com.example.data.local.PetGrowthStage
 import com.example.data.local.TaskCategory
 import com.example.ui.components.DigitalPetCanvas
+import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
@@ -122,7 +123,7 @@ fun GrowthScreen(
                         energy = prefs.petEnergy,
                         accessory = prefs.equippedAccessory,
                         size = 164.dp,
-                        onTap = { onInteractPet("PLAY") }
+                        onTap = { onInteractPet("TAP") }
                     )
                 }
 
@@ -130,6 +131,12 @@ fun GrowthScreen(
                     text = prefs.petStage.description,
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Tap ${prefs.petName} for a status pulse. XP & evolution advance from completed tasks, habits, and focus sessions.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkMuted
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -284,27 +291,37 @@ fun GrowthScreen(
             )
         }
 
-        items(state.habits, key = { "hab_${it.id}" }) { habit ->
-            val doneToday = habit.isCompletedOn(state.todayEpochDay)
-            ObsidianCard(onClick = { onToggleHabit(habit) }) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = if (doneToday) EmeraldSuccess else InkMuted
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(habit.title, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
-                        Text("Streak: ${habit.currentStreak}d (Best ${habit.bestStreak}d) · +${habit.xpReward} XP", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+        if (state.habits.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Filled.CheckCircle,
+                    title = "No Daily Habits Configured",
+                    subtitle = "Tap + Add Habit above or ask LIFE AI to create your first daily ritual."
+                )
+            }
+        } else {
+            items(state.habits, key = { "hab_${it.id}" }) { habit ->
+                val doneToday = habit.isCompletedOn(state.todayEpochDay)
+                ObsidianCard(onClick = { onToggleHabit(habit) }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.CheckCircle,
+                            contentDescription = null,
+                            tint = if (doneToday) EmeraldSuccess else InkMuted
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(habit.title, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                            Text("Streak: ${habit.currentStreak}d (Best ${habit.bestStreak}d) · +${habit.xpReward} XP", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        }
+                        StatusPill(
+                            text = if (doneToday) "DONE" else "LOG",
+                            color = if (doneToday) EmeraldSuccess else MaterialTheme.colorScheme.primary
+                        )
                     }
-                    StatusPill(
-                        text = if (doneToday) "DONE" else "LOG",
-                        color = if (doneToday) EmeraldSuccess else MaterialTheme.colorScheme.primary
-                    )
                 }
             }
         }

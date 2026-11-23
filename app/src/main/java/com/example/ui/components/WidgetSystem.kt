@@ -311,38 +311,46 @@ private fun HabitWidget(
         Spacer(Modifier.height(8.dp))
         NeonProgressBar(progress = completedCount.toFloat() / total)
         Spacer(Modifier.height(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            state.habits.take(4).forEach { habit ->
-                val done = habit.isCompletedOn(today)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (done) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else CharcoalElevated)
-                        .clickable { onToggleHabit(habit) }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                        contentDescription = null,
-                        tint = if (done) EmeraldSuccess else InkSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = habit.title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = InkPrimary,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    StatusPill(
-                        text = "${habit.currentStreak}d",
-                        color = AmberWarning,
-                        icon = Icons.Outlined.LocalFireDepartment
-                    )
+        if (state.habits.isEmpty()) {
+            Text(
+                text = "No habits added yet. Tap Streaks to create your first daily habit.",
+                style = MaterialTheme.typography.bodySmall,
+                color = InkSecondary
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                state.habits.take(4).forEach { habit ->
+                    val done = habit.isCompletedOn(today)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (done) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else CharcoalElevated)
+                            .clickable { onToggleHabit(habit) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (done) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                            contentDescription = null,
+                            tint = if (done) EmeraldSuccess else InkSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text = habit.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = InkPrimary,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        StatusPill(
+                            text = "${habit.currentStreak}d",
+                            color = AmberWarning,
+                            icon = Icons.Outlined.LocalFireDepartment
+                        )
+                    }
                 }
             }
         }
@@ -508,7 +516,8 @@ private fun DigitalPetWidget(
     val prefs = state.prefs
     ObsidianCard(
         modifier = Modifier.testTag("widget_digital_pet"),
-        elevated = true
+        elevated = true,
+        onClick = onOpenGrowth
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -521,7 +530,7 @@ private fun DigitalPetWidget(
                 energy = prefs.petEnergy,
                 accessory = prefs.equippedAccessory,
                 size = 96.dp,
-                onTap = onOpenGrowth
+                onTap = { onInteractPet("TAP") }
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
@@ -542,7 +551,7 @@ private fun DigitalPetWidget(
                     OutlinedButton(onClick = { onInteractPet("PLAY") }) {
                         Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Boost")
+                        Text("Cheer")
                     }
                 }
             }

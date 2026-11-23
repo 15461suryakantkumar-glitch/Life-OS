@@ -289,3 +289,65 @@ fun MetricTile(
         )
     }
 }
+
+@Composable
+fun EmptyStateCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    accent: Color = MaterialTheme.colorScheme.secondary,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    ObsidianCard(
+        modifier = modifier,
+        borderColor = accent.copy(alpha = 0.28f),
+        elevated = true
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(accent.copy(alpha = 0.14f))
+                    .border(1.dp, accent.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = InkPrimary
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary
+                )
+            }
+        }
+        if (actionLabel != null && onAction != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = onAction,
+                border = BorderStroke(1.dp, accent.copy(alpha = 0.45f))
+            ) {
+                Text(actionLabel, color = InkPrimary)
+            }
+        }
+    }
+}
+

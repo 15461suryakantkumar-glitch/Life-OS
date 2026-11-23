@@ -154,7 +154,7 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
                 )
                 Spacer(GlanceModifier.width(8.dp))
                 PetActionButton(
-                    label = "★ Boost (+10XP)",
+                    label = "★ Cheer (+10M)",
                     actionType = "PLAY",
                     accentColor = LifeOsGlanceColors.Cyan,
                     modifier = GlanceModifier.defaultWeight()

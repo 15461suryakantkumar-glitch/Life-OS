@@ -34,6 +34,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -53,6 +54,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
 import com.example.ui.theme.BorderHairline
@@ -74,10 +76,11 @@ fun LifeAiScreen(
     val listState = rememberLazyListState()
 
     val quickPrompts = listOf(
-        "Schedule Physics tomorrow at 8 AM.",
-        "Add Chemical Equilibrium to my tasks.",
-        "Show my weekly productivity.",
-        "Organize tomorrow based on my pending tasks."
+        "Add Review Physics Notes tomorrow",
+        "Schedule Deep Work at 9 AM for 60m",
+        "Add habit Hydrate 2L water",
+        "Suggest my daily plan",
+        "Show my productivity insights"
     )
 
     LaunchedEffect(state.aiMessages.size) {
@@ -103,17 +106,25 @@ fun LifeAiScreen(
                 painter = painterResource(id = R.drawable.img_ai_core_1795431261833),
                 contentDescription = "LIFE AI Neural Core",
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.secondary, CircleShape),
                 contentScale = ContentScale.Crop
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("LIFE AI Assistant", style = MaterialTheme.typography.titleLarge, color = InkPrimary)
-                Text("Natural-language task, schedule & productivity engine", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                Text("LIFE AI", style = MaterialTheme.typography.titleLarge, color = InkPrimary)
+                Text(
+                    text = if (state.isCloudAiAvailable) "On-device + Cloud AI ready" else "On-device engine active (offline ₹0)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkSecondary
+                )
             }
-            StatusPill(text = "GEMINI", color = MaterialTheme.colorScheme.secondary, icon = Icons.Filled.AutoAwesome)
+            StatusPill(
+                text = if (state.isCloudAiAvailable) "HYBRID" else "LOCAL READY",
+                color = EmeraldSuccess,
+                icon = Icons.Filled.AutoAwesome
+            )
         }
 
         // Quick Prompt Suggestions
@@ -153,55 +164,84 @@ fun LifeAiScreen(
             }
         }
 
-        // Chat Timeline
+        // Chat Timeline or Clean Welcome Hero
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(state.aiMessages, key = { it.id }) { msg ->
-                val align = if (msg.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
-                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = align) {
-                    Column(
-                        modifier = Modifier
-                            .widthIn(max = 320.dp)
-                            .clip(
-                                RoundedCornerShape(
-                                    topStart = 18.dp,
-                                    topEnd = 18.dp,
-                                    bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
-                                    bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
-                                )
-                            )
-                            .background(
-                                if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                else CharcoalElevated
-                            )
-                            .border(
-                                1.dp,
-                                if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else BorderHairline,
-                                RoundedCornerShape(
-                                    topStart = 18.dp,
-                                    topEnd = 18.dp,
-                                    bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
-                                    bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
-                                )
-                            )
-                            .padding(14.dp)
-                    ) {
+            if (state.aiMessages.isEmpty()) {
+                item {
+                    GradientGlowCard(modifier = Modifier.testTag("ai_empty_hero")) {
                         Text(
-                            text = msg.text,
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "Command LIFE AI, ${state.prefs.userName.ifBlank { "Operator" }}",
+                            style = MaterialTheme.typography.titleLarge,
                             color = InkPrimary
                         )
-                        if (!msg.actionBadge.isNullOrBlank()) {
-                            Spacer(Modifier.height(8.dp))
-                            StatusPill(
-                                text = msg.actionBadge,
-                                color = EmeraldSuccess,
-                                icon = Icons.Filled.CheckCircle
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Instant offline task creation, habit setup, calendar scheduling, daily planning, and productivity insights — zero cloud setup required.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSecondary
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            quickPrompts.take(3).forEach { cmd ->
+                                OutlinedButton(
+                                    onClick = { onSendPrompt(cmd) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(cmd, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                items(state.aiMessages, key = { it.id }) { msg ->
+                    val align = if (msg.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = align) {
+                        Column(
+                            modifier = Modifier
+                                .widthIn(max = 320.dp)
+                                .clip(
+                                    RoundedCornerShape(
+                                        topStart = 18.dp,
+                                        topEnd = 18.dp,
+                                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
+                                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
+                                    )
+                                )
+                                .background(
+                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    else CharcoalElevated
+                                )
+                                .border(
+                                    1.dp,
+                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else BorderHairline,
+                                    RoundedCornerShape(
+                                        topStart = 18.dp,
+                                        topEnd = 18.dp,
+                                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
+                                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
+                                    )
+                                )
+                                .padding(14.dp)
+                        ) {
+                            Text(
+                                text = msg.text,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = InkPrimary
                             )
+                            if (!msg.actionBadge.isNullOrBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                StatusPill(
+                                    text = msg.actionBadge,
+                                    color = EmeraldSuccess,
+                                    icon = Icons.Filled.CheckCircle
+                                )
+                            }
                         }
                     }
                 }
@@ -219,7 +259,7 @@ fun LifeAiScreen(
                             color = MaterialTheme.colorScheme.secondary
                         )
                         Spacer(Modifier.width(10.dp))
-                        Text("LIFE AI is analyzing & syncing...", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        Text("LIFE AI is processing...", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
                     }
                 }
             }

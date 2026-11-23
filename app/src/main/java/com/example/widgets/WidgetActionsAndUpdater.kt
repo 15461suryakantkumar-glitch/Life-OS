@@ -120,9 +120,9 @@ class PetInteractWidgetAction : ActionCallback {
         val action = parameters[KEY_PET_ACTION] ?: "FEED"
         val prefsRepo = UserPreferencesRepository(context)
         when (action) {
-            "FEED" -> prefsRepo.awardXpAndBoostPet(xpDelta = 5, happinessDelta = 6, energyDelta = 12)
-            "PLAY" -> prefsRepo.awardXpAndBoostPet(xpDelta = 10, happinessDelta = 12, energyDelta = -5)
-            else -> prefsRepo.awardXpAndBoostPet(xpDelta = 0, happinessDelta = 4, energyDelta = 15)
+            "FEED" -> prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 4, energyDelta = 12)
+            "PLAY" -> prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 10, energyDelta = -4)
+            else -> prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 3, energyDelta = 14)
         }
         LifeOsWidgetUpdater.updateAllWidgets(context)
     }

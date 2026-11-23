@@ -95,18 +95,9 @@ fun OnboardingScreen(
         accentPreset: ThemeAccentPreset
     ) -> Unit
 ) {
-    val initialName = if (existingPrefs.userName == "Alex Mercer" && !existingPrefs.isSignedIn) {
-        ""
-    } else {
-        existingPrefs.userName
-    }
-    var name by rememberSaveable { mutableStateOf(initialName) }
+    var name by rememberSaveable { mutableStateOf(existingPrefs.userName) }
     var identity by rememberSaveable {
-        mutableStateOf(
-            existingPrefs.userEmail.ifBlank {
-                if (existingPrefs.userHandle == "@alex.os" && !existingPrefs.isSignedIn) "" else existingPrefs.userHandle
-            }
-        )
+        mutableStateOf(existingPrefs.userEmail.ifBlank { existingPrefs.userHandle })
     }
     var petName by rememberSaveable { mutableStateOf(existingPrefs.petName.ifBlank { "NOVA" }) }
     var focusGoalMinutes by rememberSaveable { mutableIntStateOf(existingPrefs.dailyFocusGoalMinutes) }

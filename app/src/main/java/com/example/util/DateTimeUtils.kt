@@ -121,3 +121,27 @@ object DateTimeUtils {
         }
     }
 }
+
+object ProductivityCalculator {
+    fun computeScore(
+        totalTasks: Int,
+        completedTasks: Int,
+        totalHabits: Int,
+        completedHabitsToday: Int,
+        focusMinutesToday: Int,
+        dailyFocusGoalMinutes: Int,
+        screenMinutesToday: Int,
+        dailyScreenLimitMinutes: Int
+    ): Int {
+        if (totalTasks == 0 && totalHabits == 0 && focusMinutesToday == 0 && screenMinutesToday == 0) {
+            return 0
+        }
+        val taskRatio = if (totalTasks > 0) (completedTasks.toFloat() / totalTasks) * 40f else 0f
+        val habitRatio = if (totalHabits > 0) (completedHabitsToday.toFloat() / totalHabits) * 30f else 0f
+        val focusRatio = (focusMinutesToday.toFloat() / dailyFocusGoalMinutes.coerceAtLeast(30)).coerceAtMost(1f) * 20f
+        val hasPositiveActivity = completedTasks > 0 || completedHabitsToday > 0 || focusMinutesToday > 0
+        val wellnessBonus = if (hasPositiveActivity && screenMinutesToday <= dailyScreenLimitMinutes) 10f else 0f
+        return (taskRatio + habitRatio + focusRatio + wellnessBonus).toInt().coerceIn(0, 100)
+    }
+}
+

@@ -56,6 +56,7 @@ import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
 import com.example.ui.components.CategoryBadge
+import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.PriorityBadge
@@ -192,11 +193,15 @@ fun TasksScreen(
 
             if (filteredTasks.isEmpty()) {
                 item {
-                    ObsidianCard {
-                        Text("No tasks match this filter.", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Tap + to create a task or ask LIFE AI to add one.", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
-                    }
+                    EmptyStateCard(
+                        icon = Icons.Filled.CheckCircle,
+                        title = if (state.tasks.isEmpty()) "Zero Tasks Queued" else "No Matching Tasks",
+                        subtitle = if (state.tasks.isEmpty()) {
+                            "Your command queue is clean. Tap + below to add a mission or tell LIFE AI to create one."
+                        } else {
+                            "No tasks match the active date or category filter."
+                        }
+                    )
                 }
             } else {
                 items(filteredTasks, key = { it.id }) { task ->

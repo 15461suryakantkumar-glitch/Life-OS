@@ -83,7 +83,7 @@ fun SettingsScreen(
     onUpdateProfile: (String, String, Int, Int) -> Unit,
     onUpdatePetName: (String) -> Unit,
     onUpdateAccent: (ThemeAccentPreset) -> Unit,
-    onUpdatePrivacy: (Boolean, Boolean, Boolean) -> Unit,
+    onUpdatePrivacy: (Boolean, Boolean, Boolean, Boolean) -> Unit,
     onUpdateNotifications: (Boolean, Boolean, Boolean) -> Unit,
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
@@ -328,17 +328,30 @@ fun SettingsScreen(
                 ToggleRow(
                     label = "Share Total XP on Leaderboard",
                     checked = prefs.shareXpWithFriends,
-                    onCheckedChange = { onUpdatePrivacy(it, prefs.shareStreaksWithFriends, prefs.shareFocusWithFriends) }
+                    onCheckedChange = {
+                        onUpdatePrivacy(it, prefs.shareStreaksWithFriends, prefs.shareFocusWithFriends, prefs.shareChallengesWithFriends)
+                    }
                 )
                 ToggleRow(
                     label = "Share Daily Streaks",
                     checked = prefs.shareStreaksWithFriends,
-                    onCheckedChange = { onUpdatePrivacy(prefs.shareXpWithFriends, it, prefs.shareFocusWithFriends) }
+                    onCheckedChange = {
+                        onUpdatePrivacy(prefs.shareXpWithFriends, it, prefs.shareFocusWithFriends, prefs.shareChallengesWithFriends)
+                    }
                 )
                 ToggleRow(
                     label = "Share Focus Minutes",
                     checked = prefs.shareFocusWithFriends,
-                    onCheckedChange = { onUpdatePrivacy(prefs.shareXpWithFriends, prefs.shareStreaksWithFriends, it) }
+                    onCheckedChange = {
+                        onUpdatePrivacy(prefs.shareXpWithFriends, prefs.shareStreaksWithFriends, it, prefs.shareChallengesWithFriends)
+                    }
+                )
+                ToggleRow(
+                    label = "Share Challenge Progress",
+                    checked = prefs.shareChallengesWithFriends,
+                    onCheckedChange = {
+                        onUpdatePrivacy(prefs.shareXpWithFriends, prefs.shareStreaksWithFriends, prefs.shareFocusWithFriends, it)
+                    }
                 )
             }
         }
@@ -354,15 +367,15 @@ fun SettingsScreen(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = buildString {
-                        append("Active Session: ${prefs.userName} (${prefs.userHandle})")
-                        if (prefs.userEmail.isNotBlank()) append(" · ${prefs.userEmail}")
+                        append("Active Session: ${prefs.userName.ifBlank { "Operator" }} (${prefs.userHandle})")
+                        if (prefs.friendCode.isNotBlank()) append(" · ${prefs.friendCode}")
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Local Room + DataStore persistence active. Firebase AI Logic connected. Firebase Auth, Firestore Sync & Android UsageStats adapters ready.",
+                    "Local Room + DataStore persistence active. Offline LIFE AI engine enabled by default with optional Firebase AI and peer Wi-Fi/invite sync.",
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
                 )
@@ -420,7 +433,7 @@ fun SettingsScreen(
             onDismissRequest = { showResetConfirm = false },
             containerColor = ObsidianBase,
             title = { Text("Reset Local Data?") },
-            text = { Text("This clears your local tasks, events, habits, and XP and restores the starter LIFE OS workspace.") },
+            text = { Text("This clears all tasks, events, habits, friends, and XP and returns LIFE OS to a clean empty slate.") },
             confirmButton = {
                 Button(
                     onClick = {

@@ -141,7 +141,7 @@ fun WellnessScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(state.usageStatsStatusLabel, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
                             Text(
-                                "Using manual logs & sample telemetry. Architecture is wired to AndroidUsageStatsBridge for future PACKAGE_USAGE_STATS opt-in.",
+                                "Using manual on-device logs. Architecture is wired to AndroidUsageStatsBridge for optional OS UsageStats opt-in.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = InkSecondary
                             )
@@ -231,15 +231,18 @@ fun WellnessScreen(
                         val slotWidth = size.width / barCount
                         val barWidth = slotWidth * 0.48f
                         weeklyTrend.forEachIndexed { idx, (_, mins) ->
-                            val ratio = (mins / maxVal).coerceIn(0.06f, 1f)
+                            val ratio = if (mins <= 0) 0.03f else (mins / maxVal).coerceIn(0.06f, 1f)
                             val barHeight = size.height * ratio
                             val left = idx * slotWidth + (slotWidth - barWidth) / 2f
                             val top = size.height - barHeight
                             val isOver = mins > limit
                             drawRoundRect(
                                 brush = Brush.verticalGradient(
-                                    if (isOver) listOf(RoseAlert, AmberWarning)
-                                    else listOf(secondary, primary)
+                                    when {
+                                        mins <= 0 -> listOf(BorderHairline, BorderHairline)
+                                        isOver -> listOf(RoseAlert, AmberWarning)
+                                        else -> listOf(secondary, primary)
+                                    }
                                 ),
                                 topLeft = Offset(left, top),
                                 size = Size(barWidth, barHeight),
@@ -264,7 +267,7 @@ fun WellnessScreen(
 
             // Most-Used & Distracting Apps Breakdown
             item {
-                SectionHeader(title = "Today's Application Breakdown", subtitle = "Manual entries & sample logs")
+                SectionHeader(title = "Today's Application Breakdown", subtitle = "Manual entries")
             }
 
             if (todayLogs.isEmpty()) {
