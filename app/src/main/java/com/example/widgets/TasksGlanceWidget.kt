@@ -83,7 +83,7 @@ class TasksGlanceWidget : GlanceAppWidget() {
                 .padding(12.dp)
         ) {
             GlanceWidgetHeader(
-                title = "Missions",
+                title = "Tasks",
                 badgeText = "$pendingCount left",
                 iconRes = R.drawable.ic_widget_check,
                 headerAction = openLifeOsRouteAction("tasks"),

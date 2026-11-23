@@ -2,7 +2,12 @@ package com.example
 
 import com.example.data.ai.LifeContextSnapshot
 import com.example.data.ai.LocalLifeAiEngine
+import com.example.data.audio.LifeOsSoundCue
+import com.example.data.audio.LifeOsSoundManager
 import com.example.data.local.TaskCategory
+import com.example.data.local.TaskEntity
+import com.example.data.local.TaskSectionEntity
+import com.example.data.local.TaskSectionMapper
 import com.example.data.local.UserPreferencesState
 import com.example.data.social.FriendSyncCodec
 import com.example.util.ProductivityCalculator
@@ -154,5 +159,38 @@ class ExampleUnitTest {
         val shortParsed = FriendSyncCodec.parseInput("LIFE-KAI-1024")
         assertNotNull(shortParsed)
         assertEquals("LIFE-KAI-1024", shortParsed!!.friendCode)
+    }
+
+    @Test
+    fun soundManager_synthesizesValidWavHeaders_andPreferencesDefaultSoundOn() {
+        assertTrue(UserPreferencesState().soundEffectsEnabled)
+
+        LifeOsSoundCue.entries.forEach { cue ->
+            val wav = LifeOsSoundManager.buildWavForCue(cue)
+            assertTrue(wav.size > 44)
+            assertEquals('R'.code.toByte(), wav[0])
+            assertEquals('I'.code.toByte(), wav[1])
+            assertEquals('F'.code.toByte(), wav[2])
+            assertEquals('F'.code.toByte(), wav[3])
+            assertEquals('W'.code.toByte(), wav[8])
+            assertEquals('A'.code.toByte(), wav[9])
+            assertEquals('V'.code.toByte(), wav[10])
+            assertEquals('E'.code.toByte(), wav[11])
+        }
+    }
+
+    @Test
+    fun taskSectionMapper_infersCategoriesAndPreservesDefaults() {
+        assertEquals(TaskCategory.STUDY, TaskSectionMapper.inferCategory("Physics"))
+        assertEquals(TaskCategory.STUDY, TaskSectionMapper.inferCategory("Chemistry"))
+        assertEquals(TaskCategory.STUDY, TaskSectionMapper.inferCategory("Bio"))
+        assertEquals(TaskCategory.STUDY, TaskSectionMapper.inferCategory("Tests"))
+        assertEquals(TaskCategory.CODE, TaskSectionMapper.inferCategory("Android Build"))
+        assertEquals(TaskCategory.HEALTH, TaskSectionMapper.inferCategory("Gym Routine"))
+        assertEquals(TaskCategory.WORK, TaskSectionMapper.inferCategory("Inbox"))
+
+        val section = TaskSectionEntity(id = 4L, name = "Physics")
+        val task = TaskEntity(sectionId = section.id, title = "Solve Electrostatics", deadlineEpochDay = 20_000L)
+        assertEquals(4L, task.sectionId)
     }
 }

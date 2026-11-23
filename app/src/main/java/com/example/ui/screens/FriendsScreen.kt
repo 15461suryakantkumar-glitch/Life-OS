@@ -563,7 +563,7 @@ private fun AddFriendDialog(
                     FilterChip(
                         selected = mode == "CODE",
                         onClick = { mode = "CODE"; errorMsg = null },
-                        label = { Text("Invite Code / Link") },
+                        label = { Text("Code / Link", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                         )
@@ -571,7 +571,7 @@ private fun AddFriendDialog(
                     FilterChip(
                         selected = mode == "USERNAME",
                         onClick = { mode = "USERNAME"; errorMsg = null },
-                        label = { Text("By Username") },
+                        label = { Text("Username", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
                         )

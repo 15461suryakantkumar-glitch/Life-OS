@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -87,19 +88,32 @@ fun DigitalPetCanvas(
         label = "pet_eye"
     )
 
-    val auraIntensity = ((happiness + energy) / 200f).coerceIn(0.25f, 1f)
+    val targetAura = ((happiness + energy) / 200f).coerceIn(0.25f, 1f)
+    val auraIntensity by animateFloatAsState(
+        targetValue = targetAura,
+        animationSpec = tween(durationMillis = 500),
+        label = "pet_aura_intensity"
+    )
     var isBouncing by remember { mutableStateOf(false) }
+    var lastScoreSum by remember { mutableIntStateOf(happiness + energy + stage.ordinal * 100) }
     val tapScale by animateFloatAsState(
-        targetValue = if (isBouncing) 1.09f else 1f,
+        targetValue = if (isBouncing) 1.11f else 1f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium
         ),
         label = "pet_tap_scale"
     )
+    LaunchedEffect(happiness, energy, stage) {
+        val currentSum = happiness + energy + stage.ordinal * 100
+        if (currentSum > lastScoreSum) {
+            isBouncing = true
+        }
+        lastScoreSum = currentSum
+    }
     LaunchedEffect(isBouncing) {
         if (isBouncing) {
-            delay(180L)
+            delay(220L)
             isBouncing = false
         }
     }

@@ -1,7 +1,20 @@
 package com.example.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,6 +23,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,21 +33,33 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskPriority
 import com.example.ui.theme.AmberWarning
@@ -53,6 +79,7 @@ fun ObsidianCard(
     onClick: (() -> Unit)? = null,
     borderColor: Color = BorderHairline,
     elevated: Boolean = false,
+    contentPadding: PaddingValues = PaddingValues(14.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val bgBrush = Brush.linearGradient(
@@ -74,7 +101,7 @@ fun ObsidianCard(
         Column(
             modifier = Modifier
                 .background(bgBrush)
-                .padding(16.dp),
+                .padding(contentPadding),
             content = content
         )
     }
@@ -84,6 +111,7 @@ fun ObsidianCard(
 fun GradientGlowCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    contentPadding: PaddingValues = PaddingValues(14.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val primary = MaterialTheme.colorScheme.primary
@@ -110,7 +138,7 @@ fun GradientGlowCard(
         Column(
             modifier = Modifier
                 .background(bgBrush)
-                .padding(18.dp),
+                .padding(contentPadding),
             content = content
         )
     }
@@ -254,13 +282,14 @@ fun MetricTile(
     ObsidianCard(
         modifier = modifier,
         borderColor = BorderGlow.copy(alpha = 0.55f),
-        elevated = true
+        elevated = true,
+        contentPadding = PaddingValues(12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(22.dp)
+                    .clip(RoundedCornerShape(6.dp))
                     .background(accent.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -268,24 +297,25 @@ fun MetricTile(
                     imageVector = icon,
                     contentDescription = null,
                     tint = accent,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(13.dp)
                 )
             }
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = InkMuted,
+                style = MaterialTheme.typography.labelMedium,
+                color = InkSecondary,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                softWrap = false
             )
         }
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = value,
-            style = MaterialTheme.typography.headlineMedium,
+            style = MaterialTheme.typography.titleLarge,
             color = InkPrimary,
-            maxLines = 1
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -346,6 +376,148 @@ fun EmptyStateCard(
                 border = BorderStroke(1.dp, accent.copy(alpha = 0.45f))
             ) {
                 Text(actionLabel, color = InkPrimary)
+            }
+        }
+    }
+}
+
+@Composable
+fun AnimatedStreakPill(
+    streakDays: Int,
+    label: String = "${streakDays}d Streak",
+    modifier: Modifier = Modifier
+) {
+    val active = streakDays > 0
+    var previousStreak by remember { mutableIntStateOf(streakDays) }
+    var burst by remember { mutableStateOf(false) }
+
+    LaunchedEffect(streakDays) {
+        if (streakDays > previousStreak) {
+            burst = true
+            delay(450L)
+            burst = false
+        }
+        previousStreak = streakDays
+    }
+
+    val tint by animateColorAsState(
+        targetValue = if (active) AmberWarning else InkMuted,
+        animationSpec = tween(320),
+        label = "streak_tint"
+    )
+    val bgColor by animateColorAsState(
+        targetValue = if (active) AmberWarning.copy(alpha = 0.18f) else CharcoalElevated,
+        animationSpec = tween(320),
+        label = "streak_bg"
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (active) AmberWarning.copy(alpha = 0.55f) else BorderHairline,
+        animationSpec = tween(320),
+        label = "streak_border"
+    )
+    val burstScale by animateFloatAsState(
+        targetValue = if (burst) 1.14f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "streak_burst"
+    )
+
+    val flameGlow = if (active) {
+        val transition = rememberInfiniteTransition(label = "streak_flame_glow")
+        val alpha by transition.animateFloat(
+            initialValue = 0.72f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "streak_flame_alpha"
+        )
+        alpha
+    } else {
+        0.7f
+    }
+
+    Row(
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = burstScale
+                scaleY = burstScale
+            }
+            .clip(RoundedCornerShape(50))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.LocalFireDepartment,
+            contentDescription = null,
+            tint = tint.copy(alpha = flameGlow),
+            modifier = Modifier.size(13.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+fun LevelUpBanner(
+    level: Int?,
+    petName: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    AnimatedVisibility(
+        visible = level != null,
+        enter = fadeIn(tween(260)) + expandVertically(spring(dampingRatio = Spring.DampingRatioMediumBouncy)),
+        exit = fadeOut(tween(180)) + shrinkVertically(),
+        modifier = modifier
+    ) {
+        val reached = level ?: 1
+        GradientGlowCard(onClick = onDismiss) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "LEVEL UP · LEVEL $reached",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Text(
+                        text = "$petName's core resonance increased. Keep your streak rolling!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkPrimary
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = InkSecondary)
+                }
             }
         }
     }

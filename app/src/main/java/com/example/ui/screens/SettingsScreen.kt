@@ -1,13 +1,8 @@
 package com.example.ui.screens
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
-import android.os.Build
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,7 +29,6 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,10 +48,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.local.WidgetConfigEntity
+import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.WidgetCustomizerList
@@ -66,12 +60,6 @@ import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.InkPrimary
 import com.example.ui.theme.InkSecondary
 import com.example.ui.theme.ObsidianBase
-import com.example.widgets.CalendarWidgetReceiver
-import com.example.widgets.CountdownWidgetReceiver
-import com.example.widgets.DigitalPetWidgetReceiver
-import com.example.widgets.StreakWidgetReceiver
-import com.example.widgets.TasksWidgetReceiver
-import com.example.widgets.XpLevelWidgetReceiver
 import com.example.ui.theme.RoseAlert
 import com.example.ui.theme.ThemeAccentPreset
 import com.example.ui.viewmodel.LifeOsUiState
@@ -85,6 +73,8 @@ fun SettingsScreen(
     onUpdateAccent: (ThemeAccentPreset) -> Unit,
     onUpdatePrivacy: (Boolean, Boolean, Boolean, Boolean) -> Unit,
     onUpdateNotifications: (Boolean, Boolean, Boolean) -> Unit,
+    onUpdateSoundEffects: (Boolean) -> Unit = {},
+    onTestSoundEffect: () -> Unit = {},
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onSignOut: () -> Unit,
@@ -106,8 +96,8 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text("System Settings", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
-            Text("LIFE OS · Take Control. Level Up. Live Better.", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+            Text("Settings", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
+            Text("Profile, themes, home-screen widgets & audio", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
         }
 
         // Personal Profile & Companion
@@ -233,8 +223,8 @@ fun SettingsScreen(
                         Icon(Icons.Filled.DashboardCustomize, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text("Dashboard Widget Studio", style = MaterialTheme.typography.titleSmall, color = InkPrimary)
-                            Text("${state.widgets.count { it.isVisible }}/${state.widgets.size} widgets active on Home", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                            Text("Dashboard Cards", style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                            Text("${state.widgets.count { it.isVisible }}/${state.widgets.size} cards visible on Home", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
                         }
                     }
                     TextButton(onClick = { showWidgetSheet = true }) { Text("Edit") }
@@ -244,60 +234,45 @@ fun SettingsScreen(
 
         // Android Home-Screen Glance Widgets Pinning
         item {
-            val context = LocalContext.current
-            val pinTargets = remember {
-                listOf(
-                    "Tasks" to TasksWidgetReceiver::class.java,
-                    "Calendar" to CalendarWidgetReceiver::class.java,
-                    "Countdown" to CountdownWidgetReceiver::class.java,
-                    "XP & Level" to XpLevelWidgetReceiver::class.java,
-                    "Streaks" to StreakWidgetReceiver::class.java,
-                    "Digital Pet" to DigitalPetWidgetReceiver::class.java
-                )
-            }
             ObsidianCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.Widgets, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(8.dp))
-                    Text("Android Home-Screen Widgets", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
+                    Text("Home-Screen Widgets", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Pin interactive Jetpack Glance widgets to your Android launcher or add them via your home screen widget picker.",
+                    "Pin interactive Jetpack Glance widgets directly to your Android home screen.",
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    pinTargets.forEach { (label, receiverClass) ->
-                        AssistChip(
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    val manager = AppWidgetManager.getInstance(context)
-                                    if (manager.isRequestPinAppWidgetSupported) {
-                                        manager.requestPinAppWidget(ComponentName(context, receiverClass), null, null)
-                                    } else {
-                                        Toast.makeText(context, "Long-press Home Screen -> Widgets -> Life OS", Toast.LENGTH_SHORT).show()
-                                    }
-                                } else {
-                                    Toast.makeText(context, "Long-press Home Screen -> Widgets -> Life OS", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            label = { Text("Pin $label") }
-                        )
-                    }
-                }
+                GlanceWidgetPinningSection(petName = prefs.petName)
             }
         }
 
-        // Notification Preferences
+        // Audio & Notification Preferences
         item {
             ObsidianCard {
-                SectionHeader(title = "Notification Preferences", subtitle = "Smart reminders & wellness nudges")
+                SectionHeader(title = "Sound & Notifications", subtitle = "Offline chimes, reminders & wellness alerts")
                 Spacer(Modifier.height(8.dp))
+                ToggleRow(
+                    label = "Sound Effects (Tasks, Streaks & Level-Up)",
+                    checked = prefs.soundEffectsEnabled,
+                    onCheckedChange = onUpdateSoundEffects
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(
+                        onClick = onTestSoundEffect,
+                        enabled = prefs.soundEffectsEnabled,
+                        modifier = Modifier.testTag("test_sfx_btn")
+                    ) {
+                        Text("Preview Chime")
+                    }
+                }
                 ToggleRow(
                     label = "Enable LIFE OS Alerts",
                     checked = prefs.notificationsEnabled,

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.ai.AiExecutionResult
 import com.example.data.ai.LifeAiRepository
 import com.example.data.ai.LifeContextSnapshot
+import com.example.data.audio.LifeOsSoundManager
 import com.example.data.local.AiMessageEntity
 import com.example.data.local.AndroidUsageStatsBridge
 import com.example.data.local.AppUsageCategory
@@ -22,6 +23,8 @@ import com.example.data.local.RecurrencePattern
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
+import com.example.data.local.TaskSectionEntity
+import com.example.data.local.TaskSectionMapper
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesState
 import com.example.data.local.WidgetConfigEntity
@@ -68,6 +71,7 @@ data class StudyTimerState(
 data class LifeOsUiState(
     val isPrefsLoaded: Boolean = false,
     val prefs: UserPreferencesState = UserPreferencesState(),
+    val taskSections: List<TaskSectionEntity> = emptyList(),
     val tasks: List<TaskEntity> = emptyList(),
     val events: List<CalendarEventEntity> = emptyList(),
     val habits: List<HabitEntity> = emptyList(),
@@ -81,6 +85,7 @@ data class LifeOsUiState(
     val isAiLoading: Boolean = false,
     val aiErrorMessage: String? = null,
     val petReactionBanner: String? = null,
+    val levelUpBanner: Int? = null,
     val statusSnackbar: String? = null,
     val usageStatsStatusLabel: String = "Manual Tracking Active",
     val isOnline: Boolean = false,
@@ -127,17 +132,20 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val aiRepo = LifeAiRepository(application)
     private val usageBridge = AndroidUsageStatsBridge(application)
     private val friendSyncManager = FriendSyncManager(application)
+    private val soundManager = LifeOsSoundManager(application)
 
     private val studyTimerState = MutableStateFlow(StudyTimerState())
     private val aiLoadingState = MutableStateFlow(false)
     private val aiErrorState = MutableStateFlow<String?>(null)
     private val petReactionState = MutableStateFlow<String?>(null)
+    private val levelUpBannerState = MutableStateFlow<Int?>(null)
     private val snackbarState = MutableStateFlow<String?>(null)
 
     private var timerJob: Job? = null
 
     private data class CoreFlows(
         val prefs: UserPreferencesState,
+        val taskSections: List<TaskSectionEntity>,
         val tasks: List<TaskEntity>,
         val events: List<CalendarEventEntity>,
         val habits: List<HabitEntity>,
@@ -157,6 +165,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val aiLoading: Boolean,
         val aiError: String?,
         val petReaction: String?,
+        val levelUpBanner: Int?,
         val snackbar: String?
     )
 
@@ -166,14 +175,21 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val nearbyPeers: List<NearbyFriendPeer>
     )
 
+    private val tasksAndSectionsFlow = combine(
+        db.taskSectionDao().observeAllSections(),
+        db.taskDao().observeAllTasks()
+    ) { sections, tasks ->
+        sections to tasks
+    }
+
     private val coreFlow = combine(
         prefsRepo.preferencesFlow,
-        db.taskDao().observeAllTasks(),
+        tasksAndSectionsFlow,
         db.calendarEventDao().observeAllEvents(),
         db.habitDao().observeAllHabits(),
         db.widgetConfigDao().observeWidgets()
-    ) { prefs, tasks, events, habits, widgets ->
-        CoreFlows(prefs, tasks, events, habits, widgets)
+    ) { prefs, tasksAndSections, events, habits, widgets ->
+        CoreFlows(prefs, tasksAndSections.first, tasksAndSections.second, events, habits, widgets)
     }
 
     private val secondaryFlow = combine(
@@ -186,14 +202,21 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         SecondaryFlows(note, usage, challenges, friends, aiMessages)
     }
 
+    private val feedbackBannersFlow = combine(
+        petReactionState,
+        levelUpBannerState
+    ) { petReact, lvlBanner ->
+        petReact to lvlBanner
+    }
+
     private val transientFlow = combine(
         studyTimerState,
         aiLoadingState,
         aiErrorState,
-        petReactionState,
+        feedbackBannersFlow,
         snackbarState
-    ) { timer, loading, err, petReact, snack ->
-        TransientFlows(timer, loading, err, petReact, snack)
+    ) { timer, loading, err, banners, snack ->
+        TransientFlows(timer, loading, err, banners.first, banners.second, snack)
     }
 
     private val socialNetworkFlow = combine(
@@ -218,6 +241,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         LifeOsUiState(
             isPrefsLoaded = true,
             prefs = core.prefs,
+            taskSections = core.taskSections,
             tasks = core.tasks,
             events = core.events,
             habits = core.habits,
@@ -231,6 +255,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             isAiLoading = trans.aiLoading,
             aiErrorMessage = trans.aiError,
             petReactionBanner = trans.petReaction,
+            levelUpBanner = trans.levelUpBanner,
             statusSnackbar = trans.snackbar,
             usageStatsStatusLabel = usageBridge.getSourceStatusLabel(),
             isOnline = social.isOnline,
@@ -245,6 +270,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     init {
+        soundManager.preload()
         viewModelScope.launch {
             LifeOsSeeder.seedInitialDataIfNeeded(db)
             LifeOsWidgetUpdater.updateAllWidgets(getApplication())
@@ -254,6 +280,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         super.onCleared()
         friendSyncManager.stopNearbyPeerSync()
+        soundManager.release()
     }
 
     private fun syncHomeWidgets() {
@@ -268,6 +295,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearPetReaction() {
         petReactionState.value = null
+    }
+
+    fun clearLevelUpBanner() {
+        levelUpBannerState.value = null
     }
 
     fun clearAiError() {
@@ -309,6 +340,45 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private suspend fun applyXpAndPlaySound(
+        xpDelta: Int,
+        happinessDelta: Int,
+        energyDelta: Int,
+        isTaskCompletion: Boolean = false,
+        isHabitCompletion: Boolean = false,
+        isFocusCompletion: Boolean = false
+    ) {
+        val currentPrefs = uiState.value.prefs
+        val prevLevel = currentPrefs.level
+        val prevStreak = currentPrefs.dailyStreak
+        val today = DateTimeUtils.todayEpochDay()
+        val expectedNewLevel = (((currentPrefs.totalXp + xpDelta).coerceAtLeast(0)) / currentPrefs.xpPerLevel) + 1
+        val expectedNewStreak = when {
+            currentPrefs.lastActiveEpochDay == today -> prevStreak.coerceAtLeast(1)
+            currentPrefs.lastActiveEpochDay == today - 1L -> prevStreak + 1
+            else -> 1
+        }
+
+        prefsRepo.awardXpAndBoostPet(xpDelta, happinessDelta, energyDelta)
+
+        val sfxEnabled = currentPrefs.soundEffectsEnabled
+        when {
+            expectedNewLevel > prevLevel -> {
+                levelUpBannerState.value = expectedNewLevel
+                soundManager.playLevelUp(sfxEnabled)
+            }
+            expectedNewStreak > prevStreak -> {
+                soundManager.playStreakActivate(sfxEnabled)
+            }
+            isFocusCompletion -> {
+                soundManager.playFocusComplete(sfxEnabled)
+            }
+            isTaskCompletion || isHabitCompletion -> {
+                soundManager.playTaskComplete(sfxEnabled)
+            }
+        }
+    }
+
     // --- TASKS ---
     fun toggleTaskCompleted(task: TaskEntity) {
         viewModelScope.launch {
@@ -322,21 +392,84 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.taskDao().updateTask(updated)
 
             if (shouldAwardXp) {
-                prefsRepo.awardXpAndBoostPet(task.xpReward, happinessDelta = 7, energyDelta = 3)
+                applyXpAndPlaySound(
+                    xpDelta = task.xpReward,
+                    happinessDelta = 7,
+                    energyDelta = 3,
+                    isTaskCompletion = true
+                )
                 petReactionState.value = "${uiState.value.prefs.petName} gained +${task.xpReward} XP from \"${task.title}\"!"
                 snackbarState.value = "+${task.xpReward} XP earned"
                 updateChallengeProgress("Daily Momentum", 1)
                 updateChallengeProgress("Weekly Velocity", task.xpReward)
                 evaluateBadges()
             } else if (nowCompleted) {
+                soundManager.playTaskComplete(uiState.value.prefs.soundEffectsEnabled)
                 snackbarState.value = "Task completed (XP already claimed)"
             }
             syncHomeWidgets()
         }
     }
 
+    // --- TASK SECTIONS & INLINE TASKS ---
+    fun addTaskSection(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val nextOrder = (uiState.value.taskSections.maxOfOrNull { it.sortOrder } ?: -1) + 1
+            db.taskSectionDao().insertSection(
+                TaskSectionEntity(
+                    name = clean,
+                    sortOrder = nextOrder
+                )
+            )
+            snackbarState.value = "Section \"$clean\" added"
+        }
+    }
+
+    fun renameTaskSection(section: TaskSectionEntity, newName: String) {
+        val clean = newName.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            db.taskSectionDao().updateSection(section.copy(name = clean))
+            snackbarState.value = "Section renamed to \"$clean\""
+        }
+    }
+
+    fun deleteTaskSection(section: TaskSectionEntity) {
+        viewModelScope.launch {
+            db.taskDao().deleteTasksBySection(section.id)
+            db.taskSectionDao().deleteSection(section)
+            snackbarState.value = "Section \"${section.name}\" removed"
+            syncHomeWidgets()
+        }
+    }
+
+    fun addInlineTask(sectionId: Long, title: String) {
+        val clean = title.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val section = uiState.value.taskSections.firstOrNull { it.id == sectionId }
+            val inferredCategory = section?.let { TaskSectionMapper.inferCategory(it.name) } ?: TaskCategory.WORK
+            db.taskDao().insertTask(
+                TaskEntity(
+                    sectionId = sectionId,
+                    title = clean,
+                    description = "",
+                    priorityName = TaskPriority.MEDIUM.name,
+                    categoryName = inferredCategory.name,
+                    deadlineEpochDay = DateTimeUtils.todayEpochDay(),
+                    recurrenceName = RecurrencePattern.NONE.name,
+                    xpReward = TaskPriority.MEDIUM.xpValue
+                )
+            )
+            syncHomeWidgets()
+        }
+    }
+
     fun saveTask(
         existingId: Long? = null,
+        sectionId: Long = 0L,
         title: String,
         description: String,
         priority: TaskPriority,
@@ -348,6 +481,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val existing = existingId?.let { id -> uiState.value.tasks.firstOrNull { it.id == id } }
             val entity = existing?.copy(
+                sectionId = if (sectionId != 0L) sectionId else existing.sectionId,
                 title = title.trim(),
                 description = description.trim(),
                 priorityName = priority.name,
@@ -356,6 +490,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 recurrenceName = recurrence.name,
                 xpReward = priority.xpValue
             ) ?: TaskEntity(
+                sectionId = sectionId,
                 title = title.trim(),
                 description = description.trim(),
                 priorityName = priority.name,
@@ -365,7 +500,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 xpReward = priority.xpValue
             )
             db.taskDao().insertTask(entity)
-            snackbarState.value = if (existing == null) "Task created" else "Task updated"
+            snackbarState.value = if (existing == null) "Task added" else "Task updated"
             syncHomeWidgets()
         }
     }
@@ -443,12 +578,19 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
                 if (shouldAwardXp) {
-                    prefsRepo.awardXpAndBoostPet(habit.xpReward, happinessDelta = 5, energyDelta = 6)
+                    applyXpAndPlaySound(
+                        xpDelta = habit.xpReward,
+                        happinessDelta = 5,
+                        energyDelta = 6,
+                        isHabitCompletion = true
+                    )
                     petReactionState.value = "${uiState.value.prefs.petName} loved your habit streak! +${habit.xpReward} XP"
                     snackbarState.value = "+${habit.xpReward} XP · ${newStreak}d streak"
                     updateChallengeProgress("Habit Lock-In", 1)
                     updateChallengeProgress("Weekly Velocity", habit.xpReward)
                     evaluateBadges()
+                } else {
+                    soundManager.playTaskComplete(uiState.value.prefs.soundEffectsEnabled)
                 }
             }
             syncHomeWidgets()
@@ -561,7 +703,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun completeStudySession(minutes: Int) {
         val xp = (minutes * 2).coerceIn(10, 120)
         prefsRepo.addFocusMinutes(minutes)
-        prefsRepo.awardXpAndBoostPet(xp, happinessDelta = 8, energyDelta = -4)
+        applyXpAndPlaySound(
+            xpDelta = xp,
+            happinessDelta = 8,
+            energyDelta = -4,
+            isFocusCompletion = true
+        )
         updateChallengeProgress("Deep Focus Sprint", minutes)
         updateChallengeProgress("Weekly Velocity", xp)
         evaluateBadges()
@@ -637,7 +784,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         if (challenge.isClaimed || challenge.currentProgress < challenge.targetCount) return
         viewModelScope.launch {
             db.challengeDao().updateChallenge(challenge.copy(isClaimed = true))
-            prefsRepo.awardXpAndBoostPet(challenge.xpReward, happinessDelta = 10, energyDelta = 8)
+            applyXpAndPlaySound(
+                xpDelta = challenge.xpReward,
+                happinessDelta = 10,
+                energyDelta = 8,
+                isTaskCompletion = true
+            )
             petReactionState.value = "Challenge cleared! +${challenge.xpReward} XP"
             snackbarState.value = "Claimed +${challenge.xpReward} XP!"
             evaluateBadges()
@@ -831,8 +983,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     when (result.actionType) {
                         "CREATE_TASK" -> {
                             val title = result.title ?: clean.take(40)
+                            val matchedSection = current.taskSections.firstOrNull { sec ->
+                                title.contains(sec.name, ignoreCase = true) || clean.contains(sec.name, ignoreCase = true)
+                            }
                             db.taskDao().insertTask(
                                 TaskEntity(
+                                    sectionId = matchedSection?.id ?: 0L,
                                     title = title,
                                     priorityName = result.priority.name,
                                     categoryName = result.category.name,
@@ -840,7 +996,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                                     xpReward = result.priority.xpValue
                                 )
                             )
-                            badge = "Task Created · $title"
+                            badge = "Task Added · $title"
                         }
                         "CREATE_HABIT" -> {
                             val title = result.title ?: clean.take(40)
@@ -943,9 +1099,28 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateSoundEffects(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateSoundEffects(enabled)
+            if (enabled) {
+                soundManager.playTaskComplete(enabled = true)
+            }
+            snackbarState.value = if (enabled) "Sound effects enabled" else "Sound effects muted"
+        }
+    }
+
+    fun previewSoundEffect() {
+        if (uiState.value.prefs.soundEffectsEnabled) {
+            soundManager.playStreakActivate(enabled = true)
+        } else {
+            snackbarState.value = "Enable Sound Effects first to preview chime"
+        }
+    }
+
     fun resetAllLocalData() {
         viewModelScope.launch {
             friendSyncManager.stopNearbyPeerSync()
+            db.taskSectionDao().clearAll()
             db.taskDao().clearAll()
             db.calendarEventDao().clearAll()
             db.habitDao().clearAll()

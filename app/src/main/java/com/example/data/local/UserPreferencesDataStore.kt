@@ -56,7 +56,8 @@ data class UserPreferencesState(
     val shareChallengesWithFriends: Boolean = true,
     val notificationsEnabled: Boolean = true,
     val taskRemindersEnabled: Boolean = true,
-    val wellnessAlertsEnabled: Boolean = true
+    val wellnessAlertsEnabled: Boolean = true,
+    val soundEffectsEnabled: Boolean = true
 ) {
     val level: Int
         get() = (totalXp / 250) + 1
@@ -101,6 +102,7 @@ class UserPreferencesRepository(private val context: Context) {
         val NOTIFICATIONS = booleanPreferencesKey("notifications_enabled")
         val TASK_REMINDERS = booleanPreferencesKey("task_reminders")
         val WELLNESS_ALERTS = booleanPreferencesKey("wellness_alerts")
+        val SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
     }
 
     val preferencesFlow: Flow<UserPreferencesState> = context.lifeOsDataStore.data.map { prefs ->
@@ -145,7 +147,8 @@ class UserPreferencesRepository(private val context: Context) {
             shareChallengesWithFriends = prefs[Keys.SHARE_CHALLENGES] ?: true,
             notificationsEnabled = prefs[Keys.NOTIFICATIONS] ?: true,
             taskRemindersEnabled = prefs[Keys.TASK_REMINDERS] ?: true,
-            wellnessAlertsEnabled = prefs[Keys.WELLNESS_ALERTS] ?: true
+            wellnessAlertsEnabled = prefs[Keys.WELLNESS_ALERTS] ?: true,
+            soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS] ?: true
         )
     }
 
@@ -306,6 +309,12 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.NOTIFICATIONS] = enabled
             prefs[Keys.TASK_REMINDERS] = reminders
             prefs[Keys.WELLNESS_ALERTS] = wellnessAlerts
+        }
+    }
+
+    suspend fun updateSoundEffects(enabled: Boolean) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SOUND_EFFECTS] = enabled
         }
     }
 

@@ -1,5 +1,12 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,7 +36,6 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SportsEsports
-import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,6 +61,7 @@ import com.example.data.local.HabitEntity
 import com.example.data.local.PetAccessory
 import com.example.data.local.PetGrowthStage
 import com.example.data.local.TaskCategory
+import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DigitalPetCanvas
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GradientGlowCard
@@ -139,7 +146,32 @@ fun GrowthScreen(
                     color = InkMuted
                 )
 
+                AnimatedVisibility(
+                    visible = state.petReactionBanner != null,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        StatusPill(
+                            text = state.petReactionBanner.orEmpty(),
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(12.dp))
+
+                val animatedHappiness by animateIntAsState(
+                    targetValue = prefs.petHappiness,
+                    animationSpec = tween(350),
+                    label = "growth_pet_happiness"
+                )
+                val animatedEnergy by animateIntAsState(
+                    targetValue = prefs.petEnergy,
+                    animationSpec = tween(350),
+                    label = "growth_pet_energy"
+                )
 
                 // Happiness & Energy bars
                 Row(
@@ -147,12 +179,12 @@ fun GrowthScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Happiness · ${prefs.petHappiness}%", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
+                        Text("Happiness · ${animatedHappiness}%", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
                         Spacer(Modifier.height(4.dp))
                         NeonProgressBar(progress = prefs.petHappiness / 100f, heightDp = 6)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Energy · ${prefs.petEnergy}%", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
+                        Text("Energy · ${animatedEnergy}%", style = MaterialTheme.typography.labelSmall, color = InkSecondary)
                         Spacer(Modifier.height(4.dp))
                         NeonProgressBar(progress = prefs.petEnergy / 100f, heightDp = 6)
                     }
@@ -256,18 +288,23 @@ fun GrowthScreen(
 
         // XP, Level & Streaks Summary
         item {
+            val animatedXp by animateIntAsState(
+                targetValue = prefs.totalXp,
+                animationSpec = tween(420),
+                label = "growth_xp_counter"
+            )
             ObsidianCard(elevated = true) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("XP Telemetry", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
-                        Text("${prefs.totalXp} Total XP · ${prefs.xpIntoCurrentLevel}/${prefs.xpPerLevel} to Lv.${prefs.level + 1}", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        Text("$animatedXp Total XP · ${prefs.xpIntoCurrentLevel}/${prefs.xpPerLevel} to Lv.${prefs.level + 1}", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StatusPill(text = "${prefs.dailyStreak}d", color = AmberWarning, icon = Icons.Outlined.LocalFireDepartment)
+                        AnimatedStreakPill(streakDays = prefs.dailyStreak, label = "${prefs.dailyStreak}d")
                         StatusPill(text = "${prefs.weeklyStreak}w", color = EmeraldSuccess)
                     }
                 }
@@ -295,8 +332,8 @@ fun GrowthScreen(
             item {
                 EmptyStateCard(
                     icon = Icons.Filled.CheckCircle,
-                    title = "No Daily Habits Configured",
-                    subtitle = "Tap + Add Habit above or ask LIFE AI to create your first daily ritual."
+                    title = "No habits added yet",
+                    subtitle = "Tap + Add Habit or ask LIFE AI to create one."
                 )
             }
         } else {
@@ -328,7 +365,7 @@ fun GrowthScreen(
 
         // Daily & Weekly Challenges
         item {
-            SectionHeader(title = "Challenges & Rewards", subtitle = "Claim XP bonuses on completion")
+            SectionHeader(title = "Challenges", subtitle = "Complete goals to earn bonus XP")
         }
 
         items(state.challenges, key = { "chal_${it.id}" }) { challenge ->

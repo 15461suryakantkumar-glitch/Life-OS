@@ -201,9 +201,11 @@ fun OnboardingScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "LOCAL-FIRST · OFFLINE-READY COMMAND CENTER",
+                        text = "LOCAL-FIRST · OFFLINE READY",
                         style = MaterialTheme.typography.labelSmall,
-                        color = InkSecondary
+                        color = InkSecondary,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
             }
@@ -253,8 +255,8 @@ fun OnboardingScreen(
                         name = it
                         if (showNameError && it.isNotBlank()) showNameError = false
                     },
-                    label = { Text("Your Name *") },
-                    placeholder = { Text("Enter your name (e.g., Suryakant)") },
+                    label = { Text("Your Name") },
+                    placeholder = { Text("Enter your name") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Filled.Person,

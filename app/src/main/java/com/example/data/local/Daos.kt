@@ -9,6 +9,27 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface TaskSectionDao {
+    @Query("SELECT * FROM task_sections ORDER BY sortOrder ASC, createdAtMillis ASC")
+    fun observeAllSections(): Flow<List<TaskSectionEntity>>
+
+    @Query("SELECT * FROM task_sections ORDER BY sortOrder ASC, createdAtMillis ASC")
+    suspend fun getAllSectionsOnce(): List<TaskSectionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSection(section: TaskSectionEntity): Long
+
+    @Update
+    suspend fun updateSection(section: TaskSectionEntity)
+
+    @Delete
+    suspend fun deleteSection(section: TaskSectionEntity)
+
+    @Query("DELETE FROM task_sections")
+    suspend fun clearAll()
+}
+
+@Dao
 interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY isCompleted ASC, deadlineEpochDay ASC, createdAtMillis DESC")
     fun observeAllTasks(): Flow<List<TaskEntity>>
@@ -24,6 +45,9 @@ interface TaskDao {
 
     @Delete
     suspend fun deleteTask(task: TaskEntity)
+
+    @Query("DELETE FROM tasks WHERE sectionId = :sectionId")
+    suspend fun deleteTasksBySection(sectionId: Long)
 
     @Query("DELETE FROM tasks")
     suspend fun clearAll()

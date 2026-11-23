@@ -1,9 +1,21 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,43 +23,59 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,12 +83,12 @@ import com.example.data.local.RecurrencePattern
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
-import com.example.ui.components.CategoryBadge
+import com.example.data.local.TaskSectionEntity
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
-import com.example.ui.components.PriorityBadge
 import com.example.ui.components.StatusPill
+import com.example.ui.theme.BorderHairline
 import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.InkMuted
@@ -70,7 +98,6 @@ import com.example.ui.theme.ObsidianBase
 import com.example.ui.theme.ObsidianVoid
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
-import com.example.util.DateTimeUtils
 
 @Composable
 fun TasksScreen(
@@ -78,223 +105,287 @@ fun TasksScreen(
     openCreateDialogImmediately: Boolean,
     onConsumeCreateDialogFlag: () -> Unit,
     onToggleTask: (TaskEntity) -> Unit,
-    onSaveTask: (Long?, String, String, TaskPriority, TaskCategory, Long, RecurrencePattern) -> Unit,
-    onDeleteTask: (TaskEntity) -> Unit
+    onSaveTask: (Long?, Long, String, String, TaskPriority, TaskCategory, Long, RecurrencePattern) -> Unit,
+    onDeleteTask: (TaskEntity) -> Unit,
+    onAddSection: (String) -> Unit,
+    onRenameSection: (TaskSectionEntity, String) -> Unit,
+    onDeleteSection: (TaskSectionEntity) -> Unit,
+    onQuickAddTaskInSection: (Long, String) -> Unit
 ) {
-    var viewMode by remember { mutableStateOf("DAILY") } // DAILY | WEEKLY | ALL
-    var selectedCategory by remember { mutableStateOf<TaskCategory?>(null) }
-    var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
-    var showTaskDialog by remember { mutableStateOf(false) }
+    var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
+    var showSectionCreator by remember { mutableStateOf(false) }
+    var newSectionName by remember { mutableStateOf("") }
+    var activeInlineSectionId by remember { mutableStateOf<Long?>(null) }
 
-    LaunchedEffect(openCreateDialogImmediately) {
+    var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
+    var renamingSection by remember { mutableStateOf<TaskSectionEntity?>(null) }
+    var deletingSectionConfirm by remember { mutableStateOf<Pair<TaskSectionEntity, Int>?>(null) }
+
+    val sectionFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(openCreateDialogImmediately, state.taskSections) {
         if (openCreateDialogImmediately) {
-            editingTask = null
-            showTaskDialog = true
+            if (state.taskSections.isEmpty()) {
+                showSectionCreator = true
+            } else {
+                activeInlineSectionId = state.taskSections.first().id
+            }
             onConsumeCreateDialogFlag()
         }
     }
 
+    LaunchedEffect(showSectionCreator) {
+        if (showSectionCreator) {
+            sectionFocusRequester.requestFocus()
+        }
+    }
+
     val today = state.todayEpochDay
-    val filteredTasks = remember(state.tasks, viewMode, selectedCategory, today) {
+    val filteredTasks = remember(state.tasks, viewMode, today) {
         state.tasks.filter { task ->
-            val matchesView = when (viewMode) {
+            when (viewMode) {
                 "DAILY" -> task.deadlineEpochDay <= today
                 "WEEKLY" -> task.deadlineEpochDay <= today + 7
                 else -> true
             }
-            val matchesCat = selectedCategory == null || task.category == selectedCategory
-            matchesView && matchesCat
         }
+    }
+
+    val sectionIds = remember(state.taskSections) { state.taskSections.map { it.id }.toSet() }
+    val ungroupedTasks = remember(filteredTasks, sectionIds) {
+        filteredTasks.filter { it.sectionId == 0L || it.sectionId !in sectionIds }
     }
 
     val doneCount = filteredTasks.count { it.isCompleted }
     val progress = if (filteredTasks.isEmpty()) 0f else doneCount.toFloat() / filteredTasks.size
 
-    Scaffold(
-        containerColor = ObsidianVoid,
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    editingTask = null
-                    showTaskDialog = true
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.White,
-                modifier = Modifier.testTag("add_task_fab")
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "Create Task")
-            }
-        }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .testTag("tasks_screen"),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Text("Task Command", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
-                Text("Manage missions, recurring routines, priorities & deadlines", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
-            }
+    fun submitNewSection() {
+        val clean = newSectionName.trim()
+        if (clean.isEmpty()) return
+        onAddSection(clean)
+        newSectionName = ""
+        showSectionCreator = false
+    }
 
-            item {
-                ObsidianCard(elevated = true) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Completion Velocity", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
-                            Text("$doneCount of ${filteredTasks.size} missions completed", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
-                        }
-                        Text("${(progress * 100).toInt()}%", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.secondary)
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    NeonProgressBar(progress = progress)
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ObsidianVoid)
+            .testTag("tasks_screen"),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Header + Inline New Section trigger
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Tasks", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
+                    Text(
+                        "Organize permanent sections & add tasks inline",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = InkSecondary
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                FilledTonalButton(
+                    onClick = { showSectionCreator = !showSectionCreator },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(38.dp).testTag("new_section_btn")
+                ) {
+                    Icon(
+                        imageVector = if (showSectionCreator) Icons.Filled.Close else Icons.Filled.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (showSectionCreator) "Close" else "New Section",
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
+        }
 
-            // View Mode Tabs (Daily / Weekly / All)
+        // Inline Section Creator Bar (no popup)
+        item {
+            AnimatedVisibility(
+                visible = showSectionCreator,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                ObsidianCard(
+                    borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+                    elevated = true,
+                    contentPadding = PaddingValues(12.dp)
+                ) {
+                    Text(
+                        text = "New Section",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = newSectionName,
+                            onValueChange = { newSectionName = it },
+                            placeholder = { Text("e.g. Physics, Chemistry, Bio, Tests", maxLines = 1) },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(onDone = { submitNewSection() }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                                unfocusedBorderColor = BorderHairline,
+                                focusedTextColor = InkPrimary,
+                                unfocusedTextColor = InkPrimary
+                            ),
+                            modifier = Modifier
+                                .weight(1f)
+                                .focusRequester(sectionFocusRequester)
+                                .testTag("new_section_input")
+                        )
+                        FilledIconButton(
+                            onClick = { submitNewSection() },
+                            enabled = newSectionName.isNotBlank(),
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier.size(48.dp).testTag("save_section_btn")
+                        ) {
+                            Icon(Icons.Filled.Check, contentDescription = "Save section")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Compact Progress & Filter Strip
+        item {
+            ObsidianCard(elevated = true, contentPadding = PaddingValues(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Task Progress", style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                        Text(
+                            text = if (filteredTasks.isEmpty()) "No tasks yet" else "$doneCount of ${filteredTasks.size} completed",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkSecondary
+                        )
+                    }
+                    Text(
+                        text = "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                NeonProgressBar(progress = progress, heightDp = 6)
+            }
+        }
+
+        // View Mode Filter Chips
+        if (state.taskSections.isNotEmpty() || state.tasks.isNotEmpty()) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("DAILY" to "Today", "WEEKLY" to "7 Days", "ALL" to "All Tasks").forEach { (key, label) ->
+                    listOf("ALL" to "All", "DAILY" to "Today", "WEEKLY" to "7 Days").forEach { (key, label) ->
                         FilterChip(
                             selected = viewMode == key,
                             onClick = { viewMode = key },
-                            label = { Text(label) }
+                            label = { Text(label, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
             }
-
-            // Category Filter Chips
-            item {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedCategory == null,
-                        onClick = { selectedCategory = null },
-                        label = { Text("All Categories") }
-                    )
-                    TaskCategory.entries.forEach { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { selectedCategory = if (selectedCategory == cat) null else cat },
-                            label = { Text(cat.label) }
-                        )
-                    }
-                }
-            }
-
-            if (filteredTasks.isEmpty()) {
-                item {
-                    EmptyStateCard(
-                        icon = Icons.Filled.CheckCircle,
-                        title = if (state.tasks.isEmpty()) "Zero Tasks Queued" else "No Matching Tasks",
-                        subtitle = if (state.tasks.isEmpty()) {
-                            "Your command queue is clean. Tap + below to add a mission or tell LIFE AI to create one."
-                        } else {
-                            "No tasks match the active date or category filter."
-                        }
-                    )
-                }
-            } else {
-                items(filteredTasks, key = { it.id }) { task ->
-                    ObsidianCard(
-                        onClick = { onToggleTask(task) },
-                        modifier = Modifier.testTag("task_card_${task.id}")
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Icon(
-                                imageVector = if (task.isCompleted) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
-                                contentDescription = "Toggle completion",
-                                tint = if (task.isCompleted) EmeraldSuccess else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .padding(top = 2.dp)
-                                    .size(24.dp)
-                                    .clickable { onToggleTask(task) }
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = task.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (task.isCompleted) InkMuted else InkPrimary,
-                                    textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null
-                                )
-                                if (task.description.isNotBlank()) {
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        text = task.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = InkSecondary,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    PriorityBadge(task.priority)
-                                    CategoryBadge(task.category)
-                                    StatusPill(
-                                        text = DateTimeUtils.formatFullDate(task.deadlineEpochDay),
-                                        color = if (task.deadlineEpochDay < today && !task.isCompleted) RoseAlert else InkSecondary
-                                    )
-                                    if (task.recurrence != RecurrencePattern.NONE) {
-                                        StatusPill(
-                                            text = task.recurrence.label,
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            icon = Icons.Filled.Repeat
-                                        )
-                                    }
-                                    StatusPill(
-                                        text = if (task.xpAwarded) "XP Claimed" else "+${task.xpReward} XP",
-                                        color = if (task.xpAwarded) InkMuted else EmeraldSuccess
-                                    )
-                                }
-                            }
-                            Column {
-                                IconButton(
-                                    onClick = {
-                                        editingTask = task
-                                        showTaskDialog = true
-                                    }
-                                ) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "Edit task", tint = InkSecondary)
-                                }
-                                IconButton(onClick = { onDeleteTask(task) }) {
-                                    Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete task", tint = RoseAlert)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            item { Spacer(Modifier.height(72.dp)) }
         }
+
+        // Empty Slate vs Permanent Sections
+        if (state.taskSections.isEmpty() && ungroupedTasks.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Filled.FolderOpen,
+                    title = "No sections yet",
+                    subtitle = "Create permanent subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
+                    actionLabel = "Create First Section",
+                    onAction = { showSectionCreator = true },
+                    modifier = Modifier.testTag("tasks_empty_state")
+                )
+            }
+        } else {
+            items(state.taskSections, key = { "sec_${it.id}" }) { section ->
+                val sectionTasks = filteredTasks.filter { it.sectionId == section.id }
+                TaskSectionCard(
+                    title = section.name,
+                    tasks = sectionTasks,
+                    isInlineAdding = activeInlineSectionId == section.id,
+                    onStartInlineAdd = { activeInlineSectionId = section.id },
+                    onCloseInlineAdd = { activeInlineSectionId = null },
+                    onQuickAddTask = { title -> onQuickAddTaskInSection(section.id, title) },
+                    onToggleTask = onToggleTask,
+                    onEditTask = { editingTask = it },
+                    onDeleteTask = onDeleteTask,
+                    onRenameSection = { renamingSection = section },
+                    onDeleteSection = {
+                        val totalInSection = state.tasks.count { it.sectionId == section.id }
+                        if (totalInSection == 0) {
+                            onDeleteSection(section)
+                        } else {
+                            deletingSectionConfirm = section to totalInSection
+                        }
+                    },
+                    sectionTag = "section_card_${section.id}"
+                )
+            }
+
+            if (ungroupedTasks.isNotEmpty()) {
+                item(key = "sec_general") {
+                    TaskSectionCard(
+                        title = "General",
+                        tasks = ungroupedTasks,
+                        isInlineAdding = activeInlineSectionId == 0L,
+                        onStartInlineAdd = { activeInlineSectionId = 0L },
+                        onCloseInlineAdd = { activeInlineSectionId = null },
+                        onQuickAddTask = { title -> onQuickAddTaskInSection(0L, title) },
+                        onToggleTask = onToggleTask,
+                        onEditTask = { editingTask = it },
+                        onDeleteTask = onDeleteTask,
+                        onRenameSection = null,
+                        onDeleteSection = null,
+                        sectionTag = "section_card_general"
+                    )
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(24.dp)) }
     }
 
-    if (showTaskDialog) {
+    // Optional edit task dialog (only when tapping edit pencil on an existing task)
+    editingTask?.let { task ->
         TaskEditorDialog(
-            existing = editingTask,
+            existing = task,
             todayEpochDay = today,
-            onDismiss = { showTaskDialog = false },
+            onDismiss = { editingTask = null },
             onConfirm = { title, desc, priority, category, deadlineOffset, recurrence ->
                 onSaveTask(
-                    editingTask?.id,
+                    task.id,
+                    task.sectionId,
                     title,
                     desc,
                     priority,
@@ -302,35 +393,351 @@ fun TasksScreen(
                     today + deadlineOffset,
                     recurrence
                 )
-                showTaskDialog = false
+                editingTask = null
+            }
+        )
+    }
+
+    renamingSection?.let { section ->
+        var updatedName by remember(section.id) { mutableStateOf(section.name) }
+        AlertDialog(
+            onDismissRequest = { renamingSection = null },
+            containerColor = ObsidianBase,
+            title = { Text("Rename Section", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                OutlinedTextField(
+                    value = updatedName,
+                    onValueChange = { updatedName = it },
+                    label = { Text("Section name") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRenameSection(section, updatedName)
+                        renamingSection = null
+                    },
+                    enabled = updatedName.isNotBlank()
+                ) { Text("Save") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renamingSection = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    deletingSectionConfirm?.let { (section, taskCount) ->
+        AlertDialog(
+            onDismissRequest = { deletingSectionConfirm = null },
+            containerColor = ObsidianBase,
+            title = { Text("Delete \"${section.name}\"?") },
+            text = { Text("This removes the section and its $taskCount task${if (taskCount == 1) "" else "s"}.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onDeleteSection(section)
+                        deletingSectionConfirm = null
+                    }
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingSectionConfirm = null }) { Text("Cancel") }
             }
         )
     }
 }
 
 @Composable
+private fun TaskSectionCard(
+    title: String,
+    tasks: List<TaskEntity>,
+    isInlineAdding: Boolean,
+    onStartInlineAdd: () -> Unit,
+    onCloseInlineAdd: () -> Unit,
+    onQuickAddTask: (String) -> Unit,
+    onToggleTask: (TaskEntity) -> Unit,
+    onEditTask: (TaskEntity) -> Unit,
+    onDeleteTask: (TaskEntity) -> Unit,
+    onRenameSection: (() -> Unit)?,
+    onDeleteSection: (() -> Unit)?,
+    sectionTag: String
+) {
+    var inlineDraft by remember { mutableStateOf("") }
+    val inlineFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isInlineAdding) {
+        if (isInlineAdding) {
+            inlineFocusRequester.requestFocus()
+        }
+    }
+
+    fun submitInline() {
+        val clean = inlineDraft.trim()
+        if (clean.isEmpty()) return
+        onQuickAddTask(clean)
+        inlineDraft = ""
+        inlineFocusRequester.requestFocus()
+    }
+
+    val doneCount = tasks.count { it.isCompleted }
+
+    ObsidianCard(
+        modifier = Modifier.testTag(sectionTag),
+        borderColor = if (isInlineAdding) MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f) else BorderHairline,
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        // Section Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.secondary)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = InkPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            StatusPill(
+                text = "$doneCount/${tasks.size}",
+                color = if (tasks.isNotEmpty() && doneCount == tasks.size) EmeraldSuccess else MaterialTheme.colorScheme.primary
+            )
+            if (onRenameSection != null) {
+                IconButton(onClick = onRenameSection) {
+                    Icon(
+                        Icons.Filled.Edit,
+                        contentDescription = "Rename section",
+                        tint = InkSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            if (onDeleteSection != null) {
+                IconButton(onClick = onDeleteSection) {
+                    Icon(
+                        Icons.Filled.DeleteOutline,
+                        contentDescription = "Delete section",
+                        tint = RoseAlert,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        if (tasks.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                tasks.forEach { task ->
+                    SectionTaskRow(
+                        task = task,
+                        onToggle = { onToggleTask(task) },
+                        onEdit = { onEditTask(task) },
+                        onDelete = { onDeleteTask(task) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // Fast Inline Task Entry inside this section (zero popup window)
+        if (!isInlineAdding) {
+            Surface(
+                onClick = onStartInlineAdd,
+                shape = RoundedCornerShape(10.dp),
+                color = CharcoalElevated.copy(alpha = 0.65f),
+                border = BorderStroke(1.dp, BorderHairline),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .testTag("${sectionTag}_add_btn")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "Add task",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = inlineDraft,
+                    onValueChange = { inlineDraft = it },
+                    placeholder = { Text("Add task... (press Done)", maxLines = 1) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Sentences,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { submitInline() }),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                        unfocusedBorderColor = BorderHairline,
+                        focusedTextColor = InkPrimary,
+                        unfocusedTextColor = InkPrimary
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(inlineFocusRequester)
+                        .testTag("${sectionTag}_inline_input")
+                )
+                FilledIconButton(
+                    onClick = { submitInline() },
+                    enabled = inlineDraft.isNotBlank(),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.size(48.dp).testTag("${sectionTag}_inline_submit")
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add task")
+                }
+                IconButton(
+                    onClick = onCloseInlineAdd,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close inline entry", tint = InkMuted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTaskRow(
+    task: TaskEntity,
+    onToggle: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val rowBg by animateColorAsState(
+        targetValue = if (task.isCompleted) EmeraldSuccess.copy(alpha = 0.08f) else CharcoalElevated,
+        animationSpec = tween(220),
+        label = "sec_task_bg"
+    )
+    val iconScale by animateFloatAsState(
+        targetValue = if (task.isCompleted) 1.14f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "sec_task_scale"
+    )
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (task.isCompleted) 0.68f else 1f,
+        animationSpec = tween(220),
+        label = "sec_task_alpha"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(rowBg)
+            .clickable(onClick = onToggle)
+            .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
+            .graphicsLayer { alpha = contentAlpha }
+            .testTag("task_card_${task.id}"),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (task.isCompleted) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+            contentDescription = if (task.isCompleted) "Completed" else "Pending",
+            tint = if (task.isCompleted) EmeraldSuccess else MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .size(20.dp)
+                .graphicsLayer {
+                    scaleX = iconScale
+                    scaleY = iconScale
+                }
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = task.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (task.isCompleted) InkMuted else InkPrimary,
+                textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (task.description.isNotBlank()) {
+                Text(
+                    text = task.description,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = InkSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
+        Text(
+            text = if (task.xpAwarded) "Claimed" else "+${task.xpReward}XP",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (task.xpAwarded) InkMuted else EmeraldSuccess,
+            maxLines = 1,
+            softWrap = false
+        )
+        IconButton(onClick = onEdit) {
+            Icon(Icons.Filled.Edit, contentDescription = "Edit task", tint = InkSecondary, modifier = Modifier.size(16.dp))
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete task", tint = RoseAlert, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
 private fun TaskEditorDialog(
-    existing: TaskEntity?,
+    existing: TaskEntity,
     todayEpochDay: Long,
     onDismiss: () -> Unit,
     onConfirm: (String, String, TaskPriority, TaskCategory, Int, RecurrencePattern) -> Unit
 ) {
-    var title by remember { mutableStateOf(existing?.title ?: "") }
-    var description by remember { mutableStateOf(existing?.description ?: "") }
-    var priority by remember { mutableStateOf(existing?.priority ?: TaskPriority.MEDIUM) }
-    var category by remember { mutableStateOf(existing?.category ?: TaskCategory.WORK) }
-    var recurrence by remember { mutableStateOf(existing?.recurrence ?: RecurrencePattern.NONE) }
+    var title by remember { mutableStateOf(existing.title) }
+    var description by remember { mutableStateOf(existing.description) }
+    var priority by remember { mutableStateOf(existing.priority) }
+    var category by remember { mutableStateOf(existing.category) }
+    var recurrence by remember { mutableStateOf(existing.recurrence) }
     var dayOffset by remember {
-        mutableIntStateOf(
-            if (existing != null) (existing.deadlineEpochDay - todayEpochDay).toInt().coerceIn(0, 30) else 0
-        )
+        mutableIntStateOf((existing.deadlineEpochDay - todayEpochDay).toInt().coerceIn(0, 30))
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = ObsidianBase,
         title = {
-            Text(if (existing == null) "New Mission" else "Edit Mission", style = MaterialTheme.typography.titleLarge)
+            Text("Edit Task", style = MaterialTheme.typography.titleLarge)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -344,7 +751,7 @@ private fun TaskEditorDialog(
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
-                    label = { Text("Details (optional)") },
+                    label = { Text("Notes (optional)") },
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -357,7 +764,7 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = priority == p,
                             onClick = { priority = p },
-                            label = { Text("${p.label} (+${p.xpValue}XP)") }
+                            label = { Text("${p.label} (+${p.xpValue}XP)", maxLines = 1) }
                         )
                     }
                 }
@@ -370,21 +777,24 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = category == c,
                             onClick = { category = c },
-                            label = { Text(c.label) }
+                            label = { Text(c.label, maxLines = 1) }
                         )
                     }
                 }
                 Text("Deadline", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     listOf(0 to "Today", 1 to "Tomorrow", 3 to "+3 Days", 7 to "Next Week").forEach { (off, lbl) ->
                         FilterChip(
                             selected = dayOffset == off,
                             onClick = { dayOffset = off },
-                            label = { Text(lbl) }
+                            label = { Text(lbl, maxLines = 1) }
                         )
                     }
                 }
-                Text("Recurrence", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Repeat", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -393,7 +803,7 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = recurrence == rec,
                             onClick = { recurrence = rec },
-                            label = { Text(rec.label) }
+                            label = { Text(rec.label, maxLines = 1) }
                         )
                     }
                 }

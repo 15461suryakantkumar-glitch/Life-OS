@@ -171,6 +171,13 @@ fun LifeOsApp(
         }
     }
 
+    LaunchedEffect(state.levelUpBanner) {
+        if (state.levelUpBanner != null) {
+            kotlinx.coroutines.delay(4500L)
+            viewModel.clearLevelUpBanner()
+        }
+    }
+
     // Ensure system Back returns to Home from secondary sections
     BackHandler(enabled = state.prefs.isSignedIn && currentSection != LifeOsSection.HOME) {
         currentSection = LifeOsSection.HOME
@@ -247,7 +254,7 @@ fun LifeOsApp(
                                             contentDescription = sec.label
                                         )
                                     },
-                                    label = { Text(sec.label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    label = { Text(sec.label, maxLines = 1, softWrap = false) },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = MaterialTheme.colorScheme.secondary,
                                         selectedTextColor = InkPrimary,
@@ -269,9 +276,9 @@ fun LifeOsApp(
                                 selected = isSecondaryActive,
                                 onClick = { showModuleDrawer = true },
                                 icon = {
-                                    Icon(Icons.Filled.Apps, contentDescription = "More OS Modules")
+                                    Icon(Icons.Filled.Apps, contentDescription = "More Modules")
                                 },
-                                label = { Text("Modules", maxLines = 1) },
+                                label = { Text("More", maxLines = 1, softWrap = false) },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = MaterialTheme.colorScheme.secondary,
                                     selectedTextColor = InkPrimary,
@@ -354,7 +361,9 @@ fun LifeOsApp(
                                     onQuickAddTaskClick = {
                                         openCreateTaskImmediately = true
                                         currentSection = LifeOsSection.TASKS
-                                    }
+                                    },
+                                    onDismissLevelUp = viewModel::clearLevelUpBanner,
+                                    onShowMessage = viewModel::showMessage
                                 )
                                 LifeOsSection.TASKS -> TasksScreen(
                                     state = state,
@@ -362,7 +371,11 @@ fun LifeOsApp(
                                     onConsumeCreateDialogFlag = { openCreateTaskImmediately = false },
                                     onToggleTask = viewModel::toggleTaskCompleted,
                                     onSaveTask = viewModel::saveTask,
-                                    onDeleteTask = viewModel::deleteTask
+                                    onDeleteTask = viewModel::deleteTask,
+                                    onAddSection = viewModel::addTaskSection,
+                                    onRenameSection = viewModel::renameTaskSection,
+                                    onDeleteSection = viewModel::deleteTaskSection,
+                                    onQuickAddTaskInSection = viewModel::addInlineTask
                                 )
                                 LifeOsSection.CALENDAR -> CalendarScreen(
                                     state = state,
@@ -406,6 +419,8 @@ fun LifeOsApp(
                                     onUpdateAccent = viewModel::updateAccentPreset,
                                     onUpdatePrivacy = viewModel::updatePrivacy,
                                     onUpdateNotifications = viewModel::updateNotifications,
+                                    onUpdateSoundEffects = viewModel::updateSoundEffects,
+                                    onTestSoundEffect = viewModel::previewSoundEffect,
                                     onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                     onMoveWidget = viewModel::moveWidget,
                                     onSignOut = viewModel::signOutLocalSession,
@@ -430,14 +445,14 @@ fun LifeOsApp(
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("LIFE OS Command Dock", style = MaterialTheme.typography.headlineMedium, color = InkPrimary)
-                        Text("Jump to any system module", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        Text("LIFE OS Modules", style = MaterialTheme.typography.headlineMedium, color = InkPrimary)
+                        Text("Open additional LIFE OS tools", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
                         Spacer(Modifier.height(4.dp))
                         val modules = listOf(
                             LifeOsSection.WELLNESS to "Screen time, distracting apps & 7-day trends",
                             LifeOsSection.GROWTH to "Digital Pet ${state.prefs.petName}, XP, streaks & badges",
-                            LifeOsSection.FRIENDS to "Leaderboard, weekly sprints & privacy",
-                            LifeOsSection.SETTINGS to "Profile, theme accents, widgets & data"
+                            LifeOsSection.FRIENDS to "Leaderboard, invites & privacy",
+                            LifeOsSection.SETTINGS to "Profile, themes, widgets & audio"
                         )
                         modules.forEach { (section, subtitle) ->
                             val active = currentSection == section

@@ -9,6 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
+        TaskSectionEntity::class,
         TaskEntity::class,
         CalendarEventEntity::class,
         HabitEntity::class,
@@ -19,10 +20,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FriendEntity::class,
         AiMessageEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
+    abstract fun taskSectionDao(): TaskSectionDao
     abstract fun taskDao(): TaskDao
     abstract fun calendarEventDao(): CalendarEventDao
     abstract fun habitDao(): HabitDao
@@ -51,6 +53,15 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `task_sections` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL DEFAULT 0, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `sectionId` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -58,7 +69,7 @@ abstract class LifeOsDatabase : RoomDatabase() {
                     LifeOsDatabase::class.java,
                     "life_os_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
@@ -71,16 +82,34 @@ object LifeOsSeeder {
     /**
      * Clean zero-data initialization:
      * Only registers default dashboard widget slots and zero-progress challenge definitions.
-     * No pre-filled tasks, schedules, habits, wellness logs, friends, or fake XP.
+     * No pre-filled tasks, task sections, schedules, habits, wellness logs, friends, or fake XP.
      */
     suspend fun seedInitialDataIfNeeded(db: LifeOsDatabase) {
         if (db.widgetConfigDao().getWidgetsOnce().isNotEmpty()) return
 
-        val defaultWidgets = DashboardWidgetType.entries.mapIndexed { index, type ->
+        // Avoid repeating XP & Streak on Home (already displayed in Hero Banner)
+        val initialVisibleTypes = setOf(
+            DashboardWidgetType.TASKS,
+            DashboardWidgetType.STUDY_TIMER,
+            DashboardWidgetType.DIGITAL_PET
+        )
+        val orderedTypes = listOf(
+            DashboardWidgetType.TASKS,
+            DashboardWidgetType.STUDY_TIMER,
+            DashboardWidgetType.DIGITAL_PET,
+            DashboardWidgetType.CALENDAR,
+            DashboardWidgetType.HABIT_TRACKER,
+            DashboardWidgetType.COUNTDOWN,
+            DashboardWidgetType.PRODUCTIVITY_SCORE,
+            DashboardWidgetType.XP_TRACKER,
+            DashboardWidgetType.QUICK_NOTES,
+            DashboardWidgetType.DAILY_STATS
+        )
+        val defaultWidgets = orderedTypes.mapIndexed { index, type ->
             WidgetConfigEntity(
                 widgetTypeName = type.name,
                 sortOrder = index,
-                isVisible = true
+                isVisible = type in initialVisibleTypes
             )
         }
         db.widgetConfigDao().upsertAll(defaultWidgets)

@@ -135,11 +135,11 @@ fun CalendarScreen(
             // View mode switch: Monthly / Weekly / Daily
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("MONTH" to "Monthly", "WEEK" to "Weekly", "DAY" to "Daily").forEach { (key, lbl) ->
+                    listOf("MONTH" to "Month", "WEEK" to "Week", "DAY" to "Day").forEach { (key, lbl) ->
                         FilterChip(
                             selected = calendarView == key,
                             onClick = { calendarView = key },
-                            label = { Text(lbl) }
+                            label = { Text(lbl, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
@@ -188,7 +188,7 @@ fun CalendarScreen(
             // Important Date Countdowns
             if (countdownEvents.isNotEmpty()) {
                 item {
-                    SectionHeader(title = "Important Countdowns", subtitle = "Days remaining tracker")
+                    SectionHeader(title = "Countdowns", subtitle = "Upcoming milestones")
                 }
                 item {
                     Row(
@@ -206,7 +206,7 @@ fun CalendarScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    StatusPill(text = "${daysLeft} DAYS LEFT", color = AmberWarning, icon = Icons.Filled.Flag)
+                                    StatusPill(text = "${daysLeft}d left", color = AmberWarning, icon = Icons.Filled.Flag)
                                     IconButton(
                                         onClick = { onDeleteEvent(cd) },
                                         modifier = Modifier.size(28.dp)

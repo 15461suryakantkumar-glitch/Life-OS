@@ -1,6 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +32,11 @@ import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.LocalFireDepartment
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -41,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,10 +67,14 @@ import com.example.R
 import com.example.data.local.HabitEntity
 import com.example.data.local.TaskEntity
 import com.example.data.local.WidgetConfigEntity
+import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DashboardWidgetCard
+import com.example.ui.components.GlanceWidgetPinningSection
+import com.example.ui.components.LevelUpBanner
 import com.example.ui.components.StatusPill
 import com.example.ui.components.WidgetCustomizerList
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.BorderHairline
 import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.InkPrimary
 import com.example.ui.theme.InkSecondary
@@ -86,10 +98,13 @@ fun HomeScreen(
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onNavigateToSection: (String) -> Unit,
-    onQuickAddTaskClick: () -> Unit
+    onQuickAddTaskClick: () -> Unit,
+    onDismissLevelUp: () -> Unit = {},
+    onShowMessage: (String) -> Unit = {}
 ) {
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var showCustomizerSheet by remember { mutableStateOf(false) }
+    var showWidgetsSheet by remember { mutableStateOf(false) }
+    var widgetsSheetTab by remember { mutableIntStateOf(0) } // 0 = Home-Screen Widgets (Glance), 1 = Dashboard Cards
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -105,9 +120,9 @@ fun HomeScreen(
     LazyColumn(
         modifier = Modifier.fillMaxSize().testTag("home_screen"),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Hero Command Banner
+        // Compact Hero Command Banner
         item {
             Box(
                 modifier = Modifier
@@ -126,13 +141,13 @@ fun HomeScreen(
                         .background(
                             Brush.verticalGradient(
                                 listOf(
-                                    ObsidianBase.copy(alpha = 0.55f),
-                                    ObsidianBase.copy(alpha = 0.88f)
+                                    ObsidianBase.copy(alpha = 0.58f),
+                                    ObsidianBase.copy(alpha = 0.90f)
                                 )
                             )
                         )
                 )
-                Column(modifier = Modifier.padding(18.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -145,29 +160,34 @@ fun HomeScreen(
                                     if (state.prefs.userHandle.isNotBlank()) append(" · ${state.prefs.userHandle}")
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Operator" }}",
-                                style = MaterialTheme.typography.headlineLarge,
+                                style = MaterialTheme.typography.headlineMedium,
                                 color = InkPrimary,
                                 maxLines = 2
                             )
                             Text(
                                 text = "${DateTimeUtils.formatFullDate(state.todayEpochDay)} · ${DateTimeUtils.formatLiveTime(currentTimeMillis)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = InkSecondary
+                                color = InkSecondary,
+                                maxLines = 1
                             )
                         }
                         Row {
                             IconButton(
-                                onClick = { showCustomizerSheet = true },
+                                onClick = {
+                                    widgetsSheetTab = 1
+                                    showWidgetsSheet = true
+                                },
                                 modifier = Modifier.testTag("customize_widgets_btn")
                             ) {
                                 Icon(
                                     Icons.Filled.DashboardCustomize,
-                                    contentDescription = "Customize Widgets",
+                                    contentDescription = "Customize Dashboard Cards",
                                     tint = InkPrimary
                                 )
                             }
@@ -184,7 +204,7 @@ fun HomeScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -194,45 +214,64 @@ fun HomeScreen(
                             text = "Lv.${state.prefs.level} · ${state.prefs.totalXp} XP",
                             color = MaterialTheme.colorScheme.primary
                         )
-                        StatusPill(
-                            text = "${state.prefs.dailyStreak}d Streak",
-                            color = AmberWarning,
-                            icon = Icons.Outlined.LocalFireDepartment
-                        )
+                        AnimatedStreakPill(streakDays = state.prefs.dailyStreak)
                         StatusPill(
                             text = "Score ${state.productivityScore}%",
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
 
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
 
-                    // Quick Command Actions Row
+                    // Quick Command Actions Row (zero truncation on narrow 360dp screens)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilledTonalButton(
                             onClick = onQuickAddTaskClick,
-                            modifier = Modifier.weight(1f).testTag("home_quick_task_btn")
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("home_quick_task_btn")
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Task", maxLines = 1)
+                            Text(
+                                text = "Tasks",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                         FilledTonalButton(
                             onClick = { onNavigateToSection("life_ai") },
-                            modifier = Modifier.weight(1f).testTag("home_life_ai_btn")
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("home_life_ai_btn")
                         ) {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("LIFE AI", maxLines = 1)
+                            Text(
+                                text = "LIFE AI",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                         OutlinedButton(
-                            onClick = { showCustomizerSheet = true },
-                            modifier = Modifier.weight(1f)
+                            onClick = {
+                                widgetsSheetTab = 0
+                                showWidgetsSheet = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            modifier = Modifier.weight(1f).height(40.dp).testTag("home_widgets_btn")
                         ) {
-                            Text("Widgets", maxLines = 1)
+                            Icon(Icons.Filled.Widgets, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "Widgets",
+                                style = MaterialTheme.typography.labelLarge,
+                                maxLines = 1,
+                                softWrap = false
+                            )
                         }
                     }
                 }
@@ -263,7 +302,7 @@ fun HomeScreen(
                 )
                 QuickModuleChip(
                     label = "Friends",
-                    sub = if (state.friends.isEmpty()) "0 Connected" else "${state.friends.size} Connected",
+                    sub = if (state.friends.isEmpty()) "0 linked" else "${state.friends.size} linked",
                     icon = Icons.Filled.Groups,
                     accent = AmberWarning,
                     onClick = { onNavigateToSection("friends") },
@@ -272,12 +311,26 @@ fun HomeScreen(
             }
         }
 
+        // Level-Up Celebration Banner (animated entrance when leveling up)
+        item {
+            LevelUpBanner(
+                level = state.levelUpBanner,
+                petName = state.prefs.petName,
+                onDismiss = onDismissLevelUp
+            )
+        }
+
         // Pet Reaction Toast Banner if active
         item {
-            AnimatedVisibility(visible = state.petReactionBanner != null) {
+            AnimatedVisibility(
+                visible = state.petReactionBanner != null,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -306,10 +359,13 @@ fun HomeScreen(
                         .padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("No widgets active on your dashboard.", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
+                    Text("No cards active on your dashboard.", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
                     Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { showCustomizerSheet = true }) {
-                        Text("Open Widget Studio")
+                    TextButton(onClick = {
+                        widgetsSheetTab = 1
+                        showWidgetsSheet = true
+                    }) {
+                        Text("Customize Cards")
                     }
                 }
             }
@@ -332,14 +388,29 @@ fun HomeScreen(
                     )
                 }
             }
+
+            item {
+                OutlinedButton(
+                    onClick = {
+                        widgetsSheetTab = 1
+                        showWidgetsSheet = true
+                    },
+                    border = BorderStroke(1.dp, BorderHairline),
+                    modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                    Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Customize Cards (${visibleWidgets.size}/${state.widgets.size})", maxLines = 1)
+                }
+            }
         }
 
-        item { Spacer(Modifier.height(24.dp)) }
+        item { Spacer(Modifier.height(20.dp)) }
     }
 
-    if (showCustomizerSheet) {
+    if (showWidgetsSheet) {
         ModalBottomSheet(
-            onDismissRequest = { showCustomizerSheet = false },
+            onDismissRequest = { showWidgetsSheet = false },
             containerColor = ObsidianBase
         ) {
             Column(
@@ -348,19 +419,55 @@ fun HomeScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Text("Widget Studio", style = MaterialTheme.typography.headlineMedium, color = InkPrimary)
                 Text(
-                    "Toggle visibility and reorder cards on your Home Command Center.",
+                    text = if (widgetsSheetTab == 0) "Home-Screen Widgets" else "Dashboard Cards",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = InkPrimary
+                )
+                Text(
+                    text = if (widgetsSheetTab == 0) {
+                        "Pin live Android Jetpack Glance widgets directly to your home screen."
+                    } else {
+                        "Choose which compact cards appear on your Home tab."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
                 )
-                Spacer(Modifier.height(14.dp))
-                WidgetCustomizerList(
-                    widgets = state.widgets,
-                    onToggleVisible = onToggleWidgetVisibility,
-                    onMoveUp = { onMoveWidget(it, -1) },
-                    onMoveDown = { onMoveWidget(it, 1) }
-                )
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = widgetsSheetTab == 0,
+                        onClick = { widgetsSheetTab = 0 },
+                        label = { Text("Home Widgets", maxLines = 1) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                            selectedLabelColor = InkPrimary
+                        )
+                    )
+                    FilterChip(
+                        selected = widgetsSheetTab == 1,
+                        onClick = { widgetsSheetTab = 1 },
+                        label = { Text("Dashboard Cards", maxLines = 1) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
+                            selectedLabelColor = InkPrimary
+                        )
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                if (widgetsSheetTab == 0) {
+                    GlanceWidgetPinningSection(
+                        petName = state.prefs.petName,
+                        onNotice = onShowMessage
+                    )
+                } else {
+                    WidgetCustomizerList(
+                        widgets = state.widgets,
+                        onToggleVisible = onToggleWidgetVisibility,
+                        onMoveUp = { onMoveWidget(it, -1) },
+                        onMoveDown = { onMoveWidget(it, 1) }
+                    )
+                }
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -379,19 +486,33 @@ private fun QuickModuleChip(
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        color = CharcoalElevated
+        shape = RoundedCornerShape(14.dp),
+        color = CharcoalElevated,
+        border = BorderStroke(1.dp, BorderHairline)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(label, style = MaterialTheme.typography.labelLarge, color = InkPrimary, maxLines = 1)
-                Text(sub, style = MaterialTheme.typography.labelSmall, color = InkSecondary, fontWeight = FontWeight.Normal, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(15.dp))
+                Spacer(Modifier.width(5.dp))
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = InkPrimary,
+                    maxLines = 1,
+                    softWrap = false
+                )
             }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = sub,
+                style = MaterialTheme.typography.labelSmall,
+                color = InkSecondary,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

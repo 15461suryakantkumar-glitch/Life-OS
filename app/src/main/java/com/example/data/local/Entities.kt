@@ -45,9 +45,35 @@ enum class AppUsageCategory(val label: String) {
     UTILITY("Utility")
 }
 
+@Entity(tableName = "task_sections")
+data class TaskSectionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val sortOrder: Int = 0,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+object TaskSectionMapper {
+    fun inferCategory(sectionName: String): TaskCategory {
+        val lower = sectionName.lowercase()
+        return when {
+            listOf("phys", "chem", "bio", "math", "study", "exam", "test", "mock", "quiz", "read", "note", "revision", "ncert", "lecture")
+                .any { lower.contains(it) } -> TaskCategory.STUDY
+            listOf("code", "dev", "build", "app", "api", "bug", "proj", "tech", "algo")
+                .any { lower.contains(it) } -> TaskCategory.CODE
+            listOf("health", "gym", "run", "fit", "medit", "walk", "sleep", "diet", "water", "workout")
+                .any { lower.contains(it) } -> TaskCategory.HEALTH
+            listOf("home", "life", "errand", "chore", "personal", "shop", "family")
+                .any { lower.contains(it) } -> TaskCategory.PERSONAL
+            else -> TaskCategory.WORK
+        }
+    }
+}
+
 @Entity(tableName = "tasks")
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sectionId: Long = 0L,
     val title: String,
     val description: String = "",
     val priorityName: String = TaskPriority.MEDIUM.name,
