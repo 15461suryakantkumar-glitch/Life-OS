@@ -22,12 +22,27 @@ jobs:
         with:
           java-version: "17"
           distribution: "temurin"
-          cache: "gradle"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "9.3.1"
+
+      - name: Accept Android SDK licenses & ensure SDK 36.1
+        run: |
+          SDK_MANAGER=$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -name sdkmanager 2>/dev/null | head -n 1 || true)
+          if [ -n "$SDK_MANAGER" ]; then
+            (yes || true) | "$SDK_MANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDK_MANAGER" "platforms;android-36.1" "build-tools;36.0.0" || true
+          fi
+
+      - name: Restore debug keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f debug.keystore ]; then
+            keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
 
       - name: Assemble Debug APK
         run: gradle assembleDebug --stacktrace
