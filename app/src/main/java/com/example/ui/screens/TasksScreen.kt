@@ -37,6 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,10 +85,12 @@ fun TasksScreen(
     var editingTask by remember { mutableStateOf<TaskEntity?>(null) }
     var showTaskDialog by remember { mutableStateOf(false) }
 
-    if (openCreateDialogImmediately) {
-        showTaskDialog = true
-        editingTask = null
-        onConsumeCreateDialogFlag()
+    LaunchedEffect(openCreateDialogImmediately) {
+        if (openCreateDialogImmediately) {
+            editingTask = null
+            showTaskDialog = true
+            onConsumeCreateDialogFlag()
+        }
     }
 
     val today = state.todayEpochDay

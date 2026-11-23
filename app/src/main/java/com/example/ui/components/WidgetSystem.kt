@@ -75,6 +75,7 @@ import com.example.ui.theme.InkPrimary
 import com.example.ui.theme.InkSecondary
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
+import java.util.Locale
 
 @Composable
 fun DashboardWidgetCard(
@@ -359,7 +360,7 @@ private fun StudyTimerWidget(
     val timer = state.studyTimer
     val mins = timer.remainingSeconds / 60
     val secs = timer.remainingSeconds % 60
-    val formatted = String.format("%02d:%02d", mins, secs)
+    val formatted = String.format(Locale.US, "%02d:%02d", mins, secs)
     val totalSecs = (timer.selectedMinutes * 60).coerceAtLeast(1)
     val progress = 1f - (timer.remainingSeconds.toFloat() / totalSecs)
 

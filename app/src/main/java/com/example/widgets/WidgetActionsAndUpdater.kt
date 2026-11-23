@@ -111,8 +111,6 @@ class ToggleHabitWidgetAction : ActionCallback {
     }
 }
 
-private class StopCollectException : RuntimeException()
-
 class PetInteractWidgetAction : ActionCallback {
     override suspend fun onAction(
         context: Context,
