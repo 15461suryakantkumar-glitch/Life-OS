@@ -87,6 +87,7 @@ fun SettingsScreen(
     onUpdateNotifications: (Boolean, Boolean, Boolean) -> Unit,
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
+    onSignOut: () -> Unit,
     onResetData: () -> Unit
 ) {
     val prefs = state.prefs
@@ -352,11 +353,29 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
+                    text = buildString {
+                        append("Active Session: ${prefs.userName} (${prefs.userHandle})")
+                        if (prefs.userEmail.isNotBlank()) append(" · ${prefs.userEmail}")
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
                     "Local Room + DataStore persistence active. Firebase AI Logic connected. Firebase Auth, Firestore Sync & Android UsageStats adapters ready.",
                     style = MaterialTheme.typography.bodySmall,
                     color = InkSecondary
                 )
                 Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onSignOut,
+                    modifier = Modifier.fillMaxWidth().testTag("sign_out_btn")
+                ) {
+                    Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Switch Account / Sign Out")
+                }
+                Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { showResetConfirm = true },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseAlert),

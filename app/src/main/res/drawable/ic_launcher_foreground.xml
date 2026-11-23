@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/img_lifeos_icon_1795431262819"
+        android:drawable="@drawable/lifeos_neon_icon_1795447784366"
         android:gravity="center" />
 </layer-list>

@@ -64,6 +64,7 @@ data class StudyTimerState(
 )
 
 data class LifeOsUiState(
+    val isPrefsLoaded: Boolean = false,
     val prefs: UserPreferencesState = UserPreferencesState(),
     val tasks: List<TaskEntity> = emptyList(),
     val events: List<CalendarEventEntity> = emptyList(),
@@ -186,6 +187,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         transientFlow
     ) { core, sec, trans ->
         LifeOsUiState(
+            isPrefsLoaded = true,
             prefs = core.prefs,
             tasks = core.tasks,
             events = core.events,
@@ -233,6 +235,36 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearAiError() {
         aiErrorState.value = null
+    }
+
+    // --- ONBOARDING & LOCAL SESSION ---
+    fun completeOnboarding(
+        name: String,
+        identityOrEmail: String,
+        petName: String,
+        focusGoalMinutes: Int,
+        accentPreset: ThemeAccentPreset
+    ) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            prefsRepo.completeOnboardingSignIn(
+                name = name,
+                identityOrEmail = identityOrEmail,
+                petName = petName,
+                focusGoal = focusGoalMinutes,
+                accentPreset = accentPreset
+            )
+            prefsRepo.unlockBadge("FIRST_LAUNCH")
+            snackbarState.value = "Welcome to LIFE OS, ${name.trim()}"
+            syncHomeWidgets()
+        }
+    }
+
+    fun signOutLocalSession() {
+        viewModelScope.launch {
+            prefsRepo.signOutSession()
+            snackbarState.value = "Signed out of local session"
+        }
     }
 
     // --- TASKS ---

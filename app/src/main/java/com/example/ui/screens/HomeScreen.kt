@@ -138,17 +138,18 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "LIFE OS · COMMAND",
+                                text = "LIFE OS · COMMAND · ${state.prefs.userHandle}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.substringBefore(" ")}",
+                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName}",
                                 style = MaterialTheme.typography.headlineLarge,
-                                color = InkPrimary
+                                color = InkPrimary,
+                                maxLines = 2
                             )
                             Text(
                                 text = "${DateTimeUtils.formatFullDate(state.todayEpochDay)} · ${DateTimeUtils.formatLiveTime(currentTimeMillis)}",

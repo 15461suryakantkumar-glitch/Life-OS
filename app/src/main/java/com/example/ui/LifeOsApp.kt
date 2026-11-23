@@ -72,11 +72,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.animation.Crossfade
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GrowthScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LifeAiScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TasksScreen
 import com.example.ui.screens.WellnessScreen
@@ -148,7 +150,7 @@ fun LifeOsApp(
     }
 
     // Ensure system Back returns to Home from secondary sections
-    BackHandler(enabled = currentSection != LifeOsSection.HOME) {
+    BackHandler(enabled = state.prefs.isSignedIn && currentSection != LifeOsSection.HOME) {
         currentSection = LifeOsSection.HOME
     }
 
@@ -158,11 +160,41 @@ fun LifeOsApp(
     }
 
     LifeOsTheme(accentPreset = state.prefs.accentPreset) {
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(ObsidianVoid)
-        ) {
+        val gateStage = when {
+            !state.isPrefsLoaded -> 0
+            !state.prefs.isSignedIn -> 1
+            else -> 2
+        }
+        Crossfade(targetState = gateStage, label = "life_os_auth_gate") { stage ->
+            when (stage) {
+                0 -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(ObsidianVoid)
+                    )
+                }
+                1 -> {
+                    OnboardingScreen(
+                        existingPrefs = state.prefs,
+                        onCompleteSignIn = { name, identity, petName, focusGoal, accent ->
+                            currentSection = LifeOsSection.HOME
+                            viewModel.completeOnboarding(
+                                name = name,
+                                identityOrEmail = identity,
+                                petName = petName,
+                                focusGoalMinutes = focusGoal,
+                                accentPreset = accent
+                            )
+                        }
+                    )
+                }
+                else -> {
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(ObsidianVoid)
+                    ) {
             val isWideScreen = maxWidth >= 600.dp
 
             Scaffold(
@@ -343,6 +375,7 @@ fun LifeOsApp(
                                 onUpdateNotifications = viewModel::updateNotifications,
                                 onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                 onMoveWidget = viewModel::moveWidget,
+                                onSignOut = viewModel::signOutLocalSession,
                                 onResetData = viewModel::resetAllLocalData
                             )
                         }
@@ -406,6 +439,9 @@ fun LifeOsApp(
                         }
                         Spacer(Modifier.height(12.dp))
                     }
+                }
+            }
+        }
                 }
             }
         }

@@ -31,8 +31,10 @@ enum class PetGrowthStage(val title: String, val minLevel: Int, val description:
 }
 
 data class UserPreferencesState(
+    val isSignedIn: Boolean = false,
     val userName: String = "Alex Mercer",
     val userHandle: String = "@alex.os",
+    val userEmail: String = "",
     val dailyFocusGoalMinutes: Int = 120,
     val dailyScreenLimitMinutes: Int = 180,
     val focusMinutesLoggedToday: Int = 45,
@@ -71,8 +73,10 @@ data class UserPreferencesState(
 
 class UserPreferencesRepository(private val context: Context) {
     private object Keys {
+        val IS_SIGNED_IN = booleanPreferencesKey("is_signed_in")
         val USER_NAME = stringPreferencesKey("user_name")
         val USER_HANDLE = stringPreferencesKey("user_handle")
+        val USER_EMAIL = stringPreferencesKey("user_email")
         val FOCUS_GOAL = intPreferencesKey("focus_goal_mins")
         val SCREEN_LIMIT = intPreferencesKey("screen_limit_mins")
         val FOCUS_TODAY = intPreferencesKey("focus_logged_today")
@@ -107,8 +111,10 @@ class UserPreferencesRepository(private val context: Context) {
         val badges = badgesRaw.split(",").filter { it.isNotBlank() }.toSet()
 
         UserPreferencesState(
+            isSignedIn = prefs[Keys.IS_SIGNED_IN] ?: false,
             userName = prefs[Keys.USER_NAME] ?: "Alex Mercer",
             userHandle = prefs[Keys.USER_HANDLE] ?: "@alex.os",
+            userEmail = prefs[Keys.USER_EMAIL] ?: "",
             dailyFocusGoalMinutes = prefs[Keys.FOCUS_GOAL] ?: 120,
             dailyScreenLimitMinutes = prefs[Keys.SCREEN_LIMIT] ?: 180,
             focusMinutesLoggedToday = prefs[Keys.FOCUS_TODAY] ?: 45,
@@ -156,6 +162,59 @@ class UserPreferencesRepository(private val context: Context) {
                 .split(",").filter { it.isNotBlank() }.toMutableSet()
             existing.add(badgeId)
             prefs[Keys.UNLOCKED_BADGES] = existing.joinToString(",")
+        }
+    }
+
+    suspend fun completeOnboardingSignIn(
+        name: String,
+        identityOrEmail: String,
+        petName: String,
+        focusGoal: Int,
+        accentPreset: ThemeAccentPreset
+    ) {
+        val cleanName = name.trim().ifEmpty { "Commander" }
+        val cleanIdentity = identityOrEmail.trim()
+        val derivedEmail = if (cleanIdentity.contains("@") && cleanIdentity.contains(".")) cleanIdentity else ""
+        val derivedHandle = when {
+            derivedEmail.isNotEmpty() -> {
+                val prefix = derivedEmail.substringBefore("@")
+                    .lowercase()
+                    .replace(Regex("[^a-z0-9._]"), "")
+                    .ifEmpty { "user" }
+                "@$prefix"
+            }
+            cleanIdentity.isNotEmpty() -> {
+                val stripped = cleanIdentity.removePrefix("@")
+                    .lowercase()
+                    .replace(Regex("[^a-z0-9._]"), "")
+                    .ifEmpty { "user" }
+                "@$stripped"
+            }
+            else -> {
+                val slug = cleanName.lowercase()
+                    .replace(Regex("[^a-z0-9]"), "")
+                    .take(14)
+                    .ifEmpty { "commander" }
+                "@$slug.os"
+            }
+        }
+        val cleanPet = petName.trim().ifEmpty { "NOVA" }.uppercase()
+
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.IS_SIGNED_IN] = true
+            prefs[Keys.USER_NAME] = cleanName
+            prefs[Keys.USER_HANDLE] = derivedHandle
+            prefs[Keys.USER_EMAIL] = derivedEmail
+            prefs[Keys.PET_NAME] = cleanPet
+            prefs[Keys.FOCUS_GOAL] = focusGoal.coerceIn(15, 600)
+            prefs[Keys.ACCENT_PRESET] = accentPreset.name
+            prefs[Keys.LAST_ACTIVE_DAY] = DateTimeUtils.todayEpochDay()
+        }
+    }
+
+    suspend fun signOutSession() {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.IS_SIGNED_IN] = false
         }
     }
 
