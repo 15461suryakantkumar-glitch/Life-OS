@@ -1,0 +1,6 @@
+{
+  "name": "Life OS",
+  "description": "Personal productivity command center with customizable widgets, smart calendar, tasks, digital wellness, gamified companion, and LIFE AI assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">Life OS</string>
+    <string name="widget_tasks_desc">LIFE OS · Interactive missions &amp; XP checklist</string>
+    <string name="widget_calendar_desc">LIFE OS · Smart schedule &amp; upcoming blocks</string>
+    <string name="widget_countdown_desc">LIFE OS · Milestone countdowns &amp; days left</string>
+    <string name="widget_xp_desc">LIFE OS · Level, total XP &amp; productivity score</string>
+    <string name="widget_streak_desc">LIFE OS · Daily streaks &amp; quick habit pulse</string>
+    <string name="widget_pet_desc">LIFE OS · Interactive NOVA digital companion</string>
+</resources>
