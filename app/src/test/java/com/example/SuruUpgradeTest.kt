@@ -8,7 +8,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.ai.LifeContextSnapshot
+import com.example.suru.LifeContextSnapshot
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.KUTTA_NAME
 import com.example.data.local.LifeOsDatabase
@@ -31,10 +31,12 @@ import com.example.suru.SuruVoiceLanguage
 import com.example.suru.SuruVoiceManager
 import com.example.suru.SuruVoiceState
 import com.example.suru.TaskIntelligence
-import com.example.ui.theme.FeeloraDarkBg
-import com.example.ui.theme.FeeloraDarkPrimary
-import com.example.ui.theme.FeeloraLightBg
-import com.example.ui.theme.FeeloraLightPrimary
+import com.example.ui.theme.AuroraPrimary
+import com.example.ui.theme.AuroraVoid
+import com.example.ui.theme.HybridLavenderBg
+import com.example.ui.theme.HybridLavenderPrimary
+import com.example.ui.theme.MatchaBg
+import com.example.ui.theme.MatchaPrimary
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -398,11 +400,13 @@ class SuruUpgradeTest {
         assertFalse(TaskReminderScheduler.shouldFireBriefingForWindow(currentHour = 8, targetHour = 8, lastFiredDay = 101L, todayEpochDay = 101L))
         assertFalse(TaskReminderScheduler.shouldFireBriefingForWindow(currentHour = 9, targetHour = 8, lastFiredDay = 100L, todayEpochDay = 101L))
 
-        // FEELORA Lavender hex palette and distinct identities
-        assertEquals(Color(0xFFF8F5FF), FeeloraLightBg)
-        assertEquals(Color(0xFFA78BFA), FeeloraLightPrimary)
-        assertEquals(Color(0xFF171321), FeeloraDarkBg)
-        assertEquals(Color(0xFFB99AFF), FeeloraDarkPrimary)
+        // FEELORA 2.0 3-theme palette and distinct identities
+        assertEquals(Color(0xFF161124), HybridLavenderBg)
+        assertEquals(Color(0xFFA78BFA), HybridLavenderPrimary)
+        assertEquals(Color(0xFF090B14), AuroraVoid)
+        assertEquals(Color(0xFF8B5CF6), AuroraPrimary)
+        assertEquals(Color(0xFFF3F6EE), MatchaBg)
+        assertEquals(Color(0xFF2F6B4F), MatchaPrimary)
         assertEquals("KUTTA", KUTTA_NAME)
         assertEquals(UserAvatarPreset.STAR_BUNNY, UserPreferencesState().avatarPreset)
         assertTrue(UserPreferencesState().avatarPreset.label.contains("BUNNI"))

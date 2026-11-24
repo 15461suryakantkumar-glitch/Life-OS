@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,6 +69,9 @@ import com.example.data.local.CalendarEventEntity
 import com.example.data.local.RecurrencePattern
 import com.example.data.local.TaskCategory
 import com.example.ui.components.CategoryBadge
+import com.example.ui.components.FeeloraScreenBackdrop
+import com.example.ui.components.FeeloraSegmentedRow
+import com.example.ui.components.FeeloraTopHeader
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
@@ -84,7 +88,10 @@ fun CalendarScreen(
     onSaveEvent: (String, String, Long, Int, Int, TaskCategory, RecurrencePattern, Int, Boolean) -> Unit,
     onDeleteEvent: (CalendarEventEntity) -> Unit,
     onAskSuru: () -> Unit = {},
-    onShowMessage: (String) -> Unit = {}
+    onShowMessage: (String) -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    onOpenProfile: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val context = LocalContext.current
@@ -113,7 +120,7 @@ fun CalendarScreen(
     }
 
     Scaffold(
-        containerColor = tokens.background,
+        containerColor = Color.Transparent,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
@@ -125,270 +132,281 @@ fun CalendarScreen(
             }
         }
     ) { innerPadding ->
-        LazyColumn(
+        FeeloraScreenBackdrop(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .testTag("calendar_screen"),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Smart Calendar", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-                        Text(
-                            "Schedule focus blocks, recurring events, task deadlines, and countdowns",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.inkSecondary
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    OutlinedButton(
-                        onClick = onAskSuru,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        modifier = Modifier.height(38.dp).testTag("calendar_ask_suru_btn")
-                    ) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Ask SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
-            }
-
-            // View mode switch: Monthly / Weekly / Daily
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("MONTH" to "Month", "WEEK" to "Week", "DAY" to "Day").forEach { (key, lbl) ->
-                        FilterChip(
-                            selected = calendarView == key,
-                            onClick = { calendarView = key },
-                            label = { Text(lbl, maxLines = 1, softWrap = false) }
-                        )
-                    }
-                }
-            }
-
-            // Monthly Grid or Weekly Strip
-            if (calendarView == "MONTH") {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("calendar_screen"),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 item {
-                    MonthlyCalendarGrid(
-                        year = displayedYear,
-                        monthZeroBased = displayedMonth,
-                        todayEpochDay = today,
-                        selectedEpochDay = selectedEpochDay,
-                        eventDays = state.events.map { it.dateEpochDay }.toSet(),
-                        taskDays = state.tasks.map { it.deadlineEpochDay }.toSet(),
-                        onPrevMonth = {
-                            if (displayedMonth == 0) {
-                                displayedMonth = 11
-                                displayedYear -= 1
-                            } else {
-                                displayedMonth -= 1
-                            }
-                        },
-                        onNextMonth = {
-                            if (displayedMonth == 11) {
-                                displayedMonth = 0
-                                displayedYear += 1
-                            } else {
-                                displayedMonth += 1
-                            }
-                        },
-                        onSelectDay = { selectedEpochDay = it }
-                    )
-                }
-            } else if (calendarView == "WEEK") {
-                item {
-                    WeeklyCalendarStrip(
-                        startDay = today,
-                        selectedEpochDay = selectedEpochDay,
-                        eventDays = state.events.map { it.dateEpochDay }.toSet(),
-                        onSelectDay = { selectedEpochDay = it }
-                    )
-                }
-            }
-
-            // Important Date Countdowns
-            if (countdownEvents.isNotEmpty()) {
-                item {
-                    SectionHeader(title = "Countdowns", subtitle = "Upcoming milestone dates")
-                }
-                item {
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        countdownEvents.forEach { cd ->
-                            val daysLeft = DateTimeUtils.daysBetween(today, cd.dateEpochDay).coerceAtLeast(0)
-                            ObsidianCard(
-                                modifier = Modifier.width(184.dp),
-                                elevated = true
+                    FeeloraTopHeader(
+                        title = "Calendar",
+                        subtitle = "Focus blocks, deadlines & milestone countdowns",
+                        userName = state.prefs.userName,
+                        avatarPreset = state.prefs.avatarPreset,
+                        avatarUri = state.prefs.avatarPhotoUri,
+                        unreadNotifications = state.unreadNotificationsCount,
+                        onOpenDrawer = onOpenDrawer,
+                        onOpenNotifications = onOpenNotifications,
+                        onOpenProfile = onOpenProfile,
+                        trailingAction = {
+                            OutlinedButton(
+                                onClick = onAskSuru,
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .heightIn(min = 40.dp)
+                                    .testTag("calendar_ask_suru_btn")
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                            }
+                        }
+                    )
+                }
+
+                // View mode switch: Monthly / Weekly / Daily
+                item {
+                    FeeloraSegmentedRow(
+                        items = listOf("MONTH", "WEEK", "DAY"),
+                        selectedItem = calendarView,
+                        labelFor = {
+                            when (it) {
+                                "WEEK" -> "Week"
+                                "DAY" -> "Day"
+                                else -> "Month"
+                            }
+                        },
+                        onSelect = { calendarView = it },
+                        tagPrefix = "calendar_view"
+                    )
+                }
+
+                // Monthly Grid or Weekly Strip
+                if (calendarView == "MONTH") {
+                    item {
+                        MonthlyCalendarGrid(
+                            year = displayedYear,
+                            monthZeroBased = displayedMonth,
+                            todayEpochDay = today,
+                            selectedEpochDay = selectedEpochDay,
+                            eventDays = state.events.map { it.dateEpochDay }.toSet(),
+                            taskDays = state.tasks.map { it.deadlineEpochDay }.toSet(),
+                            onPrevMonth = {
+                                if (displayedMonth == 0) {
+                                    displayedMonth = 11
+                                    displayedYear -= 1
+                                } else {
+                                    displayedMonth -= 1
+                                }
+                            },
+                            onNextMonth = {
+                                if (displayedMonth == 11) {
+                                    displayedMonth = 0
+                                    displayedYear += 1
+                                } else {
+                                    displayedMonth += 1
+                                }
+                            },
+                            onSelectDay = { selectedEpochDay = it }
+                        )
+                    }
+                } else if (calendarView == "WEEK") {
+                    item {
+                        WeeklyCalendarStrip(
+                            startDay = today,
+                            selectedEpochDay = selectedEpochDay,
+                            eventDays = state.events.map { it.dateEpochDay }.toSet(),
+                            onSelectDay = { selectedEpochDay = it }
+                        )
+                    }
+                }
+
+                // Important Date Countdowns
+                if (countdownEvents.isNotEmpty()) {
+                    item {
+                        SectionHeader(title = "Countdowns", subtitle = "Upcoming milestone dates")
+                    }
+                    item {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            countdownEvents.forEach { cd ->
+                                val daysLeft = DateTimeUtils.daysBetween(today, cd.dateEpochDay).coerceAtLeast(0)
+                                ObsidianCard(
+                                    modifier = Modifier.width(184.dp),
+                                    elevated = true
                                 ) {
-                                    StatusPill(text = "${daysLeft}d left", color = AmberWarning, icon = Icons.Filled.Flag)
-                                    IconButton(
-                                        onClick = { onDeleteEvent(cd) },
-                                        modifier = Modifier.size(28.dp)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            Icons.Filled.DeleteOutline,
-                                            contentDescription = "Delete countdown",
-                                            tint = tokens.inkMuted,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                        StatusPill(text = "${daysLeft}d left", color = AmberWarning, icon = Icons.Filled.Flag)
+                                        IconButton(
+                                            onClick = { onDeleteEvent(cd) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.DeleteOutline,
+                                                contentDescription = "Delete countdown",
+                                                tint = tokens.inkMuted,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = cd.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = tokens.inkPrimary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = DateTimeUtils.formatFullDate(cd.dateEpochDay),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.inkSecondary,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
                                 }
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    text = cd.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = tokens.inkPrimary,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = DateTimeUtils.formatFullDate(cd.dateEpochDay),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = tokens.inkSecondary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
                             }
                         }
                     }
                 }
-            }
 
-            // Selected Day Agenda
-            item {
-                SectionHeader(
-                    title = "Agenda · ${DateTimeUtils.formatFullDate(selectedEpochDay)}",
-                    subtitle = "${selectedDayEvents.size} events · ${selectedDayTasks.size} task deadlines"
-                )
-            }
-
-            if (selectedDayEvents.isEmpty() && selectedDayTasks.isEmpty()) {
+                // Selected Day Agenda
                 item {
-                    ObsidianCard {
-                        Text(
-                            "No events or task deadlines scheduled for this date.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = tokens.inkSecondary
-                        )
-                    }
+                    SectionHeader(
+                        title = "Agenda · ${DateTimeUtils.formatFullDate(selectedEpochDay)}",
+                        subtitle = "${selectedDayEvents.size} events · ${selectedDayTasks.size} task deadlines"
+                    )
                 }
-            } else {
-                items(selectedDayEvents, key = { "ev_${it.id}" }) { event ->
-                    ObsidianCard {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.width(68.dp)) {
-                                Text(
-                                    text = DateTimeUtils.formatTimeOfDay(event.startMinuteOfDay),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                                Text(
-                                    text = "${event.durationMinutes}m",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = tokens.inkMuted
-                                )
-                            }
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(event.title, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                                if (event.notes.isNotBlank()) {
-                                    Text(event.notes, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
-                                }
-                                Spacer(Modifier.height(6.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    CategoryBadge(event.category)
-                                    if (event.reminderMinutesBefore > 0) {
-                                        StatusPill(
-                                            text = "${event.reminderMinutesBefore}m alert",
-                                            color = MaterialTheme.colorScheme.primary,
-                                            icon = Icons.Filled.NotificationsActive
-                                        )
-                                    }
-                                    if (event.recurrence != RecurrencePattern.NONE) {
-                                        StatusPill(
-                                            text = event.recurrence.label,
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            icon = Icons.Filled.Repeat
-                                        )
-                                    }
-                                }
-                            }
-                            IconButton(
-                                onClick = {
-                                    val dayMillis = event.dateEpochDay * 86_400_000L
-                                    val cal = Calendar.getInstance().apply {
-                                        timeInMillis = dayMillis
-                                        set(Calendar.HOUR_OF_DAY, event.startMinuteOfDay / 60)
-                                        set(Calendar.MINUTE, event.startMinuteOfDay % 60)
-                                        set(Calendar.SECOND, 0)
-                                        set(Calendar.MILLISECOND, 0)
-                                    }
-                                    val startMs = cal.timeInMillis
-                                    val endMs = startMs + event.durationMinutes.coerceAtLeast(15) * 60_000L
-                                    val intent = Intent(Intent.ACTION_INSERT)
-                                        .setData(CalendarContract.Events.CONTENT_URI)
-                                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMs)
-                                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMs)
-                                        .putExtra(CalendarContract.Events.TITLE, event.title)
-                                        .putExtra(CalendarContract.Events.DESCRIPTION, event.notes.ifBlank { "Scheduled via Feelora SURU" })
-                                    try {
-                                        context.startActivity(intent)
-                                    } catch (_: ActivityNotFoundException) {
-                                        onShowMessage("No external Calendar app available to export.")
-                                    }
-                                },
-                                modifier = Modifier.testTag("export_event_btn_${event.id}")
+
+                if (selectedDayEvents.isEmpty() && selectedDayTasks.isEmpty()) {
+                    item {
+                        ObsidianCard {
+                            Text(
+                                "No events or task deadlines scheduled for this date.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                    }
+                } else {
+                    items(selectedDayEvents, key = { "ev_${it.id}" }) { event ->
+                        ObsidianCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    Icons.Filled.EventAvailable,
-                                    contentDescription = "Export to Google Calendar",
-                                    tint = MaterialTheme.colorScheme.secondary
-                                )
+                                Column(modifier = Modifier.width(68.dp)) {
+                                    Text(
+                                        text = DateTimeUtils.formatTimeOfDay(event.startMinuteOfDay),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                    Text(
+                                        text = "${event.durationMinutes}m",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = tokens.inkMuted
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(event.title, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                    if (event.notes.isNotBlank()) {
+                                        Text(event.notes, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        CategoryBadge(event.category)
+                                        if (event.reminderMinutesBefore > 0) {
+                                            StatusPill(
+                                                text = "${event.reminderMinutesBefore}m alert",
+                                                color = MaterialTheme.colorScheme.primary,
+                                                icon = Icons.Filled.NotificationsActive
+                                            )
+                                        }
+                                        if (event.recurrence != RecurrencePattern.NONE) {
+                                            StatusPill(
+                                                text = event.recurrence.label,
+                                                color = MaterialTheme.colorScheme.secondary,
+                                                icon = Icons.Filled.Repeat
+                                            )
+                                        }
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val dayMillis = event.dateEpochDay * 86_400_000L
+                                        val cal = Calendar.getInstance().apply {
+                                            timeInMillis = dayMillis
+                                            set(Calendar.HOUR_OF_DAY, event.startMinuteOfDay / 60)
+                                            set(Calendar.MINUTE, event.startMinuteOfDay % 60)
+                                            set(Calendar.SECOND, 0)
+                                            set(Calendar.MILLISECOND, 0)
+                                        }
+                                        val startMs = cal.timeInMillis
+                                        val endMs = startMs + event.durationMinutes.coerceAtLeast(15) * 60_000L
+                                        val intent = Intent(Intent.ACTION_INSERT)
+                                            .setData(CalendarContract.Events.CONTENT_URI)
+                                            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMs)
+                                            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMs)
+                                            .putExtra(CalendarContract.Events.TITLE, event.title)
+                                            .putExtra(CalendarContract.Events.DESCRIPTION, event.notes.ifBlank { "Scheduled via Feelora SURU" })
+                                        try {
+                                            context.startActivity(intent)
+                                        } catch (_: ActivityNotFoundException) {
+                                            onShowMessage("No external Calendar app available to export.")
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .testTag("export_event_btn_${event.id}")
+                                ) {
+                                    Icon(
+                                        Icons.Filled.EventAvailable,
+                                        contentDescription = "Export to Google Calendar",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                IconButton(onClick = { onDeleteEvent(event) }, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete event", tint = RoseAlert)
+                                }
                             }
-                            IconButton(onClick = { onDeleteEvent(event) }) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete event", tint = RoseAlert)
+                        }
+                    }
+
+                    items(selectedDayTasks, key = { "task_${it.id}" }) { task ->
+                        ObsidianCard {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Task Deadline", style = MaterialTheme.typography.labelSmall, color = AmberWarning)
+                                    Text(task.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                                }
+                                CategoryBadge(task.category)
                             }
                         }
                     }
                 }
 
-                items(selectedDayTasks, key = { "task_${it.id}" }) { task ->
-                    ObsidianCard {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Task Deadline", style = MaterialTheme.typography.labelSmall, color = AmberWarning)
-                                Text(task.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
-                            }
-                            CategoryBadge(task.category)
-                        }
-                    }
-                }
+                item { Spacer(Modifier.height(72.dp)) }
             }
-
-            item { Spacer(Modifier.height(72.dp)) }
         }
     }
 
@@ -439,7 +457,7 @@ private fun MonthlyCalendarGrid(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onPrevMonth) {
+            IconButton(onClick = onPrevMonth, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month", tint = tokens.inkPrimary)
             }
             Text(
@@ -449,7 +467,7 @@ private fun MonthlyCalendarGrid(
                 maxLines = 1,
                 softWrap = false
             )
-            IconButton(onClick = onNextMonth) {
+            IconButton(onClick = onNextMonth, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month", tint = tokens.inkPrimary)
             }
         }
@@ -481,7 +499,7 @@ private fun MonthlyCalendarGrid(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(40.dp)
+                                .height(42.dp)
                                 .clip(RoundedCornerShape(tokens.smallRadius))
                                 .background(
                                     when {
@@ -516,7 +534,7 @@ private fun MonthlyCalendarGrid(
                             }
                         }
                     } else {
-                        Spacer(modifier = Modifier.weight(1f).height(40.dp))
+                        Spacer(modifier = Modifier.weight(1f).height(42.dp))
                     }
                 }
             }

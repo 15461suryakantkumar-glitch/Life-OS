@@ -93,11 +93,22 @@ enum class UserAvatarPreset(val label: String) {
 
 data class UserPreferencesState(
     val isSignedIn: Boolean = false,
+    val hasCompletedOnboarding: Boolean = false,
     val userName: String = "",
     val userHandle: String = "",
     val userEmail: String = "",
+    val userBio: String = "",
+    val preferredLanguage: String = "English",
     val friendCode: String = "",
     val avatarPreset: UserAvatarPreset = UserAvatarPreset.STAR_BUNNY,
+    val avatarPhotoUri: String = "",
+    // Remote Supabase Session (Auth + Together)
+    val supabaseUserId: String = "",
+    val supabaseAccessToken: String = "",
+    val supabaseRefreshToken: String = "",
+    val supabaseSessionExpiresAt: Long = 0L,
+    val emailVerified: Boolean = false,
+    // Goals & Wellness
     val dailyFocusGoalMinutes: Int = 120,
     val dailyScreenLimitMinutes: Int = 180,
     val focusMinutesLoggedToday: Int = 0,
@@ -108,7 +119,8 @@ data class UserPreferencesState(
     val averageCycleLengthDays: Int = 28,
     val averagePeriodLengthDays: Int = 5,
     val reducedMotionEnabled: Boolean = false,
-    val themeMode: LifeOsThemeMode = LifeOsThemeMode.FEELORA_DARK,
+    val themeMode: LifeOsThemeMode = LifeOsThemeMode.HYBRID_LAVENDER,
+    // Gamification & Companion
     val totalXp: Int = 0,
     val dailyStreak: Int = 0,
     val weeklyStreak: Int = 0,
@@ -119,29 +131,43 @@ data class UserPreferencesState(
     val petEnergy: Int = 80,
     val equippedAccessory: PetAccessory = PetAccessory.NONE,
     val unlockedBadges: Set<String> = emptySet(),
+    // Granular Opt-In Together Privacy (Journals, SURU, Cycle Care are NEVER shared)
     val shareXpWithFriends: Boolean = true,
     val shareStreaksWithFriends: Boolean = true,
     val shareFocusWithFriends: Boolean = false,
     val shareChallengesWithFriends: Boolean = true,
+    // 5-Category Notification Settings
     val notificationsEnabled: Boolean = true,
     val taskRemindersEnabled: Boolean = true,
+    val pendingTaskFollowUpEnabled: Boolean = true,
+    val companionAlertsEnabled: Boolean = true,
+    val achievementAlertsEnabled: Boolean = true,
+    val togetherAlertsEnabled: Boolean = true,
     val wellnessAlertsEnabled: Boolean = true,
     val quietHoursEnabled: Boolean = true,
     val quietStartHour: Int = 22,
     val quietEndHour: Int = 7,
     val reminderFrequencyHours: Int = 2,
     val maxRemindersPerTaskPerDay: Int = 3,
+    // 10-Category Sound & Haptics Settings
     val soundEffectsEnabled: Boolean = true,
     val soundVolume: Float = 0.72f,
     val hapticsEnabled: Boolean = true,
     val soundNavEnabled: Boolean = true,
     val soundInteractionEnabled: Boolean = true,
     val soundTaskEnabled: Boolean = true,
-    val soundCalendarEnabled: Boolean = true,
+    val soundAchievementEnabled: Boolean = true,
+    val soundStreakEnabled: Boolean = true,
     val soundSuruEnabled: Boolean = true,
-    val soundGamificationEnabled: Boolean = true,
     val soundCompanionEnabled: Boolean = true,
+    val soundTogetherEnabled: Boolean = true,
+    val soundReminderEnabled: Boolean = true,
+    val soundNotificationEnabled: Boolean = true,
+    // Legacy compatibility flags
+    val soundCalendarEnabled: Boolean = true,
+    val soundGamificationEnabled: Boolean = true,
     val hasCompletedPermissionSetup: Boolean = false,
+    // SURU Voice & Multi-Provider AI Gateway
     val suruPersonalizationEnabled: Boolean = true,
     val suruVoiceMuted: Boolean = false,
     val suruSpeechSpeed: Float = 1.0f,
@@ -149,7 +175,14 @@ data class UserPreferencesState(
     val suruMorningBriefingEnabled: Boolean = true,
     val suruEveningReflectionEnabled: Boolean = true,
     val suruMorningHour: Int = 8,
-    val suruEveningHour: Int = 20
+    val suruEveningHour: Int = 20,
+    val suruDefaultProvider: String = "GEMINI",
+    val suruDefaultModel: String = "gemini-2.5-flash",
+    val suruAutoRoutingEnabled: Boolean = true,
+    val suruSecondaryReviewEnabled: Boolean = false,
+    val suruSecondaryProvider: String = "OPENAI",
+    val suruSecondaryModel: String = "gpt-4o-mini",
+    val suruAutoFallbackEnabled: Boolean = true
 ) {
     val level: Int
         get() = (totalXp / 250) + 1
@@ -165,16 +198,30 @@ data class UserPreferencesState(
 
     val unlockedAccessories: List<PetAccessory>
         get() = PetAccessory.entries.filter { level >= it.requiredLevel }
+
+    val hasValidRemoteSession: Boolean
+        get() = supabaseUserId.isNotBlank() && supabaseAccessToken.isNotBlank()
 }
 
 class UserPreferencesRepository(private val context: Context) {
     private object Keys {
         val IS_SIGNED_IN = booleanPreferencesKey("is_signed_in")
+        val HAS_COMPLETED_ONBOARDING = booleanPreferencesKey("has_completed_onboarding")
         val USER_NAME = stringPreferencesKey("user_name")
         val USER_HANDLE = stringPreferencesKey("user_handle")
         val USER_EMAIL = stringPreferencesKey("user_email")
+        val USER_BIO = stringPreferencesKey("user_bio")
+        val PREFERRED_LANGUAGE = stringPreferencesKey("preferred_language")
         val FRIEND_CODE = stringPreferencesKey("friend_code")
         val AVATAR_PRESET = stringPreferencesKey("avatar_preset")
+        val AVATAR_PHOTO_URI = stringPreferencesKey("avatar_photo_uri")
+
+        val SUPABASE_USER_ID = stringPreferencesKey("supabase_user_id")
+        val SUPABASE_ACCESS_TOKEN = stringPreferencesKey("supabase_access_token")
+        val SUPABASE_REFRESH_TOKEN = stringPreferencesKey("supabase_refresh_token")
+        val SUPABASE_EXPIRES_AT = longPreferencesKey("supabase_expires_at")
+        val EMAIL_VERIFIED = booleanPreferencesKey("email_verified")
+
         val FOCUS_GOAL = intPreferencesKey("focus_goal_mins")
         val SCREEN_LIMIT = intPreferencesKey("screen_limit_mins")
         val FOCUS_TODAY = intPreferencesKey("focus_logged_today")
@@ -201,24 +248,36 @@ class UserPreferencesRepository(private val context: Context) {
         val SHARE_STREAKS = booleanPreferencesKey("share_streaks")
         val SHARE_FOCUS = booleanPreferencesKey("share_focus")
         val SHARE_CHALLENGES = booleanPreferencesKey("share_challenges")
+
         val NOTIFICATIONS = booleanPreferencesKey("notifications_enabled")
         val TASK_REMINDERS = booleanPreferencesKey("task_reminders")
+        val PENDING_TASK_FOLLOW_UP = booleanPreferencesKey("pending_task_follow_up")
+        val COMPANION_ALERTS = booleanPreferencesKey("companion_alerts")
+        val ACHIEVEMENT_ALERTS = booleanPreferencesKey("achievement_alerts")
+        val TOGETHER_ALERTS = booleanPreferencesKey("together_alerts")
         val WELLNESS_ALERTS = booleanPreferencesKey("wellness_alerts")
         val QUIET_HOURS_ENABLED = booleanPreferencesKey("quiet_hours_enabled")
         val QUIET_START_HOUR = intPreferencesKey("quiet_start_hour")
         val QUIET_END_HOUR = intPreferencesKey("quiet_end_hour")
         val REMINDER_FREQUENCY_HOURS = intPreferencesKey("reminder_frequency_hours")
         val MAX_REMINDERS_PER_TASK = intPreferencesKey("max_reminders_per_task_day")
+
         val SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
         val SOUND_VOLUME_X100 = intPreferencesKey("sound_volume_x100")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val SOUND_NAV = booleanPreferencesKey("sound_nav_enabled")
         val SOUND_INTERACTION = booleanPreferencesKey("sound_interaction_enabled")
         val SOUND_TASK = booleanPreferencesKey("sound_task_enabled")
-        val SOUND_CALENDAR = booleanPreferencesKey("sound_calendar_enabled")
+        val SOUND_ACHIEVEMENT = booleanPreferencesKey("sound_achievement_enabled")
+        val SOUND_STREAK = booleanPreferencesKey("sound_streak_enabled")
         val SOUND_SURU = booleanPreferencesKey("sound_suru_enabled")
-        val SOUND_GAMIFICATION = booleanPreferencesKey("sound_gamification_enabled")
         val SOUND_COMPANION = booleanPreferencesKey("sound_companion_enabled")
+        val SOUND_TOGETHER = booleanPreferencesKey("sound_together_enabled")
+        val SOUND_REMINDER = booleanPreferencesKey("sound_reminder_enabled")
+        val SOUND_NOTIFICATION = booleanPreferencesKey("sound_notification_enabled")
+        val SOUND_CALENDAR = booleanPreferencesKey("sound_calendar_enabled")
+        val SOUND_GAMIFICATION = booleanPreferencesKey("sound_gamification_enabled")
+
         val HAS_COMPLETED_PERMISSION_SETUP = booleanPreferencesKey("has_completed_permission_setup")
         val SURU_PERSONALIZATION = booleanPreferencesKey("suru_personalization_enabled")
         val SURU_VOICE_MUTED = booleanPreferencesKey("suru_voice_muted")
@@ -228,6 +287,14 @@ class UserPreferencesRepository(private val context: Context) {
         val SURU_EVENING_REFLECTION = booleanPreferencesKey("suru_evening_reflection")
         val SURU_MORNING_HOUR = intPreferencesKey("suru_morning_hour")
         val SURU_EVENING_HOUR = intPreferencesKey("suru_evening_hour")
+
+        val SURU_DEFAULT_PROVIDER = stringPreferencesKey("suru_default_provider")
+        val SURU_DEFAULT_MODEL = stringPreferencesKey("suru_default_model")
+        val SURU_AUTO_ROUTING = booleanPreferencesKey("suru_auto_routing")
+        val SURU_SECONDARY_REVIEW = booleanPreferencesKey("suru_secondary_review")
+        val SURU_SECONDARY_PROVIDER = stringPreferencesKey("suru_secondary_provider")
+        val SURU_SECONDARY_MODEL = stringPreferencesKey("suru_secondary_model")
+        val SURU_AUTO_FALLBACK = booleanPreferencesKey("suru_auto_fallback")
     }
 
     val preferencesFlow: Flow<UserPreferencesState> = context.lifeOsDataStore.data.map { prefs ->
@@ -254,13 +321,25 @@ class UserPreferencesRepository(private val context: Context) {
         val storedWaterDay = prefs[Keys.WATER_TODAY_DAY] ?: today
         val waterToday = if (storedWaterDay == today) (prefs[Keys.WATER_TODAY_ML] ?: 0) else 0
 
+        val isSignedIn = prefs[Keys.IS_SIGNED_IN] ?: false
+        val completedOnboarding = prefs[Keys.HAS_COMPLETED_ONBOARDING] ?: isSignedIn
+
         UserPreferencesState(
-            isSignedIn = prefs[Keys.IS_SIGNED_IN] ?: false,
+            isSignedIn = isSignedIn,
+            hasCompletedOnboarding = completedOnboarding,
             userName = savedName,
             userHandle = savedHandle,
             userEmail = prefs[Keys.USER_EMAIL] ?: "",
+            userBio = prefs[Keys.USER_BIO] ?: "",
+            preferredLanguage = prefs[Keys.PREFERRED_LANGUAGE] ?: "English",
             friendCode = savedCode,
             avatarPreset = avatar,
+            avatarPhotoUri = prefs[Keys.AVATAR_PHOTO_URI] ?: "",
+            supabaseUserId = prefs[Keys.SUPABASE_USER_ID] ?: "",
+            supabaseAccessToken = prefs[Keys.SUPABASE_ACCESS_TOKEN] ?: "",
+            supabaseRefreshToken = prefs[Keys.SUPABASE_REFRESH_TOKEN] ?: "",
+            supabaseSessionExpiresAt = prefs[Keys.SUPABASE_EXPIRES_AT] ?: 0L,
+            emailVerified = prefs[Keys.EMAIL_VERIFIED] ?: false,
             dailyFocusGoalMinutes = prefs[Keys.FOCUS_GOAL] ?: 120,
             dailyScreenLimitMinutes = prefs[Keys.SCREEN_LIMIT] ?: 180,
             focusMinutesLoggedToday = focusToday,
@@ -288,6 +367,10 @@ class UserPreferencesRepository(private val context: Context) {
             shareChallengesWithFriends = prefs[Keys.SHARE_CHALLENGES] ?: true,
             notificationsEnabled = prefs[Keys.NOTIFICATIONS] ?: true,
             taskRemindersEnabled = prefs[Keys.TASK_REMINDERS] ?: true,
+            pendingTaskFollowUpEnabled = prefs[Keys.PENDING_TASK_FOLLOW_UP] ?: true,
+            companionAlertsEnabled = prefs[Keys.COMPANION_ALERTS] ?: true,
+            achievementAlertsEnabled = prefs[Keys.ACHIEVEMENT_ALERTS] ?: true,
+            togetherAlertsEnabled = prefs[Keys.TOGETHER_ALERTS] ?: true,
             wellnessAlertsEnabled = prefs[Keys.WELLNESS_ALERTS] ?: true,
             quietHoursEnabled = prefs[Keys.QUIET_HOURS_ENABLED] ?: true,
             quietStartHour = prefs[Keys.QUIET_START_HOUR] ?: 22,
@@ -300,10 +383,15 @@ class UserPreferencesRepository(private val context: Context) {
             soundNavEnabled = prefs[Keys.SOUND_NAV] ?: true,
             soundInteractionEnabled = prefs[Keys.SOUND_INTERACTION] ?: true,
             soundTaskEnabled = prefs[Keys.SOUND_TASK] ?: true,
-            soundCalendarEnabled = prefs[Keys.SOUND_CALENDAR] ?: true,
+            soundAchievementEnabled = prefs[Keys.SOUND_ACHIEVEMENT] ?: (prefs[Keys.SOUND_GAMIFICATION] ?: true),
+            soundStreakEnabled = prefs[Keys.SOUND_STREAK] ?: (prefs[Keys.SOUND_GAMIFICATION] ?: true),
             soundSuruEnabled = prefs[Keys.SOUND_SURU] ?: true,
-            soundGamificationEnabled = prefs[Keys.SOUND_GAMIFICATION] ?: true,
             soundCompanionEnabled = prefs[Keys.SOUND_COMPANION] ?: true,
+            soundTogetherEnabled = prefs[Keys.SOUND_TOGETHER] ?: true,
+            soundReminderEnabled = prefs[Keys.SOUND_REMINDER] ?: (prefs[Keys.SOUND_CALENDAR] ?: true),
+            soundNotificationEnabled = prefs[Keys.SOUND_NOTIFICATION] ?: true,
+            soundCalendarEnabled = prefs[Keys.SOUND_CALENDAR] ?: true,
+            soundGamificationEnabled = prefs[Keys.SOUND_GAMIFICATION] ?: true,
             hasCompletedPermissionSetup = prefs[Keys.HAS_COMPLETED_PERMISSION_SETUP] ?: false,
             suruPersonalizationEnabled = prefs[Keys.SURU_PERSONALIZATION] ?: true,
             suruVoiceMuted = prefs[Keys.SURU_VOICE_MUTED] ?: false,
@@ -312,7 +400,14 @@ class UserPreferencesRepository(private val context: Context) {
             suruMorningBriefingEnabled = prefs[Keys.SURU_MORNING_BRIEFING] ?: true,
             suruEveningReflectionEnabled = prefs[Keys.SURU_EVENING_REFLECTION] ?: true,
             suruMorningHour = prefs[Keys.SURU_MORNING_HOUR] ?: 8,
-            suruEveningHour = prefs[Keys.SURU_EVENING_HOUR] ?: 20
+            suruEveningHour = prefs[Keys.SURU_EVENING_HOUR] ?: 20,
+            suruDefaultProvider = prefs[Keys.SURU_DEFAULT_PROVIDER] ?: "GEMINI",
+            suruDefaultModel = prefs[Keys.SURU_DEFAULT_MODEL] ?: "gemini-2.5-flash",
+            suruAutoRoutingEnabled = prefs[Keys.SURU_AUTO_ROUTING] ?: true,
+            suruSecondaryReviewEnabled = prefs[Keys.SURU_SECONDARY_REVIEW] ?: false,
+            suruSecondaryProvider = prefs[Keys.SURU_SECONDARY_PROVIDER] ?: "OPENAI",
+            suruSecondaryModel = prefs[Keys.SURU_SECONDARY_MODEL] ?: "gpt-4o-mini",
+            suruAutoFallbackEnabled = prefs[Keys.SURU_AUTO_FALLBACK] ?: true
         )
     }
 
@@ -415,11 +510,34 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun saveSupabaseSession(
+        userId: String,
+        email: String,
+        accessToken: String,
+        refreshToken: String,
+        expiresAtMillis: Long,
+        emailVerified: Boolean
+    ) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SUPABASE_USER_ID] = userId
+            if (email.isNotBlank()) prefs[Keys.USER_EMAIL] = email
+            prefs[Keys.SUPABASE_ACCESS_TOKEN] = accessToken
+            prefs[Keys.SUPABASE_REFRESH_TOKEN] = refreshToken
+            prefs[Keys.SUPABASE_EXPIRES_AT] = expiresAtMillis
+            prefs[Keys.EMAIL_VERIFIED] = emailVerified
+            prefs[Keys.IS_SIGNED_IN] = true
+        }
+    }
+
     suspend fun completeOnboardingSignIn(
         name: String,
         identityOrEmail: String,
         focusGoal: Int,
-        themeMode: LifeOsThemeMode
+        themeMode: LifeOsThemeMode,
+        bio: String = "",
+        preferredLanguage: String = "English",
+        avatarPreset: UserAvatarPreset = UserAvatarPreset.STAR_BUNNY,
+        avatarPhotoUri: String = ""
     ) {
         val today = DateTimeUtils.todayEpochDay()
         val cleanName = name.trim().ifEmpty { "Malkin" }
@@ -457,9 +575,14 @@ class UserPreferencesRepository(private val context: Context) {
             loginDays.add(today)
 
             prefs[Keys.IS_SIGNED_IN] = true
+            prefs[Keys.HAS_COMPLETED_ONBOARDING] = true
             prefs[Keys.USER_NAME] = cleanName
             prefs[Keys.USER_HANDLE] = derivedHandle
-            prefs[Keys.USER_EMAIL] = derivedEmail
+            if (derivedEmail.isNotBlank()) prefs[Keys.USER_EMAIL] = derivedEmail
+            prefs[Keys.USER_BIO] = bio.trim().take(160)
+            prefs[Keys.PREFERRED_LANGUAGE] = preferredLanguage
+            prefs[Keys.AVATAR_PRESET] = avatarPreset.name
+            if (avatarPhotoUri.isNotBlank()) prefs[Keys.AVATAR_PHOTO_URI] = avatarPhotoUri
             prefs[Keys.FRIEND_CODE] = existingCode
             prefs[Keys.FOCUS_GOAL] = focusGoal.coerceIn(15, 600)
             prefs[Keys.THEME_MODE] = themeMode.name
@@ -467,9 +590,18 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun markOnboardingCompleted(completed: Boolean = true) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.HAS_COMPLETED_ONBOARDING] = completed
+        }
+    }
+
     suspend fun signOutSession() {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.IS_SIGNED_IN] = false
+            prefs[Keys.SUPABASE_ACCESS_TOKEN] = ""
+            prefs[Keys.SUPABASE_REFRESH_TOKEN] = ""
+            prefs[Keys.SUPABASE_EXPIRES_AT] = 0L
         }
     }
 
@@ -478,7 +610,10 @@ class UserPreferencesRepository(private val context: Context) {
         handle: String,
         focusGoal: Int,
         screenLimit: Int,
-        avatarPreset: UserAvatarPreset? = null
+        avatarPreset: UserAvatarPreset? = null,
+        bio: String? = null,
+        preferredLanguage: String? = null,
+        avatarPhotoUri: String? = null
     ) {
         context.lifeOsDataStore.edit { prefs ->
             val cleanName = name.trim().ifEmpty { "Malkin" }
@@ -493,6 +628,15 @@ class UserPreferencesRepository(private val context: Context) {
             if (avatarPreset != null) {
                 prefs[Keys.AVATAR_PRESET] = avatarPreset.name
             }
+            if (bio != null) {
+                prefs[Keys.USER_BIO] = bio.trim().take(160)
+            }
+            if (preferredLanguage != null) {
+                prefs[Keys.PREFERRED_LANGUAGE] = preferredLanguage
+            }
+            if (avatarPhotoUri != null) {
+                prefs[Keys.AVATAR_PHOTO_URI] = avatarPhotoUri
+            }
             prefs[Keys.FOCUS_GOAL] = focusGoal.coerceIn(15, 600)
             prefs[Keys.SCREEN_LIMIT] = screenLimit.coerceIn(30, 720)
         }
@@ -501,6 +645,13 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateAvatarPreset(avatarPreset: UserAvatarPreset) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.AVATAR_PRESET] = avatarPreset.name
+            prefs[Keys.AVATAR_PHOTO_URI] = ""
+        }
+    }
+
+    suspend fun updateAvatarPhotoUri(uri: String) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.AVATAR_PHOTO_URI] = uri
         }
     }
 
@@ -536,7 +687,11 @@ class UserPreferencesRepository(private val context: Context) {
         wellnessAlerts: Boolean,
         quietHoursEnabled: Boolean = true,
         quietStartHour: Int = 22,
-        quietEndHour: Int = 7
+        quietEndHour: Int = 7,
+        pendingTaskFollowUp: Boolean? = null,
+        companionAlerts: Boolean? = null,
+        achievementAlerts: Boolean? = null,
+        togetherAlerts: Boolean? = null
     ) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.NOTIFICATIONS] = enabled
@@ -545,6 +700,10 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.QUIET_HOURS_ENABLED] = quietHoursEnabled
             prefs[Keys.QUIET_START_HOUR] = quietStartHour.coerceIn(0, 23)
             prefs[Keys.QUIET_END_HOUR] = quietEndHour.coerceIn(0, 23)
+            if (pendingTaskFollowUp != null) prefs[Keys.PENDING_TASK_FOLLOW_UP] = pendingTaskFollowUp
+            if (companionAlerts != null) prefs[Keys.COMPANION_ALERTS] = companionAlerts
+            if (achievementAlerts != null) prefs[Keys.ACHIEVEMENT_ALERTS] = achievementAlerts
+            if (togetherAlerts != null) prefs[Keys.TOGETHER_ALERTS] = togetherAlerts
         }
     }
 
@@ -564,7 +723,12 @@ class UserPreferencesRepository(private val context: Context) {
         calendarEnabled: Boolean,
         suruEnabled: Boolean,
         gamificationEnabled: Boolean,
-        companionEnabled: Boolean
+        companionEnabled: Boolean,
+        achievementEnabled: Boolean = gamificationEnabled,
+        streakEnabled: Boolean = gamificationEnabled,
+        togetherEnabled: Boolean = true,
+        reminderEnabled: Boolean = calendarEnabled,
+        notificationEnabled: Boolean = true
     ) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.SOUND_EFFECTS] = masterEnabled
@@ -577,6 +741,11 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.SOUND_SURU] = suruEnabled
             prefs[Keys.SOUND_GAMIFICATION] = gamificationEnabled
             prefs[Keys.SOUND_COMPANION] = companionEnabled
+            prefs[Keys.SOUND_ACHIEVEMENT] = achievementEnabled
+            prefs[Keys.SOUND_STREAK] = streakEnabled
+            prefs[Keys.SOUND_TOGETHER] = togetherEnabled
+            prefs[Keys.SOUND_REMINDER] = reminderEnabled
+            prefs[Keys.SOUND_NOTIFICATION] = notificationEnabled
         }
     }
 
@@ -602,6 +771,26 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.SURU_VOICE_MUTED] = muted
             prefs[Keys.SURU_SPEECH_SPEED_X100] = (speechSpeed.coerceIn(0.75f, 1.5f) * 100).toInt()
             prefs[Keys.SURU_VOICE_LANG] = languageName
+        }
+    }
+
+    suspend fun updateSuruAiGatewaySettings(
+        defaultProvider: String,
+        defaultModel: String,
+        autoRoutingEnabled: Boolean,
+        secondaryReviewEnabled: Boolean,
+        secondaryProvider: String,
+        secondaryModel: String,
+        autoFallbackEnabled: Boolean
+    ) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SURU_DEFAULT_PROVIDER] = defaultProvider
+            prefs[Keys.SURU_DEFAULT_MODEL] = defaultModel
+            prefs[Keys.SURU_AUTO_ROUTING] = autoRoutingEnabled
+            prefs[Keys.SURU_SECONDARY_REVIEW] = secondaryReviewEnabled
+            prefs[Keys.SURU_SECONDARY_PROVIDER] = secondaryProvider
+            prefs[Keys.SURU_SECONDARY_MODEL] = secondaryModel
+            prefs[Keys.SURU_AUTO_FALLBACK] = autoFallbackEnabled
         }
     }
 
@@ -638,7 +827,7 @@ class UserPreferencesRepository(private val context: Context) {
                 .take(4)
                 .padEnd(4, 'X')
             val suffix = (seed % 9000 + 1000).toString()
-            return "LIFE-$prefix-$suffix"
+            return "FLR-$prefix-$suffix"
         }
     }
 }

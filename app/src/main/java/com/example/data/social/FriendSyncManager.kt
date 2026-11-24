@@ -170,11 +170,11 @@ object FriendSyncCodec {
             decodeJson(trimmed)?.let { return it }
         }
 
-        // Check short Friend Code format e.g. LIFE-ARIA-4821
-        val codeRegex = Regex("""(?i)^LIFE-[A-Z0-9]{2,8}(?:-\d{3,6})?$""")
+        // Check short Friend Code format e.g. FLR-ARIA-4821 or LIFE-ARIA-4821
+        val codeRegex = Regex("""(?i)^(?:LIFE|FLR)-[A-Z0-9]{2,8}(?:-\d{3,6})?$""")
         if (codeRegex.matches(trimmed)) {
             val upper = trimmed.uppercase()
-            val shortName = upper.removePrefix("LIFE-").substringBefore("-")
+            val shortName = upper.removePrefix("LIFE-").removePrefix("FLR-").substringBefore("-")
                 .lowercase()
                 .replaceFirstChar { it.uppercase() }
                 .ifBlank { "Friend" }

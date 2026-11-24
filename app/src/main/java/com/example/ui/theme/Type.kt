@@ -8,6 +8,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
+val PlusJakartaSansFamily = FontFamily(
+    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
+    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
+    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
+    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
+)
+
+val CormorantGaramondFamily = FontFamily(
+    Font(R.font.cormorant_garamond, FontWeight.Normal),
+    Font(R.font.cormorant_garamond, FontWeight.Medium),
+    Font(R.font.cormorant_garamond, FontWeight.SemiBold),
+    Font(R.font.cormorant_garamond, FontWeight.Bold)
+)
+
 val SpaceGroteskFamily = FontFamily(
     Font(R.font.space_grotesk, FontWeight.Normal),
     Font(R.font.space_grotesk, FontWeight.Medium),
@@ -28,7 +42,8 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
-private fun buildThemeTypography(
+private fun buildFeeloraTypography(
+    heroFamily: FontFamily,
     displayFamily: FontFamily,
     bodyFamily: FontFamily,
     monoFamily: FontFamily,
@@ -36,18 +51,18 @@ private fun buildThemeTypography(
     labelTrackingBoost: Float = 0f
 ): Typography = Typography(
     displayLarge = TextStyle(
-        fontFamily = displayFamily,
+        fontFamily = heroFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 32.sp,
-        lineHeight = 38.sp,
-        letterSpacing = (-0.6 * displayTrackingScale).sp
+        fontSize = 33.sp,
+        lineHeight = 39.sp,
+        letterSpacing = (-0.5 * displayTrackingScale).sp
     ),
     displayMedium = TextStyle(
-        fontFamily = displayFamily,
+        fontFamily = heroFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
-        letterSpacing = (-0.4 * displayTrackingScale).sp
+        fontSize = 27.sp,
+        lineHeight = 33.sp,
+        letterSpacing = (-0.3 * displayTrackingScale).sp
     ),
     headlineLarge = TextStyle(
         fontFamily = displayFamily,
@@ -66,7 +81,7 @@ private fun buildThemeTypography(
     titleLarge = TextStyle(
         fontFamily = displayFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
+        fontSize = 16.5.sp,
         lineHeight = 22.sp,
         letterSpacing = 0.sp
     ),
@@ -110,61 +125,49 @@ private fun buildThemeTypography(
         fontWeight = FontWeight.SemiBold,
         fontSize = 12.5.sp,
         lineHeight = 16.sp,
-        letterSpacing = (0.3 + labelTrackingBoost).sp
+        letterSpacing = (0.25 + labelTrackingBoost).sp
     ),
     labelMedium = TextStyle(
         fontFamily = bodyFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 11.5.sp,
         lineHeight = 15.sp,
-        letterSpacing = (0.3 + labelTrackingBoost).sp
+        letterSpacing = (0.25 + labelTrackingBoost).sp
     ),
     labelSmall = TextStyle(
         fontFamily = monoFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 10.5.sp,
         lineHeight = 13.sp,
-        letterSpacing = (0.35 + labelTrackingBoost).sp
+        letterSpacing = (0.3 + labelTrackingBoost).sp
     )
 )
 
-val MidnightAuroraTypography = buildThemeTypography(
-    displayFamily = SpaceGroteskFamily,
-    bodyFamily = ManropeFamily,
+val HybridLavenderTypography = buildFeeloraTypography(
+    heroFamily = CormorantGaramondFamily,
+    displayFamily = PlusJakartaSansFamily,
+    bodyFamily = PlusJakartaSansFamily,
     monoFamily = JetBrainsMonoFamily,
-    displayTrackingScale = 1.1f
-)
-
-val AlabasterCloudTypography = buildThemeTypography(
-    displayFamily = ManropeFamily,
-    bodyFamily = ManropeFamily,
-    monoFamily = JetBrainsMonoFamily,
-    displayTrackingScale = 0.6f,
-    labelTrackingBoost = 0.05f
-)
-
-val MatchaMistTypography = buildThemeTypography(
-    displayFamily = SpaceGroteskFamily,
-    bodyFamily = ManropeFamily,
-    monoFamily = JetBrainsMonoFamily,
-    displayTrackingScale = 0.8f,
-    labelTrackingBoost = 0.2f
-)
-
-val WarmLinenTypography = buildThemeTypography(
-    displayFamily = FontFamily.Serif,
-    bodyFamily = ManropeFamily,
-    monoFamily = JetBrainsMonoFamily,
-    displayTrackingScale = 0.5f,
+    displayTrackingScale = 0.75f,
     labelTrackingBoost = 0.1f
 )
 
-val FeeloraLavenderTypography = buildThemeTypography(
+val MidnightAuroraTypography = buildFeeloraTypography(
+    heroFamily = SpaceGroteskFamily,
     displayFamily = SpaceGroteskFamily,
     bodyFamily = ManropeFamily,
     monoFamily = JetBrainsMonoFamily,
-    displayTrackingScale = 0.7f,
+    displayTrackingScale = 1.05f,
+    labelTrackingBoost = 0.05f
+)
+
+val MatchaMistTypography = buildFeeloraTypography(
+    heroFamily = PlusJakartaSansFamily,
+    displayFamily = SpaceGroteskFamily,
+    bodyFamily = PlusJakartaSansFamily,
+    monoFamily = JetBrainsMonoFamily,
+    displayTrackingScale = 0.8f,
     labelTrackingBoost = 0.15f
 )
 
-val LifeOsTypography = FeeloraLavenderTypography
+val LifeOsTypography = HybridLavenderTypography

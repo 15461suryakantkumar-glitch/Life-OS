@@ -23,9 +23,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CycleLogEntity::class,
         DailyCheckInEntity::class,
         SuruMemoryEntity::class,
-        SuruStudyPlanEntity::class
+        SuruStudyPlanEntity::class,
+        NotificationHistoryEntity::class,
+        AiProviderUsageEntity::class,
+        TogetherOutboxEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -44,6 +47,9 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun dailyCheckInDao(): DailyCheckInDao
     abstract fun suruMemoryDao(): SuruMemoryDao
     abstract fun suruStudyPlanDao(): SuruStudyPlanDao
+    abstract fun notificationHistoryDao(): NotificationHistoryDao
+    abstract fun aiProviderUsageDao(): AiProviderUsageDao
+    abstract fun togetherOutboxDao(): TogetherOutboxDao
 
     companion object {
         @Volatile
@@ -115,6 +121,21 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `app_usage_logs` ADD COLUMN `packageName` TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `notification_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `category` TEXT NOT NULL, `title` TEXT NOT NULL, `body` TEXT NOT NULL, `targetRoute` TEXT NOT NULL DEFAULT 'home', `targetId` INTEGER NOT NULL DEFAULT -1, `isRead` INTEGER NOT NULL DEFAULT 0, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `ai_provider_usage` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `providerName` TEXT NOT NULL, `modelId` TEXT NOT NULL, `promptTokensEst` INTEGER NOT NULL DEFAULT 0, `responseTokensEst` INTEGER NOT NULL DEFAULT 0, `success` INTEGER NOT NULL DEFAULT 1, `latencyMs` INTEGER NOT NULL DEFAULT 0, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `together_outbox` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `conversationId` TEXT NOT NULL, `recipientUserId` TEXT NOT NULL, `clientMessageId` TEXT NOT NULL, `content` TEXT NOT NULL, `mediaLocalUri` TEXT, `status` TEXT NOT NULL DEFAULT 'PENDING', `retryCount` INTEGER NOT NULL DEFAULT 0, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -128,7 +149,8 @@ abstract class LifeOsDatabase : RoomDatabase() {
                         MIGRATION_3_4,
                         MIGRATION_4_5,
                         MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_6_7,
+                        MIGRATION_7_8
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

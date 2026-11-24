@@ -159,6 +159,7 @@ data class QuickNoteEntity(
 data class AppUsageLogEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val appName: String,
+    val packageName: String = "",
     val categoryName: String = AppUsageCategory.UTILITY.name,
     val minutesUsed: Int,
     val isDistracting: Boolean = false,
@@ -263,3 +264,41 @@ data class SuruStudyPlanEntity(
     val status: String = "ACTIVE", // ACTIVE | COMPLETED | ARCHIVED
     val createdAtMillis: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "notification_history")
+data class NotificationHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: String, // TASK | PENDING_TASK | COMPANION | ACHIEVEMENT | TOGETHER
+    val title: String,
+    val body: String,
+    val targetRoute: String = "home",
+    val targetId: Long = -1L,
+    val isRead: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "ai_provider_usage")
+data class AiProviderUsageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val providerName: String,
+    val modelId: String,
+    val promptTokensEst: Int = 0,
+    val responseTokensEst: Int = 0,
+    val success: Boolean = true,
+    val latencyMs: Long = 0L,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "together_outbox")
+data class TogetherOutboxEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val conversationId: String,
+    val recipientUserId: String,
+    val clientMessageId: String,
+    val content: String,
+    val mediaLocalUri: String? = null,
+    val status: String = "PENDING", // PENDING | FAILED
+    val retryCount: Int = 0,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+

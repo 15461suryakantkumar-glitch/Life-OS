@@ -278,3 +278,55 @@ interface SuruStudyPlanDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface NotificationHistoryDao {
+    @Query("SELECT * FROM notification_history ORDER BY createdAtMillis DESC, id DESC LIMIT 120")
+    fun observeAll(): Flow<List<NotificationHistoryEntity>>
+
+    @Query("SELECT * FROM notification_history ORDER BY createdAtMillis DESC, id DESC LIMIT 120")
+    suspend fun getAllOnce(): List<NotificationHistoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: NotificationHistoryEntity): Long
+
+    @Query("UPDATE notification_history SET isRead = 1")
+    suspend fun markAllRead()
+
+    @Query("UPDATE notification_history SET isRead = 1 WHERE id = :id")
+    suspend fun markRead(id: Long)
+
+    @Query("DELETE FROM notification_history")
+    suspend fun clearAll()
+}
+
+@Dao
+interface AiProviderUsageDao {
+    @Query("SELECT * FROM ai_provider_usage ORDER BY createdAtMillis DESC LIMIT 200")
+    fun observeAll(): Flow<List<AiProviderUsageEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entry: AiProviderUsageEntity): Long
+
+    @Query("DELETE FROM ai_provider_usage")
+    suspend fun clearAll()
+}
+
+@Dao
+interface TogetherOutboxDao {
+    @Query("SELECT * FROM together_outbox ORDER BY createdAtMillis ASC")
+    fun observeAll(): Flow<List<TogetherOutboxEntity>>
+
+    @Query("SELECT * FROM together_outbox ORDER BY createdAtMillis ASC")
+    suspend fun getAllOnce(): List<TogetherOutboxEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: TogetherOutboxEntity): Long
+
+    @Query("DELETE FROM together_outbox WHERE clientMessageId = :clientMessageId")
+    suspend fun deleteByClientId(clientMessageId: String)
+
+    @Query("DELETE FROM together_outbox")
+    suspend fun clearAll()
+}
+
+

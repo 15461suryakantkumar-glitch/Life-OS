@@ -20,14 +20,17 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 
-enum class SoundCategory(val label: String) {
-    NAVIGATION("Navigation"),
-    INTERACTIONS("UI Interactions"),
-    TASKS("Tasks"),
-    CALENDAR("Calendar"),
-    SURU("SURU Assistant"),
-    GAMIFICATION("XP & Streaks"),
-    COMPANION("KUTTA Companion")
+enum class SoundCategory(val label: String, val description: String) {
+    NAVIGATION("Navigation", "Switching screens, drawer & tabs"),
+    BUTTON_INTERACTION("Button interaction", "Primary buttons, chips & toggles"),
+    TASK_COMPLETION("Task completion", "Completing or adding tasks"),
+    ACHIEVEMENT("Achievement", "Level ups & badge milestones"),
+    STREAK_COMPLETION("Streak completion", "Daily habit & streak celebrations"),
+    SURU_INTERACTION("SURU interaction", "Opening SURU, listening & plan confirmation"),
+    KUTTA_INTERACTION("KUTTA interaction", "Tapping, feeding or patting KUTTA"),
+    TOGETHER_MESSAGES("Together messages", "Incoming & sent Together chat messages"),
+    REMINDERS("Reminders", "Gentle timer & reminder chimes"),
+    NOTIFICATIONS("Notifications", "In-app notification alerts")
 }
 
 enum class LifeOsSoundCue(
@@ -36,33 +39,35 @@ enum class LifeOsSoundCue(
     val baseGain: Float = 0.65f
 ) {
     NAV_SWITCH("sfx_nav_switch", SoundCategory.NAVIGATION, 0.36f),
-    UI_TAP("sfx_ui_tap", SoundCategory.INTERACTIONS, 0.32f),
-    UI_TOGGLE("sfx_ui_toggle", SoundCategory.INTERACTIONS, 0.40f),
-    UI_CONFIRM("sfx_ui_confirm", SoundCategory.INTERACTIONS, 0.50f),
-    UI_UNDO("sfx_ui_undo", SoundCategory.INTERACTIONS, 0.44f),
-    TASK_CREATE("sfx_task_create", SoundCategory.TASKS, 0.50f),
-    TASK_COMPLETE("sfx_task_complete", SoundCategory.TASKS, 0.62f),
-    TASK_RESCHEDULE("sfx_task_reschedule", SoundCategory.TASKS, 0.48f),
-    CALENDAR_CREATE("sfx_calendar_create", SoundCategory.CALENDAR, 0.52f),
-    SCHEDULE_SAVED("sfx_schedule_saved", SoundCategory.CALENDAR, 0.58f),
-    SURU_ACTIVATE("sfx_suru_activate", SoundCategory.SURU, 0.52f),
-    SURU_LISTENING("sfx_suru_listen", SoundCategory.SURU, 0.48f),
-    SURU_SUCCESS("sfx_suru_success", SoundCategory.SURU, 0.58f),
-    SURU_ERROR("sfx_suru_error", SoundCategory.SURU, 0.46f),
-    SURU_PLAN_COMPLETE("sfx_suru_plan", SoundCategory.SURU, 0.65f),
-    STREAK_ACTIVATE("sfx_streak_activate", SoundCategory.GAMIFICATION, 0.68f),
-    LEVEL_UP("sfx_level_up", SoundCategory.GAMIFICATION, 0.74f),
-    FOCUS_COMPLETE("sfx_focus_complete", SoundCategory.GAMIFICATION, 0.68f),
-    COMPANION_INTERACT("sfx_companion_tap", SoundCategory.COMPANION, 0.52f)
+    UI_TAP("sfx_ui_tap", SoundCategory.BUTTON_INTERACTION, 0.32f),
+    UI_TOGGLE("sfx_ui_toggle", SoundCategory.BUTTON_INTERACTION, 0.40f),
+    UI_CONFIRM("sfx_ui_confirm", SoundCategory.BUTTON_INTERACTION, 0.48f),
+    UI_UNDO("sfx_ui_undo", SoundCategory.BUTTON_INTERACTION, 0.42f),
+    TASK_CREATE("sfx_task_create", SoundCategory.TASK_COMPLETION, 0.50f),
+    TASK_COMPLETE("sfx_task_complete", SoundCategory.TASK_COMPLETION, 0.62f),
+    TASK_RESCHEDULE("sfx_task_reschedule", SoundCategory.REMINDERS, 0.48f),
+    CALENDAR_CREATE("sfx_calendar_create", SoundCategory.REMINDERS, 0.50f),
+    SCHEDULE_SAVED("sfx_schedule_saved", SoundCategory.REMINDERS, 0.55f),
+    SURU_ACTIVATE("sfx_suru_activate", SoundCategory.SURU_INTERACTION, 0.52f),
+    SURU_LISTENING("sfx_suru_listen", SoundCategory.SURU_INTERACTION, 0.48f),
+    SURU_SUCCESS("sfx_suru_success", SoundCategory.SURU_INTERACTION, 0.58f),
+    SURU_ERROR("sfx_suru_error", SoundCategory.SURU_INTERACTION, 0.46f),
+    SURU_PLAN_COMPLETE("sfx_suru_plan", SoundCategory.SURU_INTERACTION, 0.64f),
+    STREAK_ACTIVATE("sfx_streak_activate", SoundCategory.STREAK_COMPLETION, 0.66f),
+    LEVEL_UP("sfx_level_up", SoundCategory.ACHIEVEMENT, 0.72f),
+    ACHIEVEMENT_UNLOCK("sfx_achievement_unlock", SoundCategory.ACHIEVEMENT, 0.70f),
+    FOCUS_COMPLETE("sfx_focus_complete", SoundCategory.REMINDERS, 0.66f),
+    COMPANION_INTERACT("sfx_companion_tap", SoundCategory.KUTTA_INTERACTION, 0.52f),
+    TOGETHER_MESSAGE("sfx_together_msg", SoundCategory.TOGETHER_MESSAGES, 0.54f),
+    NOTIFICATION_PING("sfx_notif_ping", SoundCategory.NOTIFICATIONS, 0.52f)
 }
 
 /**
- * Soft, lavender-inspired acoustic sound & haptic manager for FEELORA.
+ * Soft, lavender-inspired acoustic sound & haptic manager for FEELORA 2.0.
  *
- * - Generates clean, warm harmonic PCM chimes with smooth exponential attack/decay envelopes.
- * - Guards against interrupting active SURU speech.
- * - Respects master sound toggle, per-category toggles, volume scale, haptic toggle, and device ringer mode.
- * - Throttles rapid repeated cues so fast scrolling or tapping never distorts.
+ * - Supports all 10 SoundCategory toggles independently plus master volume & haptics.
+ * - Guards against playing during active SURU speech or while app is backgrounded.
+ * - Respects system silent/vibrate ringer mode cleanly.
  */
 class LifeOsSoundManager(
     private val appContext: Context,
@@ -78,6 +83,12 @@ class LifeOsSoundManager(
     private var isInitialized = false
     @Volatile
     private var isReleased = false
+    @Volatile
+    private var isAppInForeground = true
+
+    fun setAppInForeground(inForeground: Boolean) {
+        isAppInForeground = inForeground
+    }
 
     fun preload() {
         if (isInitialized || isReleased) return
@@ -121,11 +132,30 @@ class LifeOsSoundManager(
         }
     }
 
+    fun previewCategory(category: SoundCategory, prefs: UserPreferencesState): Boolean {
+        val cue = when (category) {
+            SoundCategory.NAVIGATION -> LifeOsSoundCue.NAV_SWITCH
+            SoundCategory.BUTTON_INTERACTION -> LifeOsSoundCue.UI_CONFIRM
+            SoundCategory.TASK_COMPLETION -> LifeOsSoundCue.TASK_COMPLETE
+            SoundCategory.ACHIEVEMENT -> LifeOsSoundCue.ACHIEVEMENT_UNLOCK
+            SoundCategory.STREAK_COMPLETION -> LifeOsSoundCue.STREAK_ACTIVATE
+            SoundCategory.SURU_INTERACTION -> LifeOsSoundCue.SURU_SUCCESS
+            SoundCategory.KUTTA_INTERACTION -> LifeOsSoundCue.COMPANION_INTERACT
+            SoundCategory.TOGETHER_MESSAGES -> LifeOsSoundCue.TOGETHER_MESSAGE
+            SoundCategory.REMINDERS -> LifeOsSoundCue.FOCUS_COMPLETE
+            SoundCategory.NOTIFICATIONS -> LifeOsSoundCue.NOTIFICATION_PING
+        }
+        return playCue(cue, prefs, bypassSpeechGuard = true)
+    }
+
     fun playCue(
         cue: LifeOsSoundCue,
         prefs: UserPreferencesState,
         bypassSpeechGuard: Boolean = false
     ): Boolean {
+        if (!isAppInForeground && cue.category != SoundCategory.REMINDERS && cue.category != SoundCategory.NOTIFICATIONS) {
+            return false
+        }
         if (!shouldPlayForPrefs(cue, prefs)) return false
         if (!bypassSpeechGuard && isSuruSpeakingProvider()) return false
 
@@ -232,7 +262,7 @@ class LifeOsSoundManager(
         return runCatching {
             val dir = File(appContext.cacheDir, "lifeos_sfx")
             if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "${cue.rawResourceName}_v2.wav")
+            val file = File(dir, "${cue.rawResourceName}_v3.wav")
             if (!file.exists() || file.length() < 44L) {
                 val bytes = buildWavForCue(cue)
                 FileOutputStream(file).use { it.write(bytes) }
@@ -248,26 +278,29 @@ class LifeOsSoundManager(
             if (!prefs.soundEffectsEnabled) return false
             return when (cue.category) {
                 SoundCategory.NAVIGATION -> prefs.soundNavEnabled
-                SoundCategory.INTERACTIONS -> prefs.soundInteractionEnabled
-                SoundCategory.TASKS -> prefs.soundTaskEnabled
-                SoundCategory.CALENDAR -> prefs.soundCalendarEnabled
-                SoundCategory.SURU -> prefs.soundSuruEnabled
-                SoundCategory.GAMIFICATION -> prefs.soundGamificationEnabled
-                SoundCategory.COMPANION -> prefs.soundCompanionEnabled
+                SoundCategory.BUTTON_INTERACTION -> prefs.soundInteractionEnabled
+                SoundCategory.TASK_COMPLETION -> prefs.soundTaskEnabled
+                SoundCategory.ACHIEVEMENT -> prefs.soundAchievementEnabled
+                SoundCategory.STREAK_COMPLETION -> prefs.soundStreakEnabled
+                SoundCategory.SURU_INTERACTION -> prefs.soundSuruEnabled
+                SoundCategory.KUTTA_INTERACTION -> prefs.soundCompanionEnabled
+                SoundCategory.TOGETHER_MESSAGES -> prefs.soundTogetherEnabled
+                SoundCategory.REMINDERS -> prefs.soundReminderEnabled
+                SoundCategory.NOTIFICATIONS -> prefs.soundNotificationEnabled
             }
         }
 
         fun buildWavForCue(cue: LifeOsSoundCue): ByteArray {
             val tones = when (cue) {
                 LifeOsSoundCue.NAV_SWITCH -> listOf(
-                    ToneNote(freqHz = 440.0, durationMs = 38, gain = 0.14)
+                    ToneNote(freqHz = 440.0, durationMs = 36, gain = 0.14)
                 )
                 LifeOsSoundCue.UI_TAP -> listOf(
-                    ToneNote(freqHz = 523.25, durationMs = 32, gain = 0.14)
+                    ToneNote(freqHz = 523.25, durationMs = 30, gain = 0.14)
                 )
                 LifeOsSoundCue.UI_TOGGLE -> listOf(
-                    ToneNote(freqHz = 587.33, durationMs = 45, gain = 0.18),
-                    ToneNote(freqHz = 783.99, durationMs = 55, gain = 0.16)
+                    ToneNote(freqHz = 587.33, durationMs = 42, gain = 0.18),
+                    ToneNote(freqHz = 783.99, durationMs = 52, gain = 0.16)
                 )
                 LifeOsSoundCue.UI_CONFIRM -> listOf(
                     ToneNote(freqHz = 523.25, durationMs = 55, gain = 0.22),
@@ -326,7 +359,8 @@ class LifeOsSoundManager(
                     ToneNote(freqHz = 659.25, durationMs = 65, gain = 0.30),
                     ToneNote(freqHz = 1046.50, durationMs = 160, gain = 0.32)
                 )
-                LifeOsSoundCue.LEVEL_UP -> listOf(
+                LifeOsSoundCue.LEVEL_UP,
+                LifeOsSoundCue.ACHIEVEMENT_UNLOCK -> listOf(
                     ToneNote(freqHz = 523.25, durationMs = 75, gain = 0.28),
                     ToneNote(freqHz = 659.25, durationMs = 75, gain = 0.30),
                     ToneNote(freqHz = 783.99, durationMs = 80, gain = 0.32),
@@ -339,6 +373,14 @@ class LifeOsSoundManager(
                 LifeOsSoundCue.COMPANION_INTERACT -> listOf(
                     ToneNote(freqHz = 659.25, durationMs = 55, gain = 0.22),
                     ToneNote(freqHz = 783.99, durationMs = 95, gain = 0.22)
+                )
+                LifeOsSoundCue.TOGETHER_MESSAGE -> listOf(
+                    ToneNote(freqHz = 659.25, durationMs = 50, gain = 0.20),
+                    ToneNote(freqHz = 987.77, durationMs = 85, gain = 0.22)
+                )
+                LifeOsSoundCue.NOTIFICATION_PING -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 55, gain = 0.20),
+                    ToneNote(freqHz = 880.00, durationMs = 110, gain = 0.22)
                 )
             }
             return buildToneWavBytes(tones)

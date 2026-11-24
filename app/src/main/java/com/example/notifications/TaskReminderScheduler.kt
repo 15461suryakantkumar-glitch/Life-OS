@@ -20,13 +20,56 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.LifeOsDatabase
+import com.example.data.local.NotificationHistoryEntity
 import com.example.data.local.RecurrencePattern
 import com.example.data.local.TaskEntity
 import com.example.data.local.UserPreferencesRepository
+import com.example.data.local.UserPreferencesState
 import com.example.util.DateTimeUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+
+enum class FeeloraNotificationCategory(
+    val channelId: String,
+    val channelTitle: String,
+    val channelDescription: String,
+    val defaultRoute: String
+) {
+    TASK(
+        channelId = "feelora_tasks",
+        channelTitle = "Feelora · Tasks",
+        channelDescription = "Scheduled task reminders and daily study briefings.",
+        defaultRoute = "tasks"
+    ),
+    PENDING_TASK(
+        channelId = "feelora_pending_tasks",
+        channelTitle = "Feelora · Pending Tasks",
+        channelDescription = "Gentle 2-hour follow-up reminders with quick Complete, Snooze & Reschedule actions.",
+        defaultRoute = "tasks"
+    ),
+    COMPANION(
+        channelId = "feelora_companion",
+        channelTitle = "Feelora · KUTTA Companion",
+        channelDescription = "Warm hydration & care nudges from KUTTA.",
+        defaultRoute = "growth"
+    ),
+    ACHIEVEMENT(
+        channelId = "feelora_achievements",
+        channelTitle = "Feelora · Achievements",
+        channelDescription = "Level ups, streaks, and milestone celebrations.",
+        defaultRoute = "growth"
+    ),
+    TOGETHER(
+        channelId = "feelora_together",
+        channelTitle = "Feelora · Together",
+        channelDescription = "Privacy-safe friend invites, messages, and shared goals.",
+        defaultRoute = "together"
+    )
+}
 
 object TaskReminderPolicy {
 
@@ -80,12 +123,18 @@ object TaskReminderPolicy {
                     .thenBy { if (it.lastReminderEpochDay == todayEpochDay) it.reminderCountToday else 0 }
             )
     }
+
+    fun recalculateDeadlineForTomorrowReschedule(currentDeadlineEpochDay: Long, todayEpochDay: Long): Long {
+        return maxOf(currentDeadlineEpochDay, todayEpochDay) + 1L
+    }
 }
 
 object TaskReminderScheduler {
     const val WORK_NAME = "lifeos_pending_task_reminder_2h"
-    const val CHANNEL_ID = "lifeos_task_reminders"
+    const val CHANNEL_ID = "feelora_pending_tasks"
     const val NOTIFICATION_ID = 4201
+    const val BRIEFING_WORK_NAME = "feelora_suru_daily_briefing"
+    const val BRIEFING_NOTIFICATION_ID = 4202
 
     const val ACTION_MARK_COMPLETE = "com.example.notifications.ACTION_MARK_COMPLETE"
     const val ACTION_SNOOZE = "com.example.notifications.ACTION_SNOOZE"
@@ -142,6 +191,17 @@ object TaskReminderScheduler {
         }
     }
 
+    fun isCategoryAllowed(category: FeeloraNotificationCategory, prefs: UserPreferencesState): Boolean {
+        if (!prefs.notificationsEnabled) return false
+        return when (category) {
+            FeeloraNotificationCategory.TASK -> prefs.taskRemindersEnabled
+            FeeloraNotificationCategory.PENDING_TASK -> prefs.taskRemindersEnabled && prefs.pendingTaskFollowUpEnabled
+            FeeloraNotificationCategory.COMPANION -> prefs.companionAlertsEnabled
+            FeeloraNotificationCategory.ACHIEVEMENT -> prefs.achievementAlertsEnabled
+            FeeloraNotificationCategory.TOGETHER -> prefs.togetherAlertsEnabled
+        }
+    }
+
     fun hasNotificationPermission(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(
@@ -157,14 +217,20 @@ object TaskReminderScheduler {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Smart Task Reminders",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Gentle reminders for pending tasks with quick Complete, Snooze & Reschedule actions."
+            FeeloraNotificationCategory.entries.forEach { cat ->
+                val importance = when (cat) {
+                    FeeloraNotificationCategory.TOGETHER -> NotificationManager.IMPORTANCE_HIGH
+                    else -> NotificationManager.IMPORTANCE_DEFAULT
+                }
+                val channel = NotificationChannel(
+                    cat.channelId,
+                    cat.channelTitle,
+                    importance
+                ).apply {
+                    description = cat.channelDescription
+                }
+                manager.createNotificationChannel(channel)
             }
-            manager.createNotificationChannel(channel)
         }
     }
 
@@ -194,17 +260,17 @@ object TaskReminderScheduler {
         )
 
         val title = if (pendingCount == 1) {
-            "Task still waiting: $topTaskTitle"
+            "Still waiting: $topTaskTitle"
         } else {
-            "$pendingCount tasks waiting · Next: $topTaskTitle"
+            "$pendingCount tasks ready · Next: $topTaskTitle"
         }
         val body = if (pendingCount == 1) {
-            "Tap to open Tasks or mark complete directly below."
+            "$companionName is cheering you on. Mark complete, snooze 1h, or move to tomorrow."
         } else {
-            "Top priority: \"$topTaskTitle\" (+${pendingCount - 1} more). Tap an action below."
+            "\"$topTaskTitle\" (+${pendingCount - 1} more). Use quick actions below without opening the app."
         }
 
-        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, FeeloraNotificationCategory.PENDING_TASK.channelId)
             .setSmallIcon(R.drawable.ic_widget_check)
             .setContentTitle(title)
             .setContentText(body)
@@ -223,7 +289,7 @@ object TaskReminderScheduler {
                 )
                 .addAction(
                     R.drawable.ic_widget_refresh,
-                    "Later (1h)",
+                    "Snooze 1h",
                     buildActionPendingIntent(context, ACTION_SNOOZE, topTaskId, 12)
                 )
                 .addAction(
@@ -234,11 +300,100 @@ object TaskReminderScheduler {
                 .setDeleteIntent(buildActionPendingIntent(context, ACTION_DISMISS, topTaskId, 14))
         }
 
-        return try {
+        val posted = try {
             NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
             true
         } catch (_: SecurityException) {
             false
+        }
+        if (posted) {
+            recordNotificationHistoryAsync(
+                context = context,
+                category = FeeloraNotificationCategory.PENDING_TASK,
+                title = title,
+                body = body,
+                targetRoute = "tasks",
+                targetId = topTaskId
+            )
+        }
+        return posted
+    }
+
+    fun postContextualNotification(
+        context: Context,
+        category: FeeloraNotificationCategory,
+        notificationId: Int,
+        title: String,
+        body: String,
+        targetRoute: String = category.defaultRoute,
+        targetId: Long = -1L
+    ): Boolean {
+        if (!hasNotificationPermission(context)) return false
+        ensureChannel(context)
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", targetRoute)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, category.channelId)
+            .setSmallIcon(R.drawable.ic_widget_check)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .build()
+
+        val posted = try {
+            NotificationManagerCompat.from(context).notify(notificationId, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+        if (posted) {
+            recordNotificationHistoryAsync(
+                context = context,
+                category = category,
+                title = title,
+                body = body,
+                targetRoute = targetRoute,
+                targetId = targetId
+            )
+        }
+        return posted
+    }
+
+    fun recordNotificationHistoryAsync(
+        context: Context,
+        category: FeeloraNotificationCategory,
+        title: String,
+        body: String,
+        targetRoute: String = category.defaultRoute,
+        targetId: Long = -1L
+    ) {
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                LifeOsDatabase.getInstance(context).notificationHistoryDao().insert(
+                    NotificationHistoryEntity(
+                        category = category.name,
+                        title = title,
+                        body = body,
+                        targetRoute = targetRoute,
+                        targetId = targetId,
+                        isRead = false,
+                        createdAtMillis = System.currentTimeMillis()
+                    )
+                )
+            }
         }
     }
 
@@ -260,9 +415,6 @@ object TaskReminderScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
-
-    const val BRIEFING_WORK_NAME = "feelora_suru_daily_briefing"
-    const val BRIEFING_NOTIFICATION_ID = 4202
 
     fun syncDailyBriefings(
         context: Context,
@@ -291,36 +443,14 @@ object TaskReminderScheduler {
         title: String,
         body: String
     ): Boolean {
-        if (!hasNotificationPermission(context)) return false
-        ensureChannel(context)
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("navigate_to", "life_ai")
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            BRIEFING_NOTIFICATION_ID,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return postContextualNotification(
+            context = context,
+            category = FeeloraNotificationCategory.TASK,
+            notificationId = BRIEFING_NOTIFICATION_ID + if (isMorning) 0 else 1,
+            title = title,
+            body = body,
+            targetRoute = "life_ai"
         )
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_widget_check)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .build()
-        return try {
-            NotificationManagerCompat.from(context).notify(
-                BRIEFING_NOTIFICATION_ID + if (isMorning) 0 else 1,
-                notification
-            )
-            true
-        } catch (_: SecurityException) {
-            false
-        }
     }
 
     internal fun shouldFireBriefingForWindow(
@@ -340,7 +470,9 @@ class PendingTaskReminderWorker(
 
     override suspend fun doWork(): Result {
         val prefs = UserPreferencesRepository(applicationContext).preferencesFlow.first()
-        if (!prefs.isSignedIn || !prefs.notificationsEnabled || !prefs.taskRemindersEnabled) {
+        if (!prefs.isSignedIn ||
+            !TaskReminderScheduler.isCategoryAllowed(FeeloraNotificationCategory.PENDING_TASK, prefs)
+        ) {
             TaskReminderScheduler.clearReminderNotification(applicationContext)
             return Result.success()
         }
@@ -410,7 +542,9 @@ class SuruDailyBriefingWorker(
 
     override suspend fun doWork(): Result {
         val prefs = UserPreferencesRepository(applicationContext).preferencesFlow.first()
-        if (!prefs.isSignedIn || !prefs.notificationsEnabled) {
+        if (!prefs.isSignedIn ||
+            !TaskReminderScheduler.isCategoryAllowed(FeeloraNotificationCategory.TASK, prefs)
+        ) {
             return Result.success()
         }
         val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)

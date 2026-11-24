@@ -171,7 +171,7 @@ private fun TasksWidget(
         Spacer(Modifier.height(6.dp))
         if (visibleTasks.isEmpty()) {
             Text(
-                text = "Create a section in Tasks or ask LIFE AI to add your first task.",
+                text = "Create a section in Tasks or ask SURU to add your first task.",
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.inkSecondary
             )
@@ -1006,7 +1006,7 @@ fun GlanceWidgetPinningSection(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = inlineFeedback
-                        ?: "If your launcher blocks direct pinning, long-press your home screen -> Widgets -> Life OS.",
+                        ?: "If your launcher blocks direct pinning, long-press your home screen -> Widgets -> Feelora.",
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary
                 )
@@ -1037,12 +1037,12 @@ private fun requestPinGlanceWidget(
             if (launched) {
                 "Pin request sent for $title. Confirm on your home screen."
             } else {
-                "Direct pinning was declined. Long-press your home screen -> Widgets -> Life OS."
+                "Direct pinning was declined. Long-press your home screen -> Widgets -> Feelora."
             }
         } else {
-            "This launcher does not support direct pinning. Long-press your home screen -> Widgets -> Life OS."
+            "This launcher does not support direct pinning. Long-press your home screen -> Widgets -> Feelora."
         }
     } else {
-        "Direct pinning requires Android 8.0+. Long-press your home screen -> Widgets -> Life OS."
+        "Direct pinning requires Android 8.0+. Long-press your home screen -> Widgets -> Feelora."
     }
 }

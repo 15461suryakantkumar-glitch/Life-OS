@@ -5,11 +5,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.data.ai.LifeContextSnapshot
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.audio.LifeOsSoundManager
 import com.example.data.audio.SoundCategory
 import com.example.data.local.AiMessageEntity
+import com.example.data.local.AiProviderUsageEntity
 import com.example.data.local.AndroidUsageStatsBridge
 import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
@@ -24,6 +24,7 @@ import com.example.data.local.FriendEntity
 import com.example.data.local.HabitEntity
 import com.example.data.local.LifeOsDatabase
 import com.example.data.local.LifeOsSeeder
+import com.example.data.local.NotificationHistoryEntity
 import com.example.data.local.PetAccessory
 import com.example.data.local.QuickNoteEntity
 import com.example.data.local.RecurrencePattern
@@ -34,21 +35,35 @@ import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
 import com.example.data.local.TaskSectionEntity
 import com.example.data.local.TaskSectionMapper
+import com.example.data.local.UsageTelemetryReport
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesState
+import com.example.data.local.WellbeingRange
+import com.example.data.local.WellbeingTelemetryState
 import com.example.data.local.WidgetConfigEntity
 import com.example.data.social.FriendSyncCodec
 import com.example.data.social.FriendSyncManager
 import com.example.data.social.NearbyFriendPeer
+import com.example.data.social.SupabaseAuthAndSyncClient
+import com.example.data.social.SupabaseResult
+import com.example.data.social.TogetherCompetitionMode
+import com.example.data.social.TogetherReaction
+import com.example.data.social.TogetherRepository
+import com.example.data.social.TogetherSharedGoal
+import com.example.data.social.TogetherState
 import com.example.kutta.KuttaEvent
 import com.example.kutta.KuttaEventHandler
 import com.example.kutta.KuttaVisualState
 import com.example.notifications.AppPermissionInfo
+import com.example.notifications.FeeloraNotificationCategory
 import com.example.notifications.PermissionCenterHelper
 import com.example.notifications.TaskReminderScheduler
 import com.example.suru.CalendarIntelligence
+import com.example.suru.LifeContextSnapshot
+import com.example.suru.ProviderDiagnostic
 import com.example.suru.SuruActionEngine
+import com.example.suru.SuruAiProvider
 import com.example.suru.SuruAiResponse
 import com.example.suru.SuruCloudAiStatus
 import com.example.suru.SuruConfirmationRequest
@@ -85,7 +100,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.Calendar
 
@@ -114,6 +131,18 @@ data class StudyTimerState(
     val linkedTaskId: Long? = null
 )
 
+data class AuthUiState(
+    val isLoading: Boolean = false,
+    val isCloudConfigured: Boolean = false,
+    val errorMessage: String? = null,
+    val infoMessage: String? = null,
+    val verificationEmailPending: String? = null,
+    val isResetSent: Boolean = false,
+    val usernameAvailable: Boolean? = null,
+    val usernameCheckBusy: Boolean = false,
+    val sessionExpiredPrompt: Boolean = false
+)
+
 data class LifeOsUiState(
     val isPrefsLoaded: Boolean = false,
     val prefs: UserPreferencesState = UserPreferencesState(),
@@ -124,6 +153,14 @@ data class LifeOsUiState(
     val widgets: List<WidgetConfigEntity> = emptyList(),
     val quickNote: String = "",
     val usageLogs: List<AppUsageLogEntity> = emptyList(),
+    val wellbeingRange: WellbeingRange = WellbeingRange.DAILY,
+    val wellbeingReport: UsageTelemetryReport = UsageTelemetryReport(
+        state = WellbeingTelemetryState.PERMISSION_NOT_GRANTED,
+        range = WellbeingRange.DAILY,
+        totalMinutes = 0,
+        distractingMinutes = 0,
+        apps = emptyList()
+    ),
     val dailyProgressLogs: List<DailyProgressLogEntity> = emptyList(),
     val challenges: List<ChallengeEntity> = emptyList(),
     val friends: List<FriendEntity> = emptyList(),
@@ -138,10 +175,13 @@ data class LifeOsUiState(
     val levelUpBanner: Int? = null,
     val statusSnackbar: String? = null,
     val hasUsageStatsPermission: Boolean = false,
-    val usageStatsStatusLabel: String = "Manual Tracking (Offline Safe)",
+    val usageStatsStatusLabel: String = "Permission Required",
     val isOnline: Boolean = false,
     val isCloudAiAvailable: Boolean = false,
     val cloudAiStatus: SuruCloudAiStatus = SuruCloudAiStatus.MISSING_API_KEY,
+    val aiProviderDiagnostics: List<ProviderDiagnostic> = emptyList(),
+    val aiProviderUsageLogs: List<AiProviderUsageEntity> = emptyList(),
+    val notificationHistory: List<NotificationHistoryEntity> = emptyList(),
     val isPeerRadarActive: Boolean = false,
     val nearbyPeers: List<NearbyFriendPeer> = emptyList(),
     val suruMemories: List<SuruMemoryEntity> = emptyList(),
@@ -154,8 +194,16 @@ data class LifeOsUiState(
     val suruLastUndo: SuruUndoRecord? = null,
     val suruActiveStudyHelp: SuruStudyHelpResult? = null,
     val pendingSuruImage: SuruImageAttachment? = null,
-    val appPermissions: List<AppPermissionInfo> = emptyList()
+    val appPermissions: List<AppPermissionInfo> = emptyList(),
+    val authUiState: AuthUiState = AuthUiState(),
+    val togetherState: TogetherState = TogetherState(),
+    val activeChatFriendId: String? = null
 ) {
+    val unreadNotificationsCount: Int
+        get() = notificationHistory.count { !it.isRead }
+
+    val unreadTogetherMessagesCount: Int
+        get() = togetherState.friends.sumOf { it.unreadCount } + togetherState.incomingRequests.size
     val suruMorningBriefing: SuruDailyBriefing
         get() = SuruIntelligenceService.buildMorningBriefing(prefs, tasks, events, todayEpochDay)
 
@@ -263,6 +311,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val suruVoiceManager = SuruVoiceManager(application)
     private val usageBridge = AndroidUsageStatsBridge(application)
     private val friendSyncManager = FriendSyncManager(application)
+    private val supabaseClient = SupabaseAuthAndSyncClient(application)
+    private val togetherRepository = TogetherRepository(application, supabaseClient)
     private val soundManager = LifeOsSoundManager(application) {
         suruVoiceManager.voiceState.value == SuruVoiceState.SPEAKING
     }
@@ -274,6 +324,16 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val levelUpBannerState = MutableStateFlow<Int?>(null)
     private val snackbarState = MutableStateFlow<String?>(null)
     private val usagePermissionTick = MutableStateFlow(0)
+    private val wellbeingRangeState = MutableStateFlow(WellbeingRange.DAILY)
+    private val wellbeingReportState = MutableStateFlow(
+        UsageTelemetryReport(
+            state = WellbeingTelemetryState.PERMISSION_NOT_GRANTED,
+            range = WellbeingRange.DAILY,
+            totalMinutes = 0,
+            distractingMinutes = 0,
+            apps = emptyList()
+        )
+    )
     private val kuttaEventState = MutableStateFlow<KuttaVisualState?>(null)
     private val suruSuccessOverride = MutableStateFlow(false)
     private val suruPendingConfirmationState = MutableStateFlow<SuruConfirmationRequest?>(null)
@@ -283,6 +343,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val appPermissionsState = MutableStateFlow(
         PermissionCenterHelper.collectAllPermissions(application)
     )
+    private val authUiStateFlow = MutableStateFlow(
+        AuthUiState(isCloudConfigured = supabaseClient.isConfigured())
+    )
+    private val activeChatFriendIdState = MutableStateFlow<String?>(null)
 
     private var pendingSuruContext: SuruPendingContext? = null
     private var lastProposedStudyDraft: SuruStudyPlanDraft? = null
@@ -341,7 +405,14 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val isPeerRadarActive: Boolean,
         val nearbyPeers: List<NearbyFriendPeer>,
         val usageTick: Int,
-        val permissions: List<AppPermissionInfo>
+        val permissions: List<AppPermissionInfo>,
+        val togetherState: TogetherState,
+        val authUiState: AuthUiState,
+        val activeChatFriendId: String?,
+        val wellbeingRange: WellbeingRange,
+        val wellbeingReport: UsageTelemetryReport,
+        val notificationHistory: List<NotificationHistoryEntity>,
+        val aiUsageLogs: List<AiProviderUsageEntity>
     )
 
     private val tasksAndSectionsFlow = combine(
@@ -452,14 +523,53 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    private val socialNetworkFlow = combine(
+    private val networkBasicFlow = combine(
         friendSyncManager.observeNetworkOnline(),
         friendSyncManager.isPeerRadarActive,
         friendSyncManager.nearbyPeers,
         usagePermissionTick,
         appPermissionsState
     ) { online, radar, peers, tick, perms ->
-        SocialNetworkFlows(online, radar, peers, tick, perms)
+        listOf(online, radar, peers, tick, perms)
+    }
+
+    private val togetherExtrasFlow = combine(
+        togetherRepository.state,
+        authUiStateFlow,
+        activeChatFriendIdState,
+        wellbeingRangeState,
+        wellbeingReportState
+    ) { tState, authUi, chatFriendId, wRange, wReport ->
+        listOf(tState, authUi, chatFriendId, wRange, wReport)
+    }
+
+    private val historyAndAiLogsFlow = combine(
+        db.notificationHistoryDao().observeAll(),
+        db.aiProviderUsageDao().observeAll()
+    ) { notifHist, aiUsage ->
+        notifHist to aiUsage
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private val socialNetworkFlow = combine(
+        networkBasicFlow,
+        togetherExtrasFlow,
+        historyAndAiLogsFlow
+    ) { netBasic, tExtras, histAi ->
+        SocialNetworkFlows(
+            isOnline = netBasic[0] as Boolean,
+            isPeerRadarActive = netBasic[1] as Boolean,
+            nearbyPeers = netBasic[2] as List<NearbyFriendPeer>,
+            usageTick = netBasic[3] as Int,
+            permissions = netBasic[4] as List<AppPermissionInfo>,
+            togetherState = tExtras[0] as TogetherState,
+            authUiState = tExtras[1] as AuthUiState,
+            activeChatFriendId = tExtras[2] as String?,
+            wellbeingRange = tExtras[3] as WellbeingRange,
+            wellbeingReport = tExtras[4] as UsageTelemetryReport,
+            notificationHistory = histAi.first,
+            aiUsageLogs = histAi.second
+        )
     }
 
     val uiState: StateFlow<LifeOsUiState> = combine(
@@ -504,6 +614,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             widgets = core.widgets,
             quickNote = sec.note?.content ?: "",
             usageLogs = sec.usage,
+            wellbeingRange = social.wellbeingRange,
+            wellbeingReport = social.wellbeingReport,
             dailyProgressLogs = sec.dailyProgress,
             challenges = sec.challenges,
             friends = sec.friends,
@@ -522,6 +634,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             isOnline = social.isOnline,
             isCloudAiAvailable = cloudStatus.isCloudConfigured,
             cloudAiStatus = cloudStatus,
+            aiProviderDiagnostics = suruService.getGateway().getAllDiagnostics(),
+            aiProviderUsageLogs = social.aiUsageLogs,
+            notificationHistory = social.notificationHistory,
             isPeerRadarActive = social.isPeerRadarActive,
             nearbyPeers = social.nearbyPeers,
             suruMemories = sec.suruMemories,
@@ -534,7 +649,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             suruLastUndo = suru.undoRecord,
             suruActiveStudyHelp = suru.studyHelp,
             pendingSuruImage = suru.pendingImage,
-            appPermissions = social.permissions
+            appPermissions = social.permissions,
+            authUiState = social.authUiState,
+            togetherState = social.togetherState,
+            activeChatFriendId = social.activeChatFriendId
         )
     }.stateIn(
         scope = viewModelScope,
@@ -550,7 +668,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             syncSystemUsageStatsIfGranted(showToast = false)
             refreshSystemPermissions()
             LifeOsWidgetUpdater.updateAllWidgets(getApplication())
-            val p = uiState.value.prefs
+            val p = prefsRepo.preferencesFlow.first()
             TaskReminderScheduler.syncSchedule(
                 context = getApplication(),
                 notificationsEnabled = p.notificationsEnabled,
@@ -563,6 +681,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 morningEnabled = p.suruMorningBriefingEnabled,
                 eveningEnabled = p.suruEveningReflectionEnabled
             )
+            tryAutoRefreshSupabaseSession()
             onAppForegrounded()
         }
     }
@@ -570,8 +689,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         super.onCleared()
         friendSyncManager.stopNearbyPeerSync()
+        togetherRepository.stopRealtimeSync()
         soundManager.release()
         suruVoiceManager.release()
+    }
+
+    fun setAppInForeground(inForeground: Boolean) {
+        soundManager.setAppInForeground(inForeground)
+        if (inForeground) {
+            onAppForegrounded()
+            refreshSystemPermissions()
+        }
     }
 
     private fun emitKuttaEvent(event: KuttaEvent) {
@@ -648,7 +776,252 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         snackbarState.value = message
     }
 
-    // --- ONBOARDING ---
+    // --- ONBOARDING, SUPABASE AUTH & SESSION ---
+    fun clearAuthFeedback() {
+        authUiStateFlow.update { it.copy(errorMessage = null, infoMessage = null, isResetSent = false) }
+    }
+
+    fun dismissSessionExpiredPrompt() {
+        authUiStateFlow.update { it.copy(sessionExpiredPrompt = false) }
+    }
+
+    private suspend fun tryAutoRefreshSupabaseSession() {
+        val prefs = prefsRepo.preferencesFlow.first()
+        if (!prefs.isSignedIn) return
+        if (!supabaseClient.isConfigured()) {
+            togetherRepository.refreshConfigurationState()
+            return
+        }
+        if (prefs.supabaseRefreshToken.isBlank() && prefs.supabaseAccessToken.isBlank()) return
+
+        val now = System.currentTimeMillis()
+        if (prefs.supabaseSessionExpiresAt > now + 120_000L && prefs.supabaseAccessToken.isNotBlank()) {
+            when (val userRes = supabaseClient.fetchCurrentUser(prefs.supabaseAccessToken)) {
+                is SupabaseResult.Success -> {
+                    prefsRepo.saveSupabaseSession(
+                        userId = userRes.value.userId,
+                        email = userRes.value.email,
+                        accessToken = prefs.supabaseAccessToken,
+                        refreshToken = prefs.supabaseRefreshToken,
+                        expiresAtMillis = prefs.supabaseSessionExpiresAt,
+                        emailVerified = userRes.value.emailVerified
+                    )
+                    togetherRepository.startRealtimeSync(viewModelScope, userRes.value.userId, prefs.supabaseAccessToken)
+                    syncSafeProfileToTogether()
+                    return
+                }
+                is SupabaseResult.Failure -> if (!userRes.isUnauthorized) return
+            }
+        }
+
+        if (prefs.supabaseRefreshToken.isNotBlank()) {
+            when (val refreshed = supabaseClient.refreshSession(prefs.supabaseRefreshToken)) {
+                is SupabaseResult.Success -> {
+                    val s = refreshed.value
+                    prefsRepo.saveSupabaseSession(
+                        userId = s.userId,
+                        email = s.email,
+                        accessToken = s.accessToken,
+                        refreshToken = s.refreshToken.ifBlank { prefs.supabaseRefreshToken },
+                        expiresAtMillis = s.expiresAtMillis,
+                        emailVerified = s.emailVerified
+                    )
+                    togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
+                    syncSafeProfileToTogether()
+                }
+                is SupabaseResult.Failure -> {
+                    if (refreshed.isUnauthorized) {
+                        authUiStateFlow.update { it.copy(sessionExpiredPrompt = true) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun signUpWithSupabase(email: String, password: String, displayName: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+            when (val res = supabaseClient.signUp(email, password, displayName)) {
+                is SupabaseResult.Success -> {
+                    val s = res.value
+                    if (s.accessToken.isNotBlank()) {
+                        prefsRepo.saveSupabaseSession(
+                            userId = s.userId,
+                            email = s.email,
+                            accessToken = s.accessToken,
+                            refreshToken = s.refreshToken,
+                            expiresAtMillis = s.expiresAtMillis,
+                            emailVerified = s.emailVerified
+                        )
+                        authUiStateFlow.update {
+                            it.copy(
+                                isLoading = false,
+                                verificationEmailPending = if (!s.emailVerified) s.email else null,
+                                infoMessage = if (s.emailVerified) "Account created!" else "Account created! Check ${s.email} for verification."
+                            )
+                        }
+                        onSuccess()
+                    } else {
+                        authUiStateFlow.update {
+                            it.copy(
+                                isLoading = false,
+                                verificationEmailPending = email.trim(),
+                                infoMessage = "Verification link sent to ${email.trim()}. Confirm your email, then sign in or continue setup."
+                            )
+                        }
+                    }
+                }
+                is SupabaseResult.Failure -> {
+                    authUiStateFlow.update { it.copy(isLoading = false, errorMessage = res.message) }
+                }
+            }
+        }
+    }
+
+    fun signInWithSupabase(email: String, password: String, onSuccess: () -> Unit) {
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+            when (val res = supabaseClient.signIn(email, password)) {
+                is SupabaseResult.Success -> {
+                    val s = res.value
+                    prefsRepo.saveSupabaseSession(
+                        userId = s.userId,
+                        email = s.email,
+                        accessToken = s.accessToken,
+                        refreshToken = s.refreshToken,
+                        expiresAtMillis = s.expiresAtMillis,
+                        emailVerified = s.emailVerified
+                    )
+                    if (s.displayName.isNotBlank() && uiState.value.prefs.userName.isBlank()) {
+                        prefsRepo.completeOnboardingSignIn(
+                            name = s.displayName,
+                            identityOrEmail = s.email,
+                            focusGoal = uiState.value.prefs.dailyFocusGoalMinutes,
+                            themeMode = uiState.value.prefs.themeMode
+                        )
+                    }
+                    togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
+                    syncSafeProfileToTogether()
+                    authUiStateFlow.update {
+                        it.copy(
+                            isLoading = false,
+                            sessionExpiredPrompt = false,
+                            verificationEmailPending = if (!s.emailVerified) s.email else null,
+                            infoMessage = "Signed in as ${s.email}"
+                        )
+                    }
+                    onSuccess()
+                }
+                is SupabaseResult.Failure -> {
+                    authUiStateFlow.update { it.copy(isLoading = false, errorMessage = res.message) }
+                }
+            }
+        }
+    }
+
+    fun sendPasswordReset(email: String) {
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null, isResetSent = false) }
+            when (val res = supabaseClient.sendPasswordReset(email)) {
+                is SupabaseResult.Success -> authUiStateFlow.update {
+                    it.copy(isLoading = false, isResetSent = true, infoMessage = res.value)
+                }
+                is SupabaseResult.Failure -> authUiStateFlow.update {
+                    it.copy(isLoading = false, errorMessage = res.message)
+                }
+            }
+        }
+    }
+
+    fun resendVerificationEmail(email: String) {
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null) }
+            when (val res = supabaseClient.resendVerification(email)) {
+                is SupabaseResult.Success -> authUiStateFlow.update {
+                    it.copy(isLoading = false, infoMessage = res.value)
+                }
+                is SupabaseResult.Failure -> authUiStateFlow.update {
+                    it.copy(isLoading = false, errorMessage = res.message)
+                }
+            }
+        }
+    }
+
+    fun checkUsernameAvailability(username: String) {
+        val clean = SupabaseAuthAndSyncClient.normalizeHandle(username)
+        if (clean.length < 3) {
+            authUiStateFlow.update { it.copy(usernameAvailable = null, usernameCheckBusy = false) }
+            return
+        }
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(usernameCheckBusy = true) }
+            val token = uiState.value.prefs.supabaseAccessToken
+            when (val res = supabaseClient.checkUsernameAvailable(clean, token)) {
+                is SupabaseResult.Success -> authUiStateFlow.update {
+                    it.copy(usernameAvailable = res.value, usernameCheckBusy = false)
+                }
+                is SupabaseResult.Failure -> authUiStateFlow.update {
+                    it.copy(usernameAvailable = null, usernameCheckBusy = false)
+                }
+            }
+        }
+    }
+
+    fun complete7StepOnboarding(
+        name: String,
+        handleOrEmail: String,
+        bio: String,
+        preferredLanguage: String,
+        themeMode: LifeOsThemeMode,
+        avatarPreset: UserAvatarPreset,
+        avatarPhotoUri: String,
+        focusGoalMinutes: Int = 120
+    ) {
+        viewModelScope.launch {
+            var resolvedAvatarUri = avatarPhotoUri
+            val prefsNow = uiState.value.prefs
+            if (avatarPhotoUri.startsWith("content://") && prefsNow.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                val parsedUri = runCatching { Uri.parse(avatarPhotoUri) }.getOrNull()
+                if (parsedUri != null) {
+                    val upload = supabaseClient.uploadImageToStorage(
+                        bucket = "avatars",
+                        objectPath = "${prefsNow.supabaseUserId}/avatar.jpg",
+                        localUri = parsedUri,
+                        accessToken = prefsNow.supabaseAccessToken
+                    )
+                    if (upload is SupabaseResult.Success) {
+                        resolvedAvatarUri = upload.value
+                    }
+                }
+            }
+            prefsRepo.completeOnboardingSignIn(
+                name = name,
+                identityOrEmail = handleOrEmail,
+                focusGoal = focusGoalMinutes,
+                themeMode = themeMode,
+                bio = bio,
+                preferredLanguage = preferredLanguage,
+                avatarPreset = avatarPreset,
+                avatarPhotoUri = resolvedAvatarUri
+            )
+            prefsRepo.unlockBadge("FIRST_LAUNCH")
+            val updated = prefsRepo.preferencesFlow.first()
+            TaskReminderScheduler.syncSchedule(
+                context = getApplication(),
+                notificationsEnabled = updated.notificationsEnabled,
+                taskRemindersEnabled = updated.taskRemindersEnabled,
+                frequencyHours = updated.reminderFrequencyHours
+            )
+            if (updated.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                togetherRepository.startRealtimeSync(viewModelScope, updated.supabaseUserId, updated.supabaseAccessToken)
+                syncSafeProfileToTogether()
+            }
+            emitKuttaEvent(KuttaEvent.AppOpenedMorning)
+            snackbarState.value = "Welcome to FEELORA, ${updated.userName.ifBlank { name }}!"
+            syncHomeWidgets()
+        }
+    }
+
     fun completeOnboarding(
         name: String,
         identityOrEmail: String,
@@ -656,30 +1029,26 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         themeMode: LifeOsThemeMode
     ) {
         if (name.isBlank()) return
-        viewModelScope.launch {
-            prefsRepo.completeOnboardingSignIn(
-                name = name,
-                identityOrEmail = identityOrEmail,
-                focusGoal = focusGoalMinutes,
-                themeMode = themeMode
-            )
-            prefsRepo.unlockBadge("FIRST_LAUNCH")
-            TaskReminderScheduler.syncSchedule(
-                context = getApplication(),
-                notificationsEnabled = true,
-                taskRemindersEnabled = true
-            )
-            emitKuttaEvent(KuttaEvent.AppOpenedMorning)
-            snackbarState.value = "Welcome, ${name.trim()}! KUTTA is ready!"
-            syncHomeWidgets()
-        }
+        complete7StepOnboarding(
+            name = name,
+            handleOrEmail = identityOrEmail,
+            bio = "",
+            preferredLanguage = "English",
+            themeMode = themeMode,
+            avatarPreset = UserAvatarPreset.STAR_BUNNY,
+            avatarPhotoUri = "",
+            focusGoalMinutes = focusGoalMinutes
+        )
     }
 
     fun signOutLocalSession() {
         viewModelScope.launch {
             friendSyncManager.stopNearbyPeerSync()
+            togetherRepository.stopRealtimeSync()
+            // Preserves all local Room user data, XP, tasks, events, habits, Cycle Care & memories
             prefsRepo.signOutSession()
-            snackbarState.value = "Signed out of local session"
+            authUiStateFlow.update { AuthUiState(isCloudConfigured = supabaseClient.isConfigured()) }
+            snackbarState.value = "Signed out safely. Local data & progress are preserved."
         }
     }
 
@@ -1124,39 +1493,72 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     // --- DIGITAL WELLNESS & OS USAGE STATS ---
     fun buildUsageAccessIntent(): Intent = usageBridge.openUsageAccessSettingsIntent()
 
-    fun refreshUsageStatsStatusAndSync(showToast: Boolean = true) {
-        usagePermissionTick.value += 1
+    fun selectWellbeingRange(range: WellbeingRange) {
+        wellbeingRangeState.value = range
         viewModelScope.launch {
-            syncSystemUsageStatsIfGranted(showToast = showToast)
+            syncSystemUsageStatsIfGranted(showToast = false, range = range)
         }
     }
 
-    private suspend fun syncSystemUsageStatsIfGranted(showToast: Boolean) {
-        if (!usageBridge.hasSystemUsagePermission()) {
-            if (showToast) {
-                snackbarState.value = "Grant Usage Access in Android Settings to auto-sync app screen time."
-            }
-            return
+    fun refreshUsageStatsStatusAndSync(showToast: Boolean = true) {
+        usagePermissionTick.value += 1
+        viewModelScope.launch {
+            syncSystemUsageStatsIfGranted(showToast = showToast, range = wellbeingRangeState.value)
         }
-        val systemEntries = usageBridge.queryTodayUsageStats()
-        if (systemEntries.isEmpty()) {
+    }
+
+    private suspend fun syncSystemUsageStatsIfGranted(
+        showToast: Boolean,
+        range: WellbeingRange = wellbeingRangeState.value
+    ) {
+        val report = usageBridge.queryUsageReport(range)
+        wellbeingReportState.value = report
+
+        when (report.state) {
+            WellbeingTelemetryState.PERMISSION_NOT_GRANTED -> {
+                if (showToast) {
+                    snackbarState.value = "Grant Usage Access in Android Settings to view authentic screen time."
+                }
+                return
+            }
+            WellbeingTelemetryState.USAGE_UNAVAILABLE -> {
+                if (showToast) {
+                    snackbarState.value = "Usage information unavailable on this device right now."
+                }
+                return
+            }
+            WellbeingTelemetryState.NO_USAGE_RECORDED -> {
+                if (showToast) {
+                    snackbarState.value = "Usage Access active — no app usage recorded in this window yet."
+                }
+                return
+            }
+            WellbeingTelemetryState.RECORDED_USAGE -> Unit
+        }
+
+        if (range != WellbeingRange.DAILY) {
             if (showToast) {
-                snackbarState.value = "Usage Access active — no foreground app sessions over 1m today yet."
+                snackbarState.value = "${range.label} screen time synced (${report.apps.size} apps)"
             }
             return
         }
 
         val today = DateTimeUtils.todayEpochDay()
         val existingToday = db.appUsageDao().getLogsForDay(today)
-        val existingByName = existingToday.associateBy { it.appName.lowercase() }
+        val existingByPkgOrName = existingToday.associateBy {
+            it.packageName.ifBlank { it.appName }.lowercase()
+        }
         var updatedCount = 0
 
-        systemEntries.forEach { entry ->
-            val match = existingByName[entry.appName.lowercase()]
+        report.apps.forEach { entry ->
+            val key = entry.packageName.ifBlank { entry.appName }.lowercase()
+            val match = existingByPkgOrName[key]
+                ?: existingToday.firstOrNull { it.appName.equals(entry.appName, ignoreCase = true) }
             if (match == null) {
                 db.appUsageDao().insertLog(
                     AppUsageLogEntity(
                         appName = entry.appName,
+                        packageName = entry.packageName,
                         categoryName = entry.category.name,
                         minutesUsed = entry.minutesUsed,
                         isDistracting = entry.isDistracting,
@@ -1164,10 +1566,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
                 updatedCount++
-            } else if (entry.minutesUsed > match.minutesUsed) {
+            } else if (entry.minutesUsed != match.minutesUsed || match.packageName != entry.packageName) {
                 db.appUsageDao().insertLog(
                     match.copy(
-                        minutesUsed = entry.minutesUsed,
+                        packageName = entry.packageName,
+                        minutesUsed = maxOf(match.minutesUsed, entry.minutesUsed),
                         categoryName = entry.category.name,
                         isDistracting = entry.isDistracting
                     )
@@ -1549,6 +1952,216 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    // --- TOGETHER CLOUD SYNC, REQUESTS, CHATS, SHARED GOALS & COMPETE ---
+    fun refreshTogetherData() {
+        viewModelScope.launch {
+            val prefs = uiState.value.prefs
+            if (prefs.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                syncSafeProfileToTogether()
+                togetherRepository.refreshAll()
+            } else {
+                togetherRepository.refreshConfigurationState()
+            }
+        }
+    }
+
+    fun syncSafeProfileToTogether() {
+        viewModelScope.launch {
+            val state = uiState.value
+            val p = state.prefs
+            if (!p.hasValidRemoteSession || !supabaseClient.isConfigured()) return@launch
+            val today = DateTimeUtils.todayEpochDay()
+            val doneToday = state.tasks.count {
+                it.isCompleted && it.completedAtMillis?.let { ts -> DateTimeUtils.epochDayFromMillis(ts) == today } == true
+            }
+            togetherRepository.syncMySafeProfile(
+                userId = p.supabaseUserId,
+                accessToken = p.supabaseAccessToken,
+                prefs = p,
+                tasksCompletedToday = doneToday,
+                consistencyScore = state.productivityScore,
+                challengesCompleted = state.completedChallengesCount
+            )
+        }
+    }
+
+    fun sendTogetherFriendRequest(query: String) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (val res = togetherRepository.sendFriendRequest(
+                query = query,
+                myUserId = p.supabaseUserId,
+                myName = p.userName,
+                myHandle = p.userHandle,
+                accessToken = p.supabaseAccessToken
+            )) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.TOGETHER_MESSAGE, p)
+                    snackbarState.value = res.value
+                }
+                is SupabaseResult.Failure -> {
+                    snackbarState.value = res.message
+                }
+            }
+        }
+    }
+
+    fun respondToTogetherRequest(requestId: String, accept: Boolean) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            val status = if (accept) "ACCEPTED" else "DECLINED"
+            when (val res = togetherRepository.respondToFriendRequest(requestId, status, p.supabaseAccessToken)) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, p)
+                    snackbarState.value = if (accept) "Friend request accepted!" else "Request declined"
+                }
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun blockOrRemoveTogetherFriend(friendUserId: String, block: Boolean) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (val res = togetherRepository.blockOrRemoveFriend(p.supabaseUserId, friendUserId, block, p.supabaseAccessToken)) {
+                is SupabaseResult.Success -> {
+                    if (activeChatFriendIdState.value == friendUserId) {
+                        activeChatFriendIdState.value = null
+                    }
+                    snackbarState.value = if (block) "User blocked" else "Friend removed"
+                }
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun reportTogetherUser(reportedUserId: String, reason: String) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (val res = togetherRepository.reportUser(p.supabaseUserId, reportedUserId, reason, p.supabaseAccessToken)) {
+                is SupabaseResult.Success -> snackbarState.value = res.value
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun openTogetherChat(friendUserId: String?) {
+        activeChatFriendIdState.value = friendUserId
+        if (!friendUserId.isNullOrBlank()) {
+            viewModelScope.launch {
+                val p = uiState.value.prefs
+                togetherRepository.markConversationRead(p.supabaseUserId, friendUserId, p.supabaseAccessToken)
+            }
+        }
+    }
+
+    fun sendTogetherChatMessage(friendUserId: String, content: String, mediaUri: Uri? = null) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            soundManager.playCue(LifeOsSoundCue.TOGETHER_MESSAGE, p)
+            when (val res = togetherRepository.sendMessage(
+                myUserId = p.supabaseUserId,
+                friendUserId = friendUserId,
+                content = content,
+                mediaLocalUri = mediaUri,
+                accessToken = p.supabaseAccessToken
+            )) {
+                is SupabaseResult.Success -> Unit
+                is SupabaseResult.Failure -> {
+                    snackbarState.value = if (res.isConfigMissing) {
+                        "Queued locally (cloud Together backend not configured)."
+                    } else {
+                        "Saved to offline outbox: ${res.message}"
+                    }
+                }
+            }
+        }
+    }
+
+    fun createTogetherSharedGoal(
+        partnerId: String?,
+        partnerName: String?,
+        title: String,
+        description: String,
+        targetValue: Int,
+        unitLabel: String
+    ) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (val res = togetherRepository.createSharedGoal(
+                myUserId = p.supabaseUserId,
+                partnerId = partnerId,
+                partnerName = partnerName,
+                title = title,
+                description = description,
+                targetValue = targetValue,
+                unitLabel = unitLabel,
+                accessToken = p.supabaseAccessToken
+            )) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, p)
+                    snackbarState.value = "Shared goal created"
+                }
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun incrementTogetherSharedGoal(goal: TogetherSharedGoal, delta: Int = 1) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (val res = togetherRepository.incrementSharedGoal(goal, delta, p.userName, p.supabaseUserId, p.supabaseAccessToken)) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.TASK_COMPLETE, p)
+                }
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun createTogetherCompetition(
+        partnerId: String?,
+        partnerName: String?,
+        title: String,
+        mode: TogetherCompetitionMode
+    ) {
+        viewModelScope.launch {
+            val state = uiState.value
+            val p = state.prefs
+            val myInitial = when (mode) {
+                TogetherCompetitionMode.XP_SPRINT -> p.totalXp
+                TogetherCompetitionMode.TASK_FINISH -> state.completedTasksCount
+                TogetherCompetitionMode.STUDY_FOCUS_RACE -> p.focusMinutesLoggedToday
+                TogetherCompetitionMode.STREAK_CHALLENGE -> p.dailyStreak
+                TogetherCompetitionMode.CONSISTENCY_DUEL -> state.productivityScore
+            }
+            when (val res = togetherRepository.createCompetition(
+                myUserId = p.supabaseUserId,
+                partnerId = partnerId,
+                partnerName = partnerName,
+                title = title,
+                mode = mode,
+                myInitialScore = myInitial,
+                accessToken = p.supabaseAccessToken
+            )) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, p)
+                    snackbarState.value = "${mode.title} challenge started!"
+                }
+                is SupabaseResult.Failure -> snackbarState.value = res.message
+            }
+        }
+    }
+
+    fun reactToTogetherActivity(activityId: String, reaction: TogetherReaction) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            soundManager.playCue(LifeOsSoundCue.UI_TAP, p)
+            togetherRepository.reactToActivity(activityId, p.supabaseUserId, reaction, p.supabaseAccessToken)
+        }
+    }
+
     // --- SURU VOICE, ASSISTANT, PLANNER, STUDY LAB, MEMORY & UNDO ---
     private fun triggerSuruSuccessPulse() {
         suruSuccessOverride.value = true
@@ -1746,7 +2359,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            // 1. Cloud Gemini Brain first whenever configured & online (multimodal + contextual memory)
+            // 1. Multi-Provider Cloud AI Gateway first whenever configured & online
             when (
                 val cloudResponse = suruService.processUnifiedPrompt(
                     userPrompt = effectivePrompt,
@@ -1758,7 +2371,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     studyPlans = current.suruStudyPlans,
                     enabledMemories = enabledMemories,
                     pendingContext = pendingSuruContext,
-                    todayEpochDay = today
+                    todayEpochDay = today,
+                    prefs = current.prefs
                 )
             ) {
                 is SuruAiResponse.Success -> {
@@ -1845,7 +2459,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 val help = suruService.generateStudyHelp(
                     topic = suruAction.studyHelpTopic ?: sourcePrompt,
                     mode = suruAction.studyHelpMode,
-                    userNotes = ""
+                    userNotes = "",
+                    prefs = current.prefs
                 )
                 suruStudyHelpState.value = help
                 finalReply = "${help.conceptExplanation}\n\nKey Takeaways:\n" +
@@ -2108,13 +2723,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         if (topic.isBlank() && userNotes.isBlank()) return
         viewModelScope.launch {
             aiLoadingState.value = true
+            val currentPrefs = uiState.value.prefs
             val result = suruService.generateStudyHelp(
                 topic = topic.ifBlank { "Study Notes" },
                 mode = mode,
-                userNotes = userNotes
+                userNotes = userNotes,
+                prefs = currentPrefs
             )
             suruStudyHelpState.value = result
-            soundManager.playCue(LifeOsSoundCue.SURU_SUCCESS, uiState.value.prefs)
+            soundManager.playCue(LifeOsSoundCue.SURU_SUCCESS, currentPrefs)
             aiLoadingState.value = false
         }
     }
@@ -2126,16 +2743,69 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun updateSuruAiGatewaySettings(
+        defaultProvider: SuruAiProvider,
+        defaultModel: String,
+        autoRoutingEnabled: Boolean,
+        secondaryReviewEnabled: Boolean,
+        secondaryProvider: SuruAiProvider,
+        secondaryModel: String,
+        autoFallbackEnabled: Boolean
+    ) {
+        viewModelScope.launch {
+            prefsRepo.updateSuruAiGatewaySettings(
+                defaultProvider = defaultProvider.name,
+                defaultModel = defaultModel,
+                autoRoutingEnabled = autoRoutingEnabled,
+                secondaryReviewEnabled = secondaryReviewEnabled,
+                secondaryProvider = secondaryProvider.name,
+                secondaryModel = secondaryModel,
+                autoFallbackEnabled = autoFallbackEnabled
+            )
+            soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
+            snackbarState.value = "SURU AI routing updated (${defaultProvider.shortName})"
+        }
+    }
+
     // --- PROFILE, THEMES & SETTINGS ---
     fun updateProfile(
         name: String,
         handle: String,
         focusGoal: Int,
         screenLimit: Int,
-        avatarPreset: UserAvatarPreset? = null
+        avatarPreset: UserAvatarPreset? = null,
+        bio: String? = null,
+        preferredLanguage: String? = null,
+        avatarPhotoUri: String? = null
     ) {
         viewModelScope.launch {
-            prefsRepo.updateProfile(name, handle, focusGoal, screenLimit, avatarPreset)
+            var resolvedPhoto = avatarPhotoUri
+            val prefsNow = uiState.value.prefs
+            if (avatarPhotoUri != null && avatarPhotoUri.startsWith("content://") && prefsNow.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                val uri = runCatching { Uri.parse(avatarPhotoUri) }.getOrNull()
+                if (uri != null) {
+                    val upload = supabaseClient.uploadImageToStorage(
+                        bucket = "avatars",
+                        objectPath = "${prefsNow.supabaseUserId}/avatar.jpg",
+                        localUri = uri,
+                        accessToken = prefsNow.supabaseAccessToken
+                    )
+                    if (upload is SupabaseResult.Success) {
+                        resolvedPhoto = upload.value
+                    }
+                }
+            }
+            prefsRepo.updateProfile(
+                name = name,
+                handle = handle,
+                focusGoal = focusGoal,
+                screenLimit = screenLimit,
+                avatarPreset = avatarPreset,
+                bio = bio,
+                preferredLanguage = preferredLanguage,
+                avatarPhotoUri = resolvedPhoto
+            )
+            syncSafeProfileToTogether()
             soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
             snackbarState.value = "Profile saved"
         }
@@ -2144,14 +2814,38 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     fun updateAvatarPreset(avatarPreset: UserAvatarPreset) {
         viewModelScope.launch {
             prefsRepo.updateAvatarPreset(avatarPreset)
+            syncSafeProfileToTogether()
             soundManager.playCue(LifeOsSoundCue.UI_TOGGLE, uiState.value.prefs)
             snackbarState.value = "Avatar updated to ${avatarPreset.label}"
+        }
+    }
+
+    fun updateAvatarPhotoUri(uri: Uri) {
+        viewModelScope.launch {
+            var finalUri = uri.toString()
+            val prefsNow = uiState.value.prefs
+            if (prefsNow.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                val upload = supabaseClient.uploadImageToStorage(
+                    bucket = "avatars",
+                    objectPath = "${prefsNow.supabaseUserId}/avatar.jpg",
+                    localUri = uri,
+                    accessToken = prefsNow.supabaseAccessToken
+                )
+                if (upload is SupabaseResult.Success) {
+                    finalUri = upload.value
+                }
+            }
+            prefsRepo.updateAvatarPhotoUri(finalUri)
+            syncSafeProfileToTogether()
+            soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
+            snackbarState.value = "Profile photo updated"
         }
     }
 
     fun updateThemeMode(mode: LifeOsThemeMode) {
         viewModelScope.launch {
             prefsRepo.updateThemeMode(mode)
+            syncSafeProfileToTogether()
             soundManager.playCue(LifeOsSoundCue.UI_TOGGLE, uiState.value.prefs)
             snackbarState.value = "Theme switched to ${mode.displayName}"
         }
@@ -2165,6 +2859,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         viewModelScope.launch {
             prefsRepo.updatePrivacy(shareXp, shareStreaks, shareFocus, shareChallenges)
+            syncSafeProfileToTogether()
         }
     }
 
@@ -2174,7 +2869,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         wellnessAlerts: Boolean,
         quietHoursEnabled: Boolean = uiState.value.prefs.quietHoursEnabled,
         quietStartHour: Int = uiState.value.prefs.quietStartHour,
-        quietEndHour: Int = uiState.value.prefs.quietEndHour
+        quietEndHour: Int = uiState.value.prefs.quietEndHour,
+        pendingTaskFollowUp: Boolean = uiState.value.prefs.pendingTaskFollowUpEnabled,
+        companionAlerts: Boolean = uiState.value.prefs.companionAlertsEnabled,
+        achievementAlerts: Boolean = uiState.value.prefs.achievementAlertsEnabled,
+        togetherAlerts: Boolean = uiState.value.prefs.togetherAlertsEnabled
     ) {
         viewModelScope.launch {
             val freq = uiState.value.prefs.reminderFrequencyHours
@@ -2184,15 +2883,39 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 wellnessAlerts = wellnessAlerts,
                 quietHoursEnabled = quietHoursEnabled,
                 quietStartHour = quietStartHour,
-                quietEndHour = quietEndHour
+                quietEndHour = quietEndHour,
+                pendingTaskFollowUp = pendingTaskFollowUp,
+                companionAlerts = companionAlerts,
+                achievementAlerts = achievementAlerts,
+                togetherAlerts = togetherAlerts
             )
             TaskReminderScheduler.syncSchedule(
                 context = getApplication(),
                 notificationsEnabled = enabled,
-                taskRemindersEnabled = reminders,
+                taskRemindersEnabled = reminders && pendingTaskFollowUp,
                 frequencyHours = freq
             )
             soundManager.playCue(LifeOsSoundCue.UI_TOGGLE, uiState.value.prefs)
+        }
+    }
+
+    fun markNotificationRead(id: Long) {
+        viewModelScope.launch {
+            db.notificationHistoryDao().markRead(id)
+        }
+    }
+
+    fun markAllNotificationsRead() {
+        viewModelScope.launch {
+            db.notificationHistoryDao().markAllRead()
+            soundManager.playCue(LifeOsSoundCue.UI_TAP, uiState.value.prefs)
+        }
+    }
+
+    fun clearNotificationHistory() {
+        viewModelScope.launch {
+            db.notificationHistoryDao().clearAll()
+            snackbarState.value = "Notification history cleared"
         }
     }
 
@@ -2203,7 +2926,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             TaskReminderScheduler.syncSchedule(
                 context = getApplication(),
                 notificationsEnabled = p.notificationsEnabled,
-                taskRemindersEnabled = p.taskRemindersEnabled,
+                taskRemindersEnabled = p.taskRemindersEnabled && p.pendingTaskFollowUpEnabled,
                 frequencyHours = frequencyHours
             )
             soundManager.playCue(LifeOsSoundCue.UI_TOGGLE, p)
@@ -2228,10 +2951,13 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         navEnabled: Boolean = uiState.value.prefs.soundNavEnabled,
         interactionEnabled: Boolean = uiState.value.prefs.soundInteractionEnabled,
         taskEnabled: Boolean = uiState.value.prefs.soundTaskEnabled,
-        calendarEnabled: Boolean = uiState.value.prefs.soundCalendarEnabled,
+        achievementEnabled: Boolean = uiState.value.prefs.soundAchievementEnabled,
+        streakEnabled: Boolean = uiState.value.prefs.soundStreakEnabled,
         suruEnabled: Boolean = uiState.value.prefs.soundSuruEnabled,
-        gamificationEnabled: Boolean = uiState.value.prefs.soundGamificationEnabled,
-        companionEnabled: Boolean = uiState.value.prefs.soundCompanionEnabled
+        companionEnabled: Boolean = uiState.value.prefs.soundCompanionEnabled,
+        togetherEnabled: Boolean = uiState.value.prefs.soundTogetherEnabled,
+        reminderEnabled: Boolean = uiState.value.prefs.soundReminderEnabled,
+        notificationEnabled: Boolean = uiState.value.prefs.soundNotificationEnabled
     ) {
         viewModelScope.launch {
             prefsRepo.updateSoundConfiguration(
@@ -2241,34 +2967,46 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 navEnabled = navEnabled,
                 interactionEnabled = interactionEnabled,
                 taskEnabled = taskEnabled,
-                calendarEnabled = calendarEnabled,
+                calendarEnabled = reminderEnabled,
                 suruEnabled = suruEnabled,
-                gamificationEnabled = gamificationEnabled,
-                companionEnabled = companionEnabled
+                gamificationEnabled = achievementEnabled || streakEnabled,
+                companionEnabled = companionEnabled,
+                achievementEnabled = achievementEnabled,
+                streakEnabled = streakEnabled,
+                togetherEnabled = togetherEnabled,
+                reminderEnabled = reminderEnabled,
+                notificationEnabled = notificationEnabled
             )
         }
     }
 
     fun previewSoundEffect() {
-        previewSoundCue(LifeOsSoundCue.STREAK_ACTIVATE)
+        previewSoundCategory(SoundCategory.STREAK_COMPLETION)
     }
 
-    fun previewSoundCue(cue: LifeOsSoundCue) {
+    fun previewSoundCategory(category: SoundCategory) {
         val prefs = uiState.value.prefs
         if (!prefs.soundEffectsEnabled) {
             snackbarState.value = "Enable Sound Effects first to preview chimes"
             return
         }
-        val previewPrefs = when (cue.category) {
+        val unlockedPrefs = when (category) {
             SoundCategory.NAVIGATION -> prefs.copy(soundNavEnabled = true)
-            SoundCategory.INTERACTIONS -> prefs.copy(soundInteractionEnabled = true)
-            SoundCategory.TASKS -> prefs.copy(soundTaskEnabled = true)
-            SoundCategory.CALENDAR -> prefs.copy(soundCalendarEnabled = true)
-            SoundCategory.SURU -> prefs.copy(soundSuruEnabled = true)
-            SoundCategory.GAMIFICATION -> prefs.copy(soundGamificationEnabled = true)
-            SoundCategory.COMPANION -> prefs.copy(soundCompanionEnabled = true)
+            SoundCategory.BUTTON_INTERACTION -> prefs.copy(soundInteractionEnabled = true)
+            SoundCategory.TASK_COMPLETION -> prefs.copy(soundTaskEnabled = true)
+            SoundCategory.ACHIEVEMENT -> prefs.copy(soundAchievementEnabled = true)
+            SoundCategory.STREAK_COMPLETION -> prefs.copy(soundStreakEnabled = true)
+            SoundCategory.SURU_INTERACTION -> prefs.copy(soundSuruEnabled = true)
+            SoundCategory.KUTTA_INTERACTION -> prefs.copy(soundCompanionEnabled = true)
+            SoundCategory.TOGETHER_MESSAGES -> prefs.copy(soundTogetherEnabled = true)
+            SoundCategory.REMINDERS -> prefs.copy(soundReminderEnabled = true)
+            SoundCategory.NOTIFICATIONS -> prefs.copy(soundNotificationEnabled = true)
         }
-        soundManager.playCue(cue, previewPrefs, bypassSpeechGuard = true)
+        soundManager.previewCategory(category, unlockedPrefs)
+    }
+
+    fun previewSoundCue(cue: LifeOsSoundCue) {
+        previewSoundCategory(cue.category)
     }
 
     fun resetAllLocalData() {

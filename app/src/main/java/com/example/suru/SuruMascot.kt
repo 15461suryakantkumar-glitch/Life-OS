@@ -43,10 +43,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.kutta.LocalReducedMotion
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.FeeloraDarkPrimary
-import com.example.ui.theme.FeeloraDarkSecondary
-import com.example.ui.theme.FeeloraLightInkPrimary
-import com.example.ui.theme.FeeloraLightPrimary
+import com.example.ui.theme.HybridLavenderPrimary
+import com.example.ui.theme.HybridLavenderSecondary
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import kotlin.math.PI
@@ -134,14 +132,14 @@ fun SuruMascot(
 
     val auraColor by animateColorAsState(
         targetValue = when (state) {
-            SuruMascotState.LISTENING -> FeeloraDarkSecondary
-            SuruMascotState.THINKING -> FeeloraDarkPrimary
+            SuruMascotState.LISTENING -> HybridLavenderSecondary
+            SuruMascotState.THINKING -> HybridLavenderPrimary
             SuruMascotState.SPEAKING -> tokens.primary
             SuruMascotState.WORKING -> tokens.secondary
             SuruMascotState.SUCCESS -> EmeraldSuccess
             SuruMascotState.ERROR -> AmberWarning
             SuruMascotState.SLEEPING -> tokens.inkMuted
-            SuruMascotState.IDLE -> FeeloraLightPrimary
+            SuruMascotState.IDLE -> tokens.primary
         },
         animationSpec = tween(320),
         label = "suru_aura"
@@ -374,7 +372,7 @@ fun SuruMascot(
                 when {
                     state == SuruMascotState.SLEEPING || isBlinking -> {
                         drawArc(
-                            color = FeeloraLightInkPrimary,
+                            color = Color(0xFF281D3D),
                             startAngle = 15f,
                             sweepAngle = 150f,
                             useCenter = false,
@@ -383,7 +381,7 @@ fun SuruMascot(
                             style = Stroke(width = r * 0.032f, cap = StrokeCap.Round)
                         )
                         drawArc(
-                            color = FeeloraLightInkPrimary,
+                            color = Color(0xFF281D3D),
                             startAngle = 15f,
                             sweepAngle = 150f,
                             useCenter = false,
@@ -395,7 +393,7 @@ fun SuruMascot(
                     state == SuruMascotState.SUCCESS -> {
                         // Happy crescent eyes
                         drawArc(
-                            color = FeeloraLightInkPrimary,
+                            color = Color(0xFF281D3D),
                             startAngle = 195f,
                             sweepAngle = 150f,
                             useCenter = false,
@@ -404,7 +402,7 @@ fun SuruMascot(
                             style = Stroke(width = r * 0.036f, cap = StrokeCap.Round)
                         )
                         drawArc(
-                            color = FeeloraLightInkPrimary,
+                            color = Color(0xFF281D3D),
                             startAngle = 195f,
                             sweepAngle = 150f,
                             useCenter = false,
@@ -541,7 +539,7 @@ fun SuruMascot(
                         val dotX = cx + r * 0.56f + cos(theta) * r * 0.08f
                         val dotY = cy - r * 0.55f + sin(theta) * r * 0.06f
                         drawCircle(
-                            color = FeeloraDarkPrimary.copy(alpha = 0.85f),
+                            color = HybridLavenderPrimary.copy(alpha = 0.85f),
                             radius = r * (0.035f + i * 0.008f),
                             center = Offset(dotX, dotY)
                         )
@@ -565,12 +563,12 @@ fun SuruMascot(
                 SuruMascotState.SLEEPING -> {
                     val drift = sin(breathPhase) * r * 0.05f
                     drawCircle(
-                        color = FeeloraDarkPrimary.copy(alpha = 0.55f),
+                        color = HybridLavenderPrimary.copy(alpha = 0.55f),
                         radius = r * 0.035f,
                         center = Offset(cx + r * 0.45f, cy - r * 0.36f + drift)
                     )
                     drawCircle(
-                        color = FeeloraDarkPrimary.copy(alpha = 0.75f),
+                        color = HybridLavenderPrimary.copy(alpha = 0.75f),
                         radius = r * 0.052f,
                         center = Offset(cx + r * 0.58f, cy - r * 0.52f + drift)
                     )

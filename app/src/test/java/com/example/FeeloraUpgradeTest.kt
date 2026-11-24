@@ -7,26 +7,34 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
-import com.example.data.ai.LifeContextSnapshot
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.audio.LifeOsSoundManager
+import com.example.data.audio.SoundCategory
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.LifeOsDatabase
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
 import com.example.data.local.UserPreferencesState
+import com.example.data.local.WellbeingRange
+import com.example.data.local.WellbeingTelemetryState
+import com.example.data.social.TogetherPrivacyFilter
 import com.example.notifications.AppPermissionId
 import com.example.notifications.AppPermissionStatus
+import com.example.notifications.FeeloraNotificationCategory
 import com.example.notifications.PermissionCenterHelper
 import com.example.notifications.TaskReminderPolicy
+import com.example.suru.LifeContextSnapshot
 import com.example.suru.SuruActionEngine
+import com.example.suru.SuruAiGateway
+import com.example.suru.SuruAiProvider
 import com.example.suru.SuruImageLoadResult
 import com.example.suru.SuruImageProcessor
 import com.example.suru.SuruIntelligenceService
@@ -336,17 +344,30 @@ class FeeloraUpgradeTest {
     }
 
     @Test
-    fun onboardingScreen_rendersCleanlyWithoutKutta() {
+    fun onboardingScreen_renders7StepFlowCleanlyWithoutKutta() {
         composeRule.setContent {
             LifeOsTheme {
                 OnboardingScreen(
                     existingPrefs = UserPreferencesState(),
-                    onCompleteSignIn = { _, _, _, _ -> }
+                    onComplete7Step = { _, _, _, _, _, _, _, _ -> }
                 )
             }
         }
-        composeRule.onNodeWithText("Welcome to FEELORA").assertIsDisplayed()
-        composeRule.onNodeWithTag("onboarding_name_input").assertIsDisplayed()
+        // Step 1: Welcome
+        composeRule.onNodeWithText("FEELORA").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboarding_get_started_btn").performScrollTo().assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+
+        // Advance to Step 2: Discover FEELORA
+        composeRule.onNodeWithTag("onboarding_get_started_btn").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("onboarding_next_btn").performScrollTo().assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+
+        // Advance to Step 3: Together Introduction
+        composeRule.onNodeWithTag("onboarding_next_btn").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("onboarding_together_next_btn").performScrollTo().assertIsDisplayed()
         assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
     }
 
@@ -384,5 +405,103 @@ class FeeloraUpgradeTest {
         }
         composeRule.onNodeWithText("Permissions & Privacy").assertIsDisplayed()
         composeRule.onNodeWithTag("permission_card_NOTIFICATIONS").assertIsDisplayed()
+    }
+
+    @Test
+    fun feelora2Upgrades_soundCategoriesAiGatewayPrivacyAndWellbeingWorkAsDesigned() {
+        // 1. 10 Sound categories & 5 notification categories exist
+        assertEquals(10, SoundCategory.entries.size)
+        assertEquals(5, FeeloraNotificationCategory.entries.size)
+
+        val prefsTogetherMuted = UserPreferencesState(soundTogetherEnabled = false)
+        assertFalse(LifeOsSoundManager.shouldPlayForPrefs(LifeOsSoundCue.TOGETHER_MESSAGE, prefsTogetherMuted))
+        assertTrue(LifeOsSoundManager.shouldPlayForPrefs(LifeOsSoundCue.TASK_COMPLETE, prefsTogetherMuted))
+
+        // 2. SuruAiGateway diagnostics covers all 5 providers honestly
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val diagnostics = SuruAiGateway(context).getAllDiagnostics()
+        assertEquals(5, diagnostics.size)
+        assertEquals(
+            setOf(
+                SuruAiProvider.OPENAI,
+                SuruAiProvider.ANTHROPIC,
+                SuruAiProvider.GEMINI,
+                SuruAiProvider.XAI,
+                SuruAiProvider.DEEPSEEK
+            ),
+            diagnostics.map { it.provider }.toSet()
+        )
+
+        // 3. TogetherPrivacyFilter excludes private local data & respects shareFocus = false
+        val safePayload = TogetherPrivacyFilter.buildSafeProfilePayload(
+            userId = "user-123",
+            prefs = UserPreferencesState(
+                userName = "Malkin",
+                userHandle = "@malkin",
+                focusMinutesLoggedToday = 95,
+                shareXpWithFriends = true,
+                shareFocusWithFriends = false,
+                cycleCareEnabled = true
+            ),
+            tasksCompletedToday = 4,
+            consistencyScore = 88,
+            challengesCompleted = 2
+        )
+        val jsonText = safePayload.toString().lowercase()
+        assertEquals(0, safePayload.getInt("focus_minutes_today"))
+        assertFalse(jsonText.contains("cycle"))
+        assertFalse(jsonText.contains("quick_note"))
+        assertFalse(jsonText.contains("journal"))
+        assertFalse(jsonText.contains("suru_memory"))
+        assertFalse(jsonText.contains("check_in"))
+
+        // 4. Task reschedule tomorrow recalculation
+        val today = 20_500L
+        assertEquals(today + 1, TaskReminderPolicy.recalculateDeadlineForTomorrowReschedule(today - 3, today))
+        assertEquals(today + 6, TaskReminderPolicy.recalculateDeadlineForTomorrowReschedule(today + 5, today))
+
+        // 5. Wellbeing ranges and states
+        assertEquals(listOf(WellbeingRange.DAILY, WellbeingRange.WEEKLY, WellbeingRange.MONTHLY), WellbeingRange.entries)
+        assertEquals(4, WellbeingTelemetryState.entries.size)
+    }
+
+    @Test
+    fun roomMigration7To8_preservesUsageLogsAndCreatesNewFeelora2Tables() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_7_8_${System.currentTimeMillis()}.db"
+        val factory = FrameworkSQLiteOpenHelperFactory()
+        val v7Callback = object : SupportSQLiteOpenHelper.Callback(7) {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `app_usage_logs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `appName` TEXT NOT NULL, `categoryName` TEXT NOT NULL DEFAULT 'OTHER', `minutesUsed` INTEGER NOT NULL DEFAULT 0, `isDistracting` INTEGER NOT NULL DEFAULT 0, `dateEpochDay` INTEGER NOT NULL DEFAULT 0, `linkedTaskId` INTEGER)"
+                )
+            }
+
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        }
+        val helper = factory.create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(dbName)
+                .callback(v7Callback)
+                .build()
+        )
+        val db = helper.writableDatabase
+        db.execSQL("INSERT INTO `app_usage_logs` (`appName`, `minutesUsed`, `dateEpochDay`) VALUES ('YouTube', 35, 20510)")
+
+        LifeOsDatabase.MIGRATION_7_8.migrate(db)
+
+        db.query("SELECT appName, packageName, minutesUsed FROM `app_usage_logs`").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("YouTube", c.getString(0))
+            assertEquals("", c.getString(1))
+            assertEquals(35, c.getInt(2))
+        }
+        db.execSQL("INSERT INTO `notification_history` (`category`, `title`, `body`) VALUES ('TASK_REMINDER', 'Test', 'Body')")
+        db.query("SELECT COUNT(*) FROM `notification_history`").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(1, c.getInt(0))
+        }
+        helper.close()
+        context.deleteDatabase(dbName)
     }
 }

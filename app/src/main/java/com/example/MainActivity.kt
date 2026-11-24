@@ -40,12 +40,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         intent?.getStringExtra("navigate_to")?.let { route ->
-            widgetRouteRequest = route
+            widgetRouteRequest = if (route == "friends") "together" else route
         }
         val dataUri = intent?.data
-        if (dataUri != null && dataUri.scheme == "lifeos" && dataUri.host == "friend") {
+        val isFriendDeepLink = dataUri != null && (
+            (dataUri.scheme == "lifeos" && dataUri.host == "friend") ||
+                (dataUri.scheme == "feelora" && dataUri.host == "invite")
+            )
+        if (isFriendDeepLink) {
             incomingFriendInviteUri = dataUri.toString()
-            widgetRouteRequest = "friends"
+            widgetRouteRequest = "together"
         }
     }
 }

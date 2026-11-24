@@ -32,16 +32,17 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -63,14 +64,18 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.data.audio.LifeOsSoundCue
+import com.example.data.audio.SoundCategory
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.WidgetConfigEntity
 import com.example.notifications.AppPermissionStatus
+import com.example.suru.SuruAiProvider
 import com.example.suru.SuruVoiceLanguage
+import com.example.ui.components.FeeloraConfirmDialog
+import com.example.ui.components.FeeloraScreenBackdrop
+import com.example.ui.components.FeeloraSubpageHeader
+import com.example.ui.components.FeeloraToggleRow
 import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.ObsidianCard
-import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
 import com.example.ui.components.WidgetCustomizerList
@@ -84,13 +89,27 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     state: LifeOsUiState,
+    onBack: () -> Unit = {},
     onOpenProfile: () -> Unit,
     onUpdateProfile: (String, String, Int, Int, UserAvatarPreset) -> Unit,
     onUpdateThemeMode: (LifeOsThemeMode) -> Unit,
     onUpdatePrivacy: (Boolean, Boolean, Boolean, Boolean) -> Unit,
-    onUpdateNotifications: (Boolean, Boolean, Boolean, Boolean, Int, Int) -> Unit,
+    onUpdateNotifications: (
+        enabled: Boolean,
+        reminders: Boolean,
+        wellnessAlerts: Boolean,
+        quietHoursEnabled: Boolean,
+        quietStartHour: Int,
+        quietEndHour: Int,
+        pendingTaskFollowUp: Boolean,
+        companionAlerts: Boolean,
+        achievementAlerts: Boolean,
+        togetherAlerts: Boolean
+    ) -> Unit,
     onRequestNotificationPermission: () -> Unit,
+    onOpenNotificationsHistory: () -> Unit = {},
     onUpdateSoundEffects: (Boolean) -> Unit = {},
+    onPreviewSoundCategory: (SoundCategory) -> Unit = {},
     onTestSoundEffect: () -> Unit = {},
     onUpdateWaterSettings: (Int, Boolean) -> Unit = { _, _ -> },
     onUpdateCycleSettings: (Boolean, Int, Int) -> Unit = { _, _, _ -> },
@@ -99,6 +118,7 @@ fun SettingsScreen(
     onUpdateSuruBriefingSettings: (Boolean, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
     onUpdateSuruPersonalization: (Boolean) -> Unit = {},
     onOpenSuru: () -> Unit = {},
+    onOpenSuruAiSettings: () -> Unit = {},
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onSignOut: () -> Unit,
@@ -111,12 +131,14 @@ fun SettingsScreen(
         navEnabled: Boolean,
         interactionEnabled: Boolean,
         taskEnabled: Boolean,
-        calendarEnabled: Boolean,
+        achievementEnabled: Boolean,
+        streakEnabled: Boolean,
         suruEnabled: Boolean,
-        gamificationEnabled: Boolean,
-        companionEnabled: Boolean
-    ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
-    onPreviewSoundCue: (LifeOsSoundCue) -> Unit = {},
+        companionEnabled: Boolean,
+        togetherEnabled: Boolean,
+        reminderEnabled: Boolean,
+        notificationEnabled: Boolean
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _, _, _, _ -> },
     onUpdateSmartReminderPolicy: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val tokens = LifeOsThemeTokensProvider.current
@@ -132,892 +154,521 @@ fun SettingsScreen(
     var showWidgetSheet by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(tokens.background)
-            .testTag("settings_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    fun pushSoundUpdate(
+        master: Boolean = prefs.soundEffectsEnabled,
+        volume: Float = prefs.soundVolume,
+        haptics: Boolean = prefs.hapticsEnabled,
+        nav: Boolean = prefs.soundNavEnabled,
+        interaction: Boolean = prefs.soundInteractionEnabled,
+        task: Boolean = prefs.soundTaskEnabled,
+        achievement: Boolean = prefs.soundAchievementEnabled,
+        streak: Boolean = prefs.soundStreakEnabled,
+        suru: Boolean = prefs.soundSuruEnabled,
+        companion: Boolean = prefs.soundCompanionEnabled,
+        together: Boolean = prefs.soundTogetherEnabled,
+        reminder: Boolean = prefs.soundReminderEnabled,
+        notif: Boolean = prefs.soundNotificationEnabled
     ) {
-        item {
-            Text("Settings", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-            Text(
-                "Themes, permissions, smart reminders, widgets, and audio",
-                style = MaterialTheme.typography.bodySmall,
-                color = tokens.inkSecondary
-            )
-        }
+        onUpdateSoundConfig(master, volume, haptics, nav, interaction, task, achievement, streak, suru, companion, together, reminder, notif)
+    }
 
-        // Top Profile & Companion Shortcut Card
-        item {
-            ObsidianCard(elevated = true) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    UserAvatarBadge(preset = prefs.avatarPreset, size = 48.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = prefs.userName.ifBlank { "Member" },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = tokens.inkPrimary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${prefs.userHandle.ifBlank { "@member" }} · ${prefs.friendCode}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    OutlinedButton(onClick = onOpenProfile, modifier = Modifier.testTag("settings_open_profile_btn")) {
-                        Text("Profile", maxLines = 1, softWrap = false)
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Permanent Companion: KUTTA (${prefs.petStage.title})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = tokens.inkSecondary,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    StatusPill(text = "Lv.${prefs.level}", color = MaterialTheme.colorScheme.secondary)
-                }
+    FeeloraScreenBackdrop(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("settings_screen"),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                FeeloraSubpageHeader(
+                    title = "Settings",
+                    subtitle = "3 Themes, 10 Soundscape Channels, Notifications & Privacy",
+                    onBack = onBack
+                )
             }
-        }
 
-        // Dedicated Permissions & Privacy Center Card
-        item {
-            val readyCount = state.appPermissions.count {
-                it.status == AppPermissionStatus.GRANTED || it.status == AppPermissionStatus.NOT_REQUIRED
-            }
-            val totalCount = state.appPermissions.size
-            ObsidianCard(
-                onClick = onOpenPermissions,
-                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("Permissions & Privacy Center", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
-                            Text(
-                                text = if (totalCount > 0) {
-                                    "$readyCount of $totalCount access checks ready · manage Android permissions"
-                                } else {
-                                    "Inspect notifications, camera, mic, photos & usage access"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = tokens.inkSecondary
-                            )
+            // Profile Shortcut
+            item {
+                ObsidianCard(elevated = true) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        UserAvatarBadge(preset = prefs.avatarPreset, photoUri = prefs.avatarPhotoUri, displayName = prefs.userName, size = 48.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(prefs.userName.ifBlank { "Member" }, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${prefs.userHandle.ifBlank { "@member" }} · ${prefs.friendCode}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        OutlinedButton(onClick = onOpenProfile, modifier = Modifier.testTag("settings_open_profile_btn")) {
+                            Text("Profile", maxLines = 1, softWrap = false)
                         }
                     }
-                    OutlinedButton(
-                        onClick = onOpenPermissions,
-                        modifier = Modifier.testTag("settings_open_permissions_btn")
-                    ) {
-                        Text("Manage", maxLines = 1, softWrap = false)
+                    Spacer(Modifier.height(10.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Companion: KUTTA (${prefs.petStage.title})", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        StatusPill(text = "Lv.${prefs.level}", color = MaterialTheme.colorScheme.secondary)
                     }
                 }
             }
-        }
 
-        // 4 Distinct Aesthetic Themes (1 Dark + 3 Light Modes)
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text("Aesthetic Theme", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Text("2 dark modes + 4 curated light studio themes (FEELORA Lavender default)", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LifeOsThemeMode.entries.forEach { mode ->
-                        val selected = prefs.themeMode == mode
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(tokens.smallRadius))
-                                .background(
-                                    if (selected) mode.previewPrimary.copy(alpha = 0.14f)
-                                    else tokens.surfaceElevated
-                                )
-                                .border(
-                                    width = if (selected) 1.5.dp else 1.dp,
-                                    color = if (selected) mode.previewPrimary else tokens.borderSubtle,
-                                    shape = RoundedCornerShape(tokens.smallRadius)
-                                )
-                                .clickable { onUpdateThemeMode(mode) }
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
-                                .testTag("theme_mode_${mode.name}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        text = mode.displayName,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = tokens.inkPrimary,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                        maxLines = 1,
-                                        softWrap = false
-                                    )
-                                    StatusPill(
-                                        text = if (mode.isDark) "Dark" else "Light",
-                                        color = mode.previewPrimary
-                                    )
-                                }
-                                Text(mode.subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                                Box(Modifier.size(16.dp).clip(CircleShape).background(mode.previewPrimary))
-                                Box(Modifier.size(16.dp).clip(CircleShape).background(mode.previewSecondary))
-                                Box(
-                                    Modifier
-                                        .size(16.dp)
-                                        .clip(CircleShape)
-                                        .background(mode.previewSurface)
-                                        .border(1.dp, tokens.borderSubtle, CircleShape)
+            // Permissions Center
+            item {
+                val readyCount = state.appPermissions.count { it.status == AppPermissionStatus.GRANTED || it.status == AppPermissionStatus.NOT_REQUIRED }
+                val totalCount = state.appPermissions.size
+                ObsidianCard(onClick = onOpenPermissions, borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Permissions & Privacy Center", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                                Text(
+                                    text = if (totalCount > 0) "$readyCount of $totalCount access checks ready" else "Inspect Android permissions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.inkSecondary
                                 )
                             }
+                        }
+                        OutlinedButton(onClick = onOpenPermissions, modifier = Modifier.testTag("settings_open_permissions_btn")) {
+                            Text("Manage", maxLines = 1, softWrap = false)
                         }
                     }
                 }
             }
-        }
 
-        // SURU Personal AI Voice, Daily Briefings & Memory
-        item {
-            ObsidianCard(borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            // 3 Curated Aesthetic Themes (Hybrid Lavender, Midnight Aurora, Matcha Mist)
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
                         Column {
-                            Text("SURU Assistant & Voice", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                            Text("Voice language, speech speed, daily briefings & memory", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                            Text("Aesthetic Theme", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                            Text("Three crafted atmospheres with distinct typography", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                         }
                     }
-                    OutlinedButton(onClick = onOpenSuru, modifier = Modifier.testTag("settings_open_suru_btn")) {
-                        Text("Open", maxLines = 1, softWrap = false)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                ToggleRow(
-                    label = "Mute SURU Voice Responses",
-                    checked = prefs.suruVoiceMuted,
-                    onCheckedChange = { muted ->
-                        onUpdateSuruVoiceSettings(muted, prefs.suruSpeechSpeed, currentVoiceLang)
-                    }
-                )
-                Text("Voice Recognition & Speech Language", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SuruVoiceLanguage.entries.forEach { lang ->
-                        FilterChip(
-                            selected = currentVoiceLang == lang,
-                            onClick = { onUpdateSuruVoiceSettings(prefs.suruVoiceMuted, prefs.suruSpeechSpeed, lang) },
-                            label = { Text(lang.label, maxLines = 1, softWrap = false) },
-                            modifier = Modifier.testTag("settings_suru_lang_${lang.name}")
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text("Speech Rate (${prefs.suruSpeechSpeed}x)", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(0.85f to "0.85x", 1.0f to "1.0x", 1.25f to "1.25x").forEach { (rate, label) ->
-                        FilterChip(
-                            selected = kotlin.math.abs(prefs.suruSpeechSpeed - rate) < 0.05f,
-                            onClick = { onUpdateSuruVoiceSettings(prefs.suruVoiceMuted, rate, currentVoiceLang) },
-                            label = { Text(label, maxLines = 1, softWrap = false) }
-                        )
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                ToggleRow(
-                    label = "Morning Briefing Notification",
-                    checked = prefs.suruMorningBriefingEnabled,
-                    onCheckedChange = { enabled ->
-                        if (enabled) onRequestNotificationPermission()
-                        onUpdateSuruBriefingSettings(
-                            enabled,
-                            prefs.suruEveningReflectionEnabled,
-                            prefs.suruMorningHour,
-                            prefs.suruEveningHour
-                        )
-                    }
-                )
-                ToggleRow(
-                    label = "Evening Reflection Notification",
-                    checked = prefs.suruEveningReflectionEnabled,
-                    onCheckedChange = { enabled ->
-                        if (enabled) onRequestNotificationPermission()
-                        onUpdateSuruBriefingSettings(
-                            prefs.suruMorningBriefingEnabled,
-                            enabled,
-                            prefs.suruMorningHour,
-                            prefs.suruEveningHour
-                        )
-                    }
-                )
-                ToggleRow(
-                    label = "SURU Personalization Memory (editable in SURU -> Memory)",
-                    checked = prefs.suruPersonalizationEnabled,
-                    onCheckedChange = onUpdateSuruPersonalization
-                )
-                Text(
-                    text = "SURU never sends audio silently, respects quiet hours, and never accesses private Cycle Care or journal notes.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.inkMuted
-                )
-            }
-        }
-
-        // Personal Targets & Companion Name
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Account & Daily Targets", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                }
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Display name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = handle,
-                    onValueChange = { handle = it },
-                    label = { Text("Handle") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = focusGoal,
-                        onValueChange = { focusGoal = it.filter { c -> c.isDigit() } },
-                        label = { Text("Focus goal (m)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = screenLimit,
-                        onValueChange = { screenLimit = it.filter { c -> c.isDigit() } },
-                        label = { Text("Screen limit (m)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        onUpdateProfile(
-                            name,
-                            handle,
-                            focusGoal.toIntOrNull() ?: 120,
-                            screenLimit.toIntOrNull() ?: 180,
-                            prefs.avatarPreset
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag("save_profile_btn")
-                ) { Text("Save Details", maxLines = 1, softWrap = false) }
-            }
-        }
-
-        // Hydration & Private Cycle Care Settings
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Water & Private Cycle Care", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Daily Water Goal (${prefs.dailyWaterGoalMl} ml)",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tokens.inkSecondary
-                )
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(1500, 2000, 2500, 3000).forEach { goal ->
-                        FilterChip(
-                            selected = prefs.dailyWaterGoalMl == goal,
-                            onClick = { onUpdateWaterSettings(goal, prefs.waterRemindersEnabled) },
-                            label = { Text("${goal}ml", maxLines = 1, softWrap = false) }
-                        )
-                    }
-                }
-                ToggleRow(
-                    label = "KUTTA Water Nudges",
-                    checked = prefs.waterRemindersEnabled,
-                    onCheckedChange = { onUpdateWaterSettings(prefs.dailyWaterGoalMl, it) }
-                )
-
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Cycle Care (100% On-Device)", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
-                }
-                ToggleRow(
-                    label = "Show Cycle Care in Wellness OS & Home",
-                    checked = prefs.cycleCareEnabled,
-                    onCheckedChange = { onUpdateCycleSettings(it, prefs.averageCycleLengthDays, prefs.averagePeriodLengthDays) }
-                )
-                if (prefs.cycleCareEnabled) {
-                    Text(
-                        text = "Average Cycle Length: ${prefs.averageCycleLengthDays} days",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.inkSecondary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(25, 26, 28, 30, 32, 35).forEach { len ->
-                            FilterChip(
-                                selected = prefs.averageCycleLengthDays == len,
-                                onClick = { onUpdateCycleSettings(true, len, prefs.averagePeriodLengthDays) },
-                                label = { Text("${len}d", maxLines = 1, softWrap = false) }
-                            )
-                        }
-                    }
-                }
-                Text(
-                    text = "Cycle Care data never syncs with friends and never appears on home-screen widgets.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.inkMuted
-                )
-            }
-        }
-
-        // Accessibility & Motion
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Accessibility & Motion", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                }
-                Spacer(Modifier.height(6.dp))
-                ToggleRow(
-                    label = "Reduced Motion (simplify KUTTA animations & particles)",
-                    checked = prefs.reducedMotionEnabled,
-                    onCheckedChange = onUpdateReducedMotion
-                )
-            }
-        }
-
-        // Dashboard Cards Customization
-        item {
-            ObsidianCard(onClick = { showWidgetSheet = true }) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.DashboardCustomize, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text("Dashboard Cards", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
-                            Text(
-                                "${state.widgets.count { it.isVisible }}/${state.widgets.size} cards visible on Home",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = tokens.inkSecondary
-                            )
-                        }
-                    }
-                    TextButton(onClick = { showWidgetSheet = true }) { Text("Edit") }
-                }
-            }
-        }
-
-        // Direct Android Home-Screen Glance Widgets Pinning
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Widgets, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Home-Screen Widgets", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Pin interactive Feelora widgets directly to your Android launcher.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.inkSecondary
-                )
-                Spacer(Modifier.height(10.dp))
-                GlanceWidgetPinningSection(petName = prefs.petName)
-            }
-        }
-
-        // Acoustic Sound Effects, Volume, Haptics & Category Toggles
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text("Acoustic Soundscape & Haptics", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Text("Lavender-soft chimes with SURU speech protection", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                ToggleRow(
-                    label = "Master Sound Effects",
-                    checked = prefs.soundEffectsEnabled,
-                    onCheckedChange = onUpdateSoundEffects
-                )
-                ToggleRow(
-                    label = "Subtle Haptic Touch Feedback",
-                    checked = prefs.hapticsEnabled,
-                    onCheckedChange = { haptics ->
-                        onUpdateSoundConfig(
-                            prefs.soundEffectsEnabled,
-                            prefs.soundVolume,
-                            haptics,
-                            prefs.soundNavEnabled,
-                            prefs.soundInteractionEnabled,
-                            prefs.soundTaskEnabled,
-                            prefs.soundCalendarEnabled,
-                            prefs.soundSuruEnabled,
-                            prefs.soundGamificationEnabled,
-                            prefs.soundCompanionEnabled
-                        )
-                    }
-                )
-                if (prefs.soundEffectsEnabled) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Volume (${(prefs.soundVolume * 100).roundToInt()}%)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.inkSecondary
-                    )
-                    Slider(
-                        value = prefs.soundVolume,
-                        onValueChange = { vol ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled,
-                                vol,
-                                prefs.hapticsEnabled,
-                                prefs.soundNavEnabled,
-                                prefs.soundInteractionEnabled,
-                                prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled,
-                                prefs.soundSuruEnabled,
-                                prefs.soundGamificationEnabled,
-                                prefs.soundCompanionEnabled
-                            )
-                        },
-                        valueRange = 0.1f..1.0f,
-                        modifier = Modifier.testTag("sound_volume_slider")
-                    )
-                    Text("Sound Categories", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
-                    ToggleRow(
-                        label = "Navigation Switches",
-                        checked = prefs.soundNavEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                v, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "UI Interactions & Undo",
-                        checked = prefs.soundInteractionEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, v, prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "Tasks (Create, Complete & Reschedule)",
-                        checked = prefs.soundTaskEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, v,
-                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "Calendar & Schedule Saves",
-                        checked = prefs.soundCalendarEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
-                                v, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "SURU Chimes",
-                        checked = prefs.soundSuruEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled, v, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "XP, Streaks & Level-Up",
-                        checked = prefs.soundGamificationEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, v, prefs.soundCompanionEnabled
-                            )
-                        }
-                    )
-                    ToggleRow(
-                        label = "KUTTA Companion Taps",
-                        checked = prefs.soundCompanionEnabled,
-                        onCheckedChange = { v ->
-                            onUpdateSoundConfig(
-                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
-                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
-                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, v
-                            )
-                        }
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text("Preview Chimes", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            LifeOsSoundCue.TASK_COMPLETE to "Task Done",
-                            LifeOsSoundCue.SURU_SUCCESS to "SURU",
-                            LifeOsSoundCue.STREAK_ACTIVATE to "Streak",
-                            LifeOsSoundCue.LEVEL_UP to "Level Up"
-                        ).forEach { (cue, label) ->
-                            FilterChip(
-                                selected = false,
-                                onClick = { onPreviewSoundCue(cue) },
-                                label = { Text(label, maxLines = 1, softWrap = false) }
-                            )
-                        }
-                        TextButton(
-                            onClick = onTestSoundEffect,
-                            modifier = Modifier.testTag("test_sfx_btn")
-                        ) {
-                            Text("Preview", maxLines = 1, softWrap = false)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Smart 2-Hour Task Reminders & Quiet Hours
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text("Smart Task Reminders & Quiet Hours", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Text("Skips calendar blocks, completed tasks & quiet hours", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                ToggleRow(
-                    label = "Master Notifications",
-                    checked = prefs.notificationsEnabled,
-                    onCheckedChange = { enabled ->
-                        if (enabled) onRequestNotificationPermission()
-                        onUpdateNotifications(
-                            enabled,
-                            prefs.taskRemindersEnabled,
-                            prefs.wellnessAlertsEnabled,
-                            prefs.quietHoursEnabled,
-                            prefs.quietStartHour,
-                            prefs.quietEndHour
-                        )
-                    }
-                )
-                ToggleRow(
-                    label = "Smart Pending Task Reminders (Complete / Later / Tomorrow actions)",
-                    checked = prefs.taskRemindersEnabled,
-                    onCheckedChange = { reminders ->
-                        if (reminders) onRequestNotificationPermission()
-                        onUpdateNotifications(
-                            prefs.notificationsEnabled || reminders,
-                            reminders,
-                            prefs.wellnessAlertsEnabled,
-                            prefs.quietHoursEnabled,
-                            prefs.quietStartHour,
-                            prefs.quietEndHour
-                        )
-                    }
-                )
-                if (prefs.taskRemindersEnabled) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Reminder Frequency (Every ${prefs.reminderFrequencyHours}h)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.inkSecondary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(1, 2, 3, 4).forEach { hrs ->
-                            FilterChip(
-                                selected = prefs.reminderFrequencyHours == hrs,
-                                onClick = { onUpdateSmartReminderPolicy(hrs, prefs.maxRemindersPerTaskPerDay) },
-                                label = { Text("${hrs}h", maxLines = 1, softWrap = false) },
-                                modifier = Modifier.testTag("reminder_freq_${hrs}h")
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Daily Cap per Task (Max ${prefs.maxRemindersPerTaskPerDay} / day)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.inkSecondary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(2, 3, 5).forEach { cap ->
-                            FilterChip(
-                                selected = prefs.maxRemindersPerTaskPerDay == cap,
-                                onClick = { onUpdateSmartReminderPolicy(prefs.reminderFrequencyHours, cap) },
-                                label = { Text("${cap}/day", maxLines = 1, softWrap = false) },
-                                modifier = Modifier.testTag("reminder_cap_${cap}")
-                            )
-                        }
-                    }
-                }
-                ToggleRow(
-                    label = "Digital Wellbeing Budget Alerts",
-                    checked = prefs.wellnessAlertsEnabled,
-                    onCheckedChange = { wellness ->
-                        onUpdateNotifications(
-                            prefs.notificationsEnabled,
-                            prefs.taskRemindersEnabled,
-                            wellness,
-                            prefs.quietHoursEnabled,
-                            prefs.quietStartHour,
-                            prefs.quietEndHour
-                        )
-                    }
-                )
-                ToggleRow(
-                    label = "Quiet Hours (pause reminders overnight)",
-                    checked = prefs.quietHoursEnabled,
-                    onCheckedChange = { quiet ->
-                        onUpdateNotifications(
-                            prefs.notificationsEnabled,
-                            prefs.taskRemindersEnabled,
-                            prefs.wellnessAlertsEnabled,
-                            quiet,
-                            prefs.quietStartHour,
-                            prefs.quietEndHour
-                        )
-                    }
-                )
-                if (prefs.quietHoursEnabled) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "Quiet Window (${prefs.quietStartHour}:00 – ${prefs.quietEndHour}:00)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.inkSecondary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            Triple(22, 7, "10 PM – 7 AM"),
-                            Triple(23, 7, "11 PM – 7 AM"),
-                            Triple(21, 6, "9 PM – 6 AM")
-                        ).forEach { (start, end, label) ->
-                            FilterChip(
-                                selected = prefs.quietStartHour == start && prefs.quietEndHour == end,
-                                onClick = {
-                                    onUpdateNotifications(
-                                        prefs.notificationsEnabled,
-                                        prefs.taskRemindersEnabled,
-                                        prefs.wellnessAlertsEnabled,
-                                        true,
-                                        start,
-                                        end
+                    Spacer(Modifier.height(10.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LifeOsThemeMode.entries.forEach { mode ->
+                            val selected = prefs.themeMode == mode
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(tokens.smallRadius))
+                                    .background(if (selected) mode.previewPrimary.copy(alpha = 0.16f) else tokens.surfaceElevated)
+                                    .border(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) mode.previewPrimary else tokens.borderSubtle,
+                                        shape = RoundedCornerShape(tokens.smallRadius)
                                     )
-                                },
-                                label = { Text(label, maxLines = 1, softWrap = false) }
-                            )
+                                    .clickable { onUpdateThemeMode(mode) }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                                    .testTag("theme_mode_${mode.name}"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(mode.displayName, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                                        StatusPill(text = if (mode.isDark) "Dark" else "Light", color = mode.previewPrimary)
+                                    }
+                                    Text(mode.subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Box(Modifier.size(16.dp).clip(CircleShape).background(mode.previewPrimary))
+                                    Box(Modifier.size(16.dp).clip(CircleShape).background(mode.previewSecondary))
+                                    Box(Modifier.size(16.dp).clip(CircleShape).background(mode.previewSurface).border(1.dp, tokens.borderSubtle, CircleShape))
+                                }
+                            }
                         }
                     }
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Background checks run via Android WorkManager; system Doze mode may delay exact timing when asleep.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tokens.inkMuted
-                )
             }
-        }
 
-        // Privacy Settings
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.PrivacyTip, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Privacy & Social Sharing", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+            // 10-Category Acoustic Soundscape & Haptics
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("10-Category Sound System", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                            Text("Soft chimes with automatic SURU voice & background suppression", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    FeeloraToggleRow(
+                        title = "Master Sound Effects",
+                        checked = prefs.soundEffectsEnabled,
+                        onCheckedChange = onUpdateSoundEffects
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FeeloraToggleRow(
+                        title = "Subtle Haptic Touch Feedback",
+                        checked = prefs.hapticsEnabled,
+                        onCheckedChange = { pushSoundUpdate(haptics = it) }
+                    )
+                    if (prefs.soundEffectsEnabled) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Volume (${(prefs.soundVolume * 100).roundToInt()}%)", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                            TextButton(onClick = onTestSoundEffect, modifier = Modifier.testTag("test_sfx_btn")) {
+                                Text("Test Chime", maxLines = 1, softWrap = false)
+                            }
+                        }
+                        Slider(
+                            value = prefs.soundVolume,
+                            onValueChange = { pushSoundUpdate(volume = it) },
+                            valueRange = 0.1f..1.0f,
+                            modifier = Modifier.testTag("sound_volume_slider")
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val categoryBindings = listOf(
+                            Triple(SoundCategory.NAVIGATION, prefs.soundNavEnabled) { v: Boolean -> pushSoundUpdate(nav = v) },
+                            Triple(SoundCategory.BUTTON_INTERACTION, prefs.soundInteractionEnabled) { v: Boolean -> pushSoundUpdate(interaction = v) },
+                            Triple(SoundCategory.TASK_COMPLETION, prefs.soundTaskEnabled) { v: Boolean -> pushSoundUpdate(task = v) },
+                            Triple(SoundCategory.ACHIEVEMENT, prefs.soundAchievementEnabled) { v: Boolean -> pushSoundUpdate(achievement = v) },
+                            Triple(SoundCategory.STREAK_COMPLETION, prefs.soundStreakEnabled) { v: Boolean -> pushSoundUpdate(streak = v) },
+                            Triple(SoundCategory.SURU_INTERACTION, prefs.soundSuruEnabled) { v: Boolean -> pushSoundUpdate(suru = v) },
+                            Triple(SoundCategory.KUTTA_INTERACTION, prefs.soundCompanionEnabled) { v: Boolean -> pushSoundUpdate(companion = v) },
+                            Triple(SoundCategory.TOGETHER_MESSAGES, prefs.soundTogetherEnabled) { v: Boolean -> pushSoundUpdate(together = v) },
+                            Triple(SoundCategory.REMINDERS, prefs.soundReminderEnabled) { v: Boolean -> pushSoundUpdate(reminder = v) },
+                            Triple(SoundCategory.NOTIFICATIONS, prefs.soundNotificationEnabled) { v: Boolean -> pushSoundUpdate(notif = v) }
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            categoryBindings.forEach { (cat, enabled, onToggle) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(tokens.smallRadius))
+                                        .background(tokens.surfaceElevated.copy(alpha = 0.72f))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(cat.label, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                                        Text(cat.description, style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                                    }
+                                    IconButton(
+                                        onClick = { onPreviewSoundCategory(cat) },
+                                        modifier = Modifier.size(40.dp).testTag("preview_sound_${cat.name}")
+                                    ) {
+                                        Icon(Icons.Filled.PlayArrow, contentDescription = "Preview ${cat.label}", tint = MaterialTheme.colorScheme.secondary)
+                                    }
+                                    Switch(checked = enabled, onCheckedChange = onToggle)
+                                }
+                            }
+                        }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                ToggleRow(
-                    label = "Share Total XP on Leaderboard",
-                    checked = prefs.shareXpWithFriends,
-                    onCheckedChange = {
+            }
+
+            // 5-Category Notification Center & Smart Reminders
+            item {
+                ObsidianCard {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("Notifications & Reminders", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                Text("5 smart channels + quiet hours + action buttons", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                            }
+                        }
+                        TextButton(onClick = onOpenNotificationsHistory) {
+                            Text("History (${state.unreadNotificationsCount})", maxLines = 1, softWrap = false)
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+
+                    fun pushNotifUpdate(
+                        enabled: Boolean = prefs.notificationsEnabled,
+                        taskRem: Boolean = prefs.taskRemindersEnabled,
+                        wellness: Boolean = prefs.wellnessAlertsEnabled,
+                        quiet: Boolean = prefs.quietHoursEnabled,
+                        qStart: Int = prefs.quietStartHour,
+                        qEnd: Int = prefs.quietEndHour,
+                        pending: Boolean = prefs.pendingTaskFollowUpEnabled,
+                        companion: Boolean = prefs.companionAlertsEnabled,
+                        achievement: Boolean = prefs.achievementAlertsEnabled,
+                        together: Boolean = prefs.togetherAlertsEnabled
+                    ) {
+                        onUpdateNotifications(enabled, taskRem, wellness, quiet, qStart, qEnd, pending, companion, achievement, together)
+                    }
+
+                    ToggleRow("Master Notifications", prefs.notificationsEnabled) {
+                        if (it) onRequestNotificationPermission()
+                        pushNotifUpdate(enabled = it)
+                    }
+                    ToggleRow("1. Task Reminders", prefs.taskRemindersEnabled) {
+                        if (it) onRequestNotificationPermission()
+                        pushNotifUpdate(enabled = prefs.notificationsEnabled || it, taskRem = it)
+                    }
+                    ToggleRow("2. Pending Task 2h Follow-Ups (Done / Snooze / Tomorrow)", prefs.pendingTaskFollowUpEnabled) {
+                        pushNotifUpdate(pending = it)
+                    }
+                    ToggleRow("3. KUTTA Companion Hydration & Care", prefs.companionAlertsEnabled) {
+                        pushNotifUpdate(companion = it)
+                    }
+                    ToggleRow("4. Achievements & Streak Alerts", prefs.achievementAlertsEnabled) {
+                        pushNotifUpdate(achievement = it)
+                    }
+                    ToggleRow("5. Together Messages & Requests", prefs.togetherAlertsEnabled) {
+                        pushNotifUpdate(together = it)
+                    }
+                    ToggleRow("Digital Wellbeing Budget Alerts", prefs.wellnessAlertsEnabled) {
+                        pushNotifUpdate(wellness = it)
+                    }
+                    if (prefs.taskRemindersEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Reminder Frequency (Every ${prefs.reminderFrequencyHours}h)", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                        Spacer(Modifier.height(4.dp))
+                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(1, 2, 3, 4).forEach { hrs ->
+                                FilterChip(
+                                    selected = prefs.reminderFrequencyHours == hrs,
+                                    onClick = { onUpdateSmartReminderPolicy(hrs, prefs.maxRemindersPerTaskPerDay) },
+                                    label = { Text("${hrs}h") },
+                                    modifier = Modifier.testTag("reminder_freq_${hrs}h")
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text("Daily Cap per Task (${prefs.maxRemindersPerTaskPerDay}/day)", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                        Spacer(Modifier.height(4.dp))
+                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(2, 3, 5).forEach { cap ->
+                                FilterChip(
+                                    selected = prefs.maxRemindersPerTaskPerDay == cap,
+                                    onClick = { onUpdateSmartReminderPolicy(prefs.reminderFrequencyHours, cap) },
+                                    label = { Text("${cap}/day") },
+                                    modifier = Modifier.testTag("reminder_cap_${cap}")
+                                )
+                            }
+                        }
+                    }
+                    ToggleRow("Quiet Hours (${prefs.quietStartHour}:00 – ${prefs.quietEndHour}:00)", prefs.quietHoursEnabled) {
+                        pushNotifUpdate(quiet = it)
+                    }
+                    if (prefs.quietHoursEnabled) {
+                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(Triple(22, 7, "10 PM – 7 AM"), Triple(23, 7, "11 PM – 7 AM"), Triple(21, 6, "9 PM – 6 AM")).forEach { (s, e, lbl) ->
+                                FilterChip(
+                                    selected = prefs.quietStartHour == s && prefs.quietEndHour == e,
+                                    onClick = { pushNotifUpdate(quiet = true, qStart = s, qEnd = e) },
+                                    label = { Text(lbl, maxLines = 1, softWrap = false) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // SURU Multi-Provider AI Gateway & Voice
+            item {
+                val activeProvider = SuruAiProvider.fromStored(prefs.suruDefaultProvider)
+                ObsidianCard(borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text("SURU AI Gateway & Voice", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                Text("${activeProvider.displayName} · ${prefs.suruDefaultModel}", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            OutlinedButton(onClick = onOpenSuruAiSettings) { Text("Models", maxLines = 1, softWrap = false) }
+                            OutlinedButton(onClick = onOpenSuru, modifier = Modifier.testTag("settings_open_suru_btn")) { Text("Chat", maxLines = 1, softWrap = false) }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    ToggleRow("Mute SURU Voice Responses", prefs.suruVoiceMuted) {
+                        onUpdateSuruVoiceSettings(it, prefs.suruSpeechSpeed, currentVoiceLang)
+                    }
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SuruVoiceLanguage.entries.forEach { lang ->
+                            FilterChip(
+                                selected = currentVoiceLang == lang,
+                                onClick = { onUpdateSuruVoiceSettings(prefs.suruVoiceMuted, prefs.suruSpeechSpeed, lang) },
+                                label = { Text(lang.label, maxLines = 1, softWrap = false) },
+                                modifier = Modifier.testTag("settings_suru_lang_${lang.name}")
+                            )
+                        }
+                    }
+                    ToggleRow("Morning Briefing Notification", prefs.suruMorningBriefingEnabled) {
+                        if (it) onRequestNotificationPermission()
+                        onUpdateSuruBriefingSettings(it, prefs.suruEveningReflectionEnabled, prefs.suruMorningHour, prefs.suruEveningHour)
+                    }
+                    ToggleRow("Evening Reflection Notification", prefs.suruEveningReflectionEnabled) {
+                        if (it) onRequestNotificationPermission()
+                        onUpdateSuruBriefingSettings(prefs.suruMorningBriefingEnabled, it, prefs.suruMorningHour, prefs.suruEveningHour)
+                    }
+                    ToggleRow("SURU Personalization Memory", prefs.suruPersonalizationEnabled) {
+                        onUpdateSuruPersonalization(it)
+                    }
+                }
+            }
+
+            // Account & Daily Targets
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Person, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Account & Daily Targets", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(value = handle, onValueChange = { handle = it }, label = { Text("Handle") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = focusGoal, onValueChange = { focusGoal = it.filter(Char::isDigit) }, label = { Text("Focus goal (m)") }, singleLine = true, modifier = Modifier.weight(1f))
+                        OutlinedTextField(value = screenLimit, onValueChange = { screenLimit = it.filter(Char::isDigit) }, label = { Text("Screen limit (m)") }, singleLine = true, modifier = Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = {
+                            onUpdateProfile(name, handle, focusGoal.toIntOrNull() ?: 120, screenLimit.toIntOrNull() ?: 180, prefs.avatarPreset)
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("save_profile_btn")
+                    ) { Text("Save Details") }
+                }
+            }
+
+            // Water & Cycle Care Settings
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Water & Private Cycle Care", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Daily Water Goal (${prefs.dailyWaterGoalMl} ml)", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                    Spacer(Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(1500, 2000, 2500, 3000).forEach { goal ->
+                            FilterChip(selected = prefs.dailyWaterGoalMl == goal, onClick = { onUpdateWaterSettings(goal, prefs.waterRemindersEnabled) }, label = { Text("${goal}ml") })
+                        }
+                    }
+                    ToggleRow("KUTTA Water Nudges", prefs.waterRemindersEnabled) {
+                        onUpdateWaterSettings(prefs.dailyWaterGoalMl, it)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Favorite, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Cycle Care (100% On-Device)", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                    }
+                    ToggleRow("Show Cycle Care in Wellness & Home", prefs.cycleCareEnabled) {
+                        onUpdateCycleSettings(it, prefs.averageCycleLengthDays, prefs.averagePeriodLengthDays)
+                    }
+                    if (prefs.cycleCareEnabled) {
+                        Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            listOf(25, 26, 28, 30, 32, 35).forEach { len ->
+                                FilterChip(selected = prefs.averageCycleLengthDays == len, onClick = { onUpdateCycleSettings(true, len, prefs.averagePeriodLengthDays) }, label = { Text("${len}d") })
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Accessibility, Dashboard Cards & Home-Screen Widgets
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Motion & Widgets", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    }
+                    ToggleRow("Reduced Motion", prefs.reducedMotionEnabled, onUpdateReducedMotion)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = { showWidgetSheet = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Customize Dashboard Cards (${state.widgets.count { it.isVisible }}/${state.widgets.size})")
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Widgets, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Home-Screen Glance Widgets", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    GlanceWidgetPinningSection(petName = prefs.petName)
+                }
+            }
+
+            // Privacy & Together Sharing
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.PrivacyTip, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Together Privacy & Sharing", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    ToggleRow("Share Total XP & Level", prefs.shareXpWithFriends) {
                         onUpdatePrivacy(it, prefs.shareStreaksWithFriends, prefs.shareFocusWithFriends, prefs.shareChallengesWithFriends)
                     }
-                )
-                ToggleRow(
-                    label = "Share Daily Streaks",
-                    checked = prefs.shareStreaksWithFriends,
-                    onCheckedChange = {
+                    ToggleRow("Share Daily Streaks", prefs.shareStreaksWithFriends) {
                         onUpdatePrivacy(prefs.shareXpWithFriends, it, prefs.shareFocusWithFriends, prefs.shareChallengesWithFriends)
                     }
-                )
-                ToggleRow(
-                    label = "Share Focus Minutes",
-                    checked = prefs.shareFocusWithFriends,
-                    onCheckedChange = {
+                    ToggleRow("Share Focus Minutes", prefs.shareFocusWithFriends) {
                         onUpdatePrivacy(prefs.shareXpWithFriends, prefs.shareStreaksWithFriends, it, prefs.shareChallengesWithFriends)
                     }
-                )
-                ToggleRow(
-                    label = "Share Challenge Progress",
-                    checked = prefs.shareChallengesWithFriends,
-                    onCheckedChange = {
+                    ToggleRow("Share Challenges & Consistency", prefs.shareChallengesWithFriends) {
                         onUpdatePrivacy(prefs.shareXpWithFriends, prefs.shareStreaksWithFriends, prefs.shareFocusWithFriends, it)
                     }
-                )
-            }
-        }
-
-        // Account & Storage Management
-        item {
-            ObsidianCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.CloudOff, contentDescription = null, tint = tokens.inkSecondary)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Account & Storage", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = buildString {
-                        append("Signed in as ${prefs.userName.ifBlank { "Member" }} (${prefs.userHandle})")
-                        if (prefs.friendCode.isNotBlank()) append(" · ${prefs.friendCode}")
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Local Room + DataStore persistence is active. SURU NLU, study planner, and voice work on-device (when Android Speech service supports it); optional cloud AI uses Firebase AI Logic.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.inkSecondary
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onSignOut,
-                    modifier = Modifier.fillMaxWidth().testTag("sign_out_btn")
-                ) {
-                    Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Switch Account / Sign Out", maxLines = 1, softWrap = false)
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = { showResetConfirm = true },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseAlert),
-                    modifier = Modifier.fillMaxWidth().testTag("reset_data_btn")
-                ) {
-                    Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Reset Local Workspace", maxLines = 1, softWrap = false)
                 }
             }
-        }
 
-        item { Spacer(Modifier.height(24.dp)) }
+            // Account & Reset
+            item {
+                ObsidianCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CloudOff, contentDescription = null, tint = tokens.inkSecondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Account & Storage", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Signed in as ${prefs.userName.ifBlank { "Member" }} (${prefs.userHandle})" + if (prefs.hasValidRemoteSession) " · Cloud Synced" else " · Device Local",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Signing out keeps all tasks, XP, habits, Cycle Care, and SURU memories preserved on your device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.inkSecondary
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth().testTag("sign_out_btn")) {
+                        Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Switch Account / Sign Out")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { showResetConfirm = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = RoseAlert),
+                        modifier = Modifier.fillMaxWidth().testTag("reset_data_btn")
+                    ) {
+                        Icon(Icons.Filled.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Reset Local Workspace")
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(24.dp)) }
+        }
     }
 
     if (showWidgetSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showWidgetSheet = false },
-            containerColor = tokens.surfaceBase
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
-            ) {
+        ModalBottomSheet(onDismissRequest = { showWidgetSheet = false }, containerColor = tokens.surfaceBase) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text("Customize Dashboard Cards", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
                 Spacer(Modifier.height(12.dp))
                 WidgetCustomizerList(
@@ -1032,28 +683,16 @@ fun SettingsScreen(
     }
 
     if (showResetConfirm) {
-        AlertDialog(
-            onDismissRequest = { showResetConfirm = false },
-            containerColor = tokens.surfaceBase,
-            title = { Text("Reset Local Workspace?", color = tokens.inkPrimary) },
-            text = {
-                Text(
-                    "This clears all tasks, events, habits, SURU plans/memories, friends, and XP, returning Feelora to a clean zero baseline.",
-                    color = tokens.inkSecondary
-                )
+        FeeloraConfirmDialog(
+            title = "Reset Local Workspace?",
+            message = "This clears all tasks, events, habits, SURU plans/memories, friends, and XP, returning Feelora to a clean baseline.",
+            confirmLabel = "Reset",
+            isDestructive = true,
+            onConfirm = {
+                onResetData()
+                showResetConfirm = false
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onResetData()
-                        showResetConfirm = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = RoseAlert)
-                ) { Text("Reset") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-            }
+            onDismiss = { showResetConfirm = false }
         )
     }
 }
@@ -1066,9 +705,7 @@ private fun ToggleRow(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {

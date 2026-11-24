@@ -54,18 +54,25 @@ class TaskReminderActionReceiver : BroadcastReceiver() {
                         }
                         TaskReminderScheduler.ACTION_SNOOZE -> {
                             db.taskDao().updateTask(
-                                task.copy(snoozedUntilMillis = now + 60L * 60L * 1000L)
+                                task.copy(
+                                    snoozedUntilMillis = now + 60L * 60L * 1000L,
+                                    remindersDismissed = false
+                                )
                             )
                         }
                         TaskReminderScheduler.ACTION_RESCHEDULE -> {
-                            val nextDeadline = maxOf(task.deadlineEpochDay, today) + 1L
+                            val nextDeadline = TaskReminderPolicy.recalculateDeadlineForTomorrowReschedule(
+                                currentDeadlineEpochDay = task.deadlineEpochDay,
+                                todayEpochDay = today
+                            )
                             db.taskDao().updateTask(
                                 task.copy(
                                     deadlineEpochDay = nextDeadline,
                                     snoozedUntilMillis = 0L,
-                                    lastRemindedAtMillis = now,
+                                    lastRemindedAtMillis = 0L,
                                     reminderCountToday = 0,
-                                    lastReminderEpochDay = today
+                                    lastReminderEpochDay = today,
+                                    remindersDismissed = false
                                 )
                             )
                         }

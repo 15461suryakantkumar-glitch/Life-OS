@@ -1,7 +1,8 @@
 package com.example
 
-import com.example.data.ai.LifeContextSnapshot
-import com.example.data.ai.LocalLifeAiEngine
+import com.example.suru.LifeContextSnapshot
+import com.example.suru.SuruIntent
+import com.example.suru.SuruNluEngine
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.audio.LifeOsSoundManager
 import com.example.data.local.AppUsageCategory
@@ -104,40 +105,74 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun offlineAi_parsesScheduleEventTaskAndHabitCommands() {
-        val eventRes = LocalLifeAiEngine.process("Schedule Physics tomorrow at 8 AM.", sampleSnapshot())
-        assertEquals("CREATE_EVENT", eventRes.actionType)
+    fun offlineSuruNlu_parsesScheduleEventAndTaskCommands() {
+        val eventRes = SuruNluEngine.parseAndPlan(
+            userPrompt = "Schedule Physics tomorrow at 8 AM.",
+            context = sampleSnapshot(),
+            tasks = emptyList(),
+            events = emptyList(),
+            memories = emptyList(),
+            pendingContext = null,
+            lastStudyDraft = null
+        )
+        assertNotNull(eventRes)
+        assertEquals(SuruIntent.CREATE_EVENT, eventRes!!.intent)
         assertEquals("Physics", eventRes.title)
         assertEquals(1, eventRes.dateOffsetDays)
         assertEquals(8, eventRes.startHour)
         assertEquals(0, eventRes.startMinute)
         assertEquals(TaskCategory.STUDY, eventRes.category)
 
-        val taskRes = LocalLifeAiEngine.process("Add Chemical Equilibrium to my tasks.", sampleSnapshot())
-        assertEquals("CREATE_TASK", taskRes.actionType)
+        val taskRes = SuruNluEngine.parseAndPlan(
+            userPrompt = "Add Chemical Equilibrium to my tasks.",
+            context = sampleSnapshot(),
+            tasks = emptyList(),
+            events = emptyList(),
+            memories = emptyList(),
+            pendingContext = null,
+            lastStudyDraft = null
+        )
+        assertNotNull(taskRes)
+        assertEquals(SuruIntent.CREATE_TASK, taskRes!!.intent)
         assertEquals("Chemical Equilibrium", taskRes.title)
         assertEquals(TaskCategory.STUDY, taskRes.category)
-
-        val habitRes = LocalLifeAiEngine.process("Add habit Read 20 pages", cleanSlateSnapshot())
-        assertEquals("CREATE_HABIT", habitRes.actionType)
-        assertEquals("Read 20 pages", habitRes.title)
     }
 
     @Test
-    fun offlineAi_organizesTomorrowAndReportsInsightsIncludingCleanSlate() {
-        val plan = LocalLifeAiEngine.process("Organize tomorrow based on my pending tasks.", sampleSnapshot())
-        assertEquals("ORGANIZE_TOMORROW", plan.actionType)
-        assertTrue(plan.reply.contains("Finish HP"))
+    fun offlineSuruNlu_plansWeekAndSummarizesProgress() {
+        val plan = SuruNluEngine.parseAndPlan(
+            userPrompt = "Plan my entire week",
+            context = sampleSnapshot(),
+            tasks = emptyList(),
+            events = emptyList(),
+            memories = emptyList(),
+            pendingContext = null,
+            lastStudyDraft = null
+        )
+        assertEquals(SuruIntent.PLAN_WEEK, plan?.intent)
 
-        val report = LocalLifeAiEngine.process("Show my weekly productivity.", sampleSnapshot())
-        assertEquals("NONE", report.actionType)
-        assertTrue(report.reply.contains("78%"))
-        assertTrue(report.reply.contains("Suryakant"))
+        val report = SuruNluEngine.parseAndPlan(
+            userPrompt = "Summarize my progress this month",
+            context = sampleSnapshot(),
+            tasks = emptyList(),
+            events = emptyList(),
+            memories = emptyList(),
+            pendingContext = null,
+            lastStudyDraft = null
+        )
+        assertEquals(SuruIntent.PROGRESS_SUMMARY, report?.intent)
 
-        val cleanInsight = LocalLifeAiEngine.process("Show my productivity insights", cleanSlateSnapshot())
-        assertEquals("NONE", cleanInsight.actionType)
-        assertTrue(cleanInsight.reply.contains("Clean slate active"))
-        assertTrue(cleanInsight.reply.contains("NovaUser"))
+        val focusNext = SuruNluEngine.parseAndPlan(
+            userPrompt = "What should I focus on today?",
+            context = cleanSlateSnapshot(),
+            tasks = emptyList(),
+            events = emptyList(),
+            memories = emptyList(),
+            pendingContext = null,
+            lastStudyDraft = null
+        )
+        assertEquals(SuruIntent.OVERDUE_CHECK, focusNext?.intent)
+        assertTrue(focusNext?.reply?.contains("clear", ignoreCase = true) == true)
     }
 
     @Test
@@ -556,11 +591,13 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun themeModes_includeTwoDarkAndFourLightModes_withFeeloraLavender() {
-        assertEquals(6, LifeOsThemeMode.entries.size)
+    fun themeModes_includeThreeDistinctFeeloraThemes_withHybridLavenderDefault() {
+        assertEquals(3, LifeOsThemeMode.entries.size)
         assertEquals(2, LifeOsThemeMode.entries.count { it.isDark })
-        assertEquals(4, LifeOsThemeMode.entries.count { !it.isDark })
-        assertTrue(LifeOsThemeMode.FEELORA_LIGHT in LifeOsThemeMode.entries)
-        assertTrue(LifeOsThemeMode.FEELORA_DARK in LifeOsThemeMode.entries)
+        assertEquals(1, LifeOsThemeMode.entries.count { !it.isDark })
+        assertEquals(LifeOsThemeMode.HYBRID_LAVENDER, UserPreferencesState().themeMode)
+        assertTrue(LifeOsThemeMode.HYBRID_LAVENDER in LifeOsThemeMode.entries)
+        assertTrue(LifeOsThemeMode.MIDNIGHT_AURORA in LifeOsThemeMode.entries)
+        assertTrue(LifeOsThemeMode.MATCHA_MIST in LifeOsThemeMode.entries)
     }
 }

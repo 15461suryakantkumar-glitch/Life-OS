@@ -5,7 +5,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import com.example.BuildConfig
-import com.example.data.ai.LifeContextSnapshot
 import com.example.data.local.AiMessageEntity
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.SuruMemoryEntity
@@ -84,16 +83,25 @@ class SuruIntelligenceService(private val appContext: Context) {
         Firebase.ai.generativeModel(modelName = GEMINI_FLASH_MODEL)
     }
 
+    private val gateway = SuruAiGateway(appContext)
+
+    fun getGateway(): SuruAiGateway = gateway
+
     fun getCloudAiStatus(): SuruCloudAiStatus {
         val online = isDeviceOnline()
         val hasFirebase = runCatching { FirebaseApp.getApps(appContext).isNotEmpty() }.getOrDefault(false)
-        if (hasFirebase) {
-            return if (online) SuruCloudAiStatus.CLOUD_FIREBASE else SuruCloudAiStatus.OFFLINE
+        if (!online) {
+            return if (gateway.hasAnyConfiguredProvider()) SuruCloudAiStatus.OFFLINE else SuruCloudAiStatus.MISSING_API_KEY
         }
         val key = configuredGeminiKey()
-        if (key != null) {
-            return if (online) SuruCloudAiStatus.CLOUD_GEMINI_KEY else SuruCloudAiStatus.OFFLINE
+        if (key != null || gateway.hasAnyConfiguredProvider()) {
+            return if (hasFirebase && key == null && configuredKey(BuildConfig.OPENAI_API_KEY) == null && configuredKey(BuildConfig.ANTHROPIC_API_KEY) == null) {
+                SuruCloudAiStatus.CLOUD_FIREBASE
+            } else {
+                SuruCloudAiStatus.CLOUD_GEMINI_KEY
+            }
         }
+        if (hasFirebase) return SuruCloudAiStatus.CLOUD_FIREBASE
         return SuruCloudAiStatus.MISSING_API_KEY
     }
 
@@ -101,6 +109,8 @@ class SuruIntelligenceService(private val appContext: Context) {
         val st = getCloudAiStatus()
         return st == SuruCloudAiStatus.CLOUD_GEMINI_KEY || st == SuruCloudAiStatus.CLOUD_FIREBASE
     }
+
+    private fun configuredKey(rawValue: String?): String? = SuruAiGateway.configuredKey(rawValue)
 
     private fun configuredGeminiKey(): String? {
         val raw = runCatching { BuildConfig.GEMINI_API_KEY.trim() }.getOrDefault("")
@@ -136,7 +146,8 @@ class SuruIntelligenceService(private val appContext: Context) {
         studyPlans: List<SuruStudyPlanEntity>,
         enabledMemories: List<SuruMemoryEntity>,
         pendingContext: SuruPendingContext?,
-        todayEpochDay: Long = DateTimeUtils.todayEpochDay()
+        todayEpochDay: Long = DateTimeUtils.todayEpochDay(),
+        prefs: UserPreferencesState = UserPreferencesState()
     ): SuruAiResponse? {
         val status = getCloudAiStatus()
         if (!status.isCloudConfigured || status == SuruCloudAiStatus.OFFLINE) {
@@ -144,7 +155,7 @@ class SuruIntelligenceService(private val appContext: Context) {
                 val reason = if (status == SuruCloudAiStatus.OFFLINE) {
                     "You are offline right now. Connect to the internet so SURU can analyze your photo."
                 } else {
-                    "Image analysis requires Gemini cloud AI. Add your GEMINI_API_KEY in the AI Studio Secrets panel to enable multimodal understanding."
+                    "Image analysis requires a configured multimodal AI provider (Gemini, OpenAI, or Claude) in AI Studio Secrets."
                 }
                 return SuruAiResponse.Error(reason, status)
             }
@@ -171,36 +182,25 @@ class SuruIntelligenceService(private val appContext: Context) {
             }
         }
 
-        return try {
-            val rawJson = when (status) {
-                SuruCloudAiStatus.CLOUD_GEMINI_KEY -> {
-                    val apiKey = configuredGeminiKey()
-                        ?: return SuruAiResponse.Error("Missing GEMINI_API_KEY.", SuruCloudAiStatus.MISSING_API_KEY)
-                    callGeminiRestJson(
-                        apiKey = apiKey,
-                        systemInstruction = systemInstruction,
-                        historyTurns = recentTurns,
-                        userPrompt = userPrompt,
-                        imageAttachment = imageAttachment
-                    )
-                }
-                SuruCloudAiStatus.CLOUD_FIREBASE -> {
-                    callFirebaseAiJson(
-                        systemInstruction = systemInstruction,
-                        historyTurns = recentTurns,
-                        userPrompt = userPrompt,
-                        imageAttachment = imageAttachment
-                    )
-                }
-                else -> null
-            }
+        val taskKind = when {
+            imageAttachment != null -> SuruRoutingTaskKind.VISION_MULTIMODAL
+            userPrompt.contains("plan", ignoreCase = true) ||
+                userPrompt.contains("schedule", ignoreCase = true) ||
+                userPrompt.contains("backlog", ignoreCase = true) -> SuruRoutingTaskKind.PLANNING_REASONING
+            else -> SuruRoutingTaskKind.CHAT
+        }
 
-            if (rawJson.isNullOrBlank()) {
-                return SuruAiResponse.Error(
-                    "SURU could not reach Gemini right now. Please check your connection or try again.",
-                    status
-                )
-            }
+        return try {
+            val result = gateway.generateCompletion(
+                prefs = prefs,
+                taskKind = taskKind,
+                systemInstruction = systemInstruction,
+                historyTurns = recentTurns,
+                userPrompt = userPrompt,
+                imageAttachment = imageAttachment,
+                expectJson = true
+            )
+            val rawJson = result.rawText
 
             val parsed = parseStructuredJsonToAction(
                 rawJson = rawJson,
@@ -210,9 +210,15 @@ class SuruIntelligenceService(private val appContext: Context) {
                 todayEpochDay = todayEpochDay
             )
             if (parsed != null) {
-                SuruAiResponse.Success(action = parsed, usedCloud = true)
+                val providerTag = "${result.providerUsed.shortName} · ${result.modelUsed}"
+                val decoratedReply = if (!result.fallbackNote.isNullOrBlank()) {
+                    "${parsed.reply}\n\n(${result.fallbackNote})"
+                } else parsed.reply
+                SuruAiResponse.Success(
+                    action = parsed.copy(reply = decoratedReply, isOfflineEngine = false),
+                    usedCloud = true
+                ).also { Log.d(SURU_AI_TAG, "SURU responded via $providerTag") }
             } else {
-                // If Gemini returned plain prose rather than strict JSON, surface it cleanly as CHAT.
                 val trimmed = rawJson.trim()
                 if (trimmed.isNotBlank() && !trimmed.startsWith("{")) {
                     SuruAiResponse.Success(
@@ -225,7 +231,7 @@ class SuruIntelligenceService(private val appContext: Context) {
                     )
                 } else {
                     SuruAiResponse.Error(
-                        "SURU received an unreadable response format from Gemini. Please rephrase your request.",
+                        "SURU received an unreadable response format from ${result.providerUsed.shortName}. Please rephrase your request.",
                         status
                     )
                 }
@@ -233,9 +239,9 @@ class SuruIntelligenceService(private val appContext: Context) {
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            Log.w(SURU_AI_TAG, "Cloud Gemini call failed: ${t.message}")
+            Log.w(SURU_AI_TAG, "Cloud AI gateway failed: ${t.message}")
             SuruAiResponse.Error(
-                "Gemini request failed: ${t.message ?: "Network or API error"}",
+                "AI request failed: ${t.message ?: "Network or API error"}",
                 status
             )
         }
@@ -375,63 +381,48 @@ class SuruIntelligenceService(private val appContext: Context) {
     suspend fun generateStudyHelp(
         topic: String,
         mode: SuruStudyHelpMode,
-        userNotes: String
+        userNotes: String,
+        prefs: UserPreferencesState = UserPreferencesState()
     ): SuruStudyHelpResult {
         val cleanTopic = topic.trim().ifBlank { "Study Topic" }
         val cleanNotes = userNotes.trim()
         val hasNotes = cleanNotes.isNotBlank()
         val status = getCloudAiStatus()
 
-        if (status == SuruCloudAiStatus.CLOUD_GEMINI_KEY) {
-            val apiKey = configuredGeminiKey()
-            if (apiKey != null) {
-                try {
-                    val prompt = buildString {
-                        appendLine("Create structured JSON study help for topic: \"$cleanTopic\" in mode: ${mode.label} (${mode.subtitle}).")
-                        appendLine("JSON fields required: conceptExplanation (string), summaryBullets (3 strings), practiceQuestions (3 strings), flashcardFronts (3 strings), flashcardBacks (3 strings), revisionChecklist (3 strings), mistakeTips (2 strings).")
-                        if (hasNotes) {
-                            appendLine("Ground ONLY in the user's pasted notes below:")
-                            appendLine(cleanNotes.take(3500))
-                        } else {
-                            appendLine("Give accurate conceptual clarity without inventing page numbers or textbook citations.")
-                        }
-                    }
-                    val raw = callGeminiRestJson(
-                        apiKey = apiKey,
-                        systemInstruction = "Return strictly valid JSON with keys: conceptExplanation, summaryBullets, practiceQuestions, flashcardFronts, flashcardBacks, revisionChecklist, mistakeTips.",
-                        historyTurns = emptyList(),
-                        userPrompt = prompt,
-                        imageAttachment = null
-                    )
-                    if (!raw.isNullOrBlank()) {
-                        parseStudyHelpJson(raw, cleanTopic, mode, cleanNotes)?.let { return it }
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Log.w(SURU_AI_TAG, "REST study help fallback: ${t.message}")
-                }
-            }
-        } else if (status == SuruCloudAiStatus.CLOUD_FIREBASE) {
+        if (status.isCloudConfigured && status != SuruCloudAiStatus.OFFLINE) {
             try {
                 val prompt = buildString {
-                    appendLine("Create study assistance for topic: \"$cleanTopic\" in mode: ${mode.label} (${mode.subtitle}).")
+                    appendLine("Create structured JSON study help for topic: \"$cleanTopic\" in mode: ${mode.label} (${mode.subtitle}).")
+                    appendLine("JSON fields required: conceptExplanation (string), summaryBullets (3 strings), practiceQuestions (3 strings), flashcardFronts (3 strings), flashcardBacks (3 strings), revisionChecklist (3 strings), mistakeTips (2 strings).")
                     if (hasNotes) {
-                        appendLine("Prioritize ONLY the user's pasted notes below when summarizing:")
+                        appendLine("Ground ONLY in the user's pasted notes below:")
                         appendLine(cleanNotes.take(3500))
                     } else {
-                        appendLine("No textbook excerpts were pasted. Give general conceptual study help and do NOT fabricate specific textbook chapters or page numbers.")
+                        appendLine("Give accurate conceptual clarity without inventing page numbers or textbook citations.")
                     }
                 }
-                val response = withTimeout(30_000L) { studyModel.generateContent(prompt) }
-                val rawJson = response.text
-                if (!rawJson.isNullOrBlank()) {
-                    parseStudyHelpJson(rawJson, cleanTopic, mode, cleanNotes)?.let { return it }
+                val result = gateway.generateCompletion(
+                    prefs = prefs,
+                    taskKind = SuruRoutingTaskKind.STUDY_HELP,
+                    systemInstruction = "Return strictly valid JSON with keys: conceptExplanation, summaryBullets, practiceQuestions, flashcardFronts, flashcardBacks, revisionChecklist, mistakeTips.",
+                    historyTurns = emptyList(),
+                    userPrompt = prompt,
+                    imageAttachment = null,
+                    expectJson = true
+                )
+                parseStudyHelpJson(result.rawText, cleanTopic, mode, cleanNotes)?.let { parsed ->
+                    val suffix = buildString {
+                        append("Powered by ${result.providerUsed.shortName}")
+                        if (!result.secondaryReviewedBy.isNullOrBlank()) {
+                            append(" · Verified by ${result.secondaryReviewedBy}")
+                        }
+                    }
+                    return parsed.copy(sourceDisclaimer = "${parsed.sourceDisclaimer} ($suffix)")
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                Log.w(SURU_AI_TAG, "Firebase study help fallback (${t.message})")
+                Log.w(SURU_AI_TAG, "Study help gateway fallback (${t.message})")
             }
         }
 

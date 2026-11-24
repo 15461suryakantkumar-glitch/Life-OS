@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/lifeos_neon_icon_1795447784366"
+        android:drawable="@drawable/feelora_app_icon_fg_1795511873510"
         android:gravity="center" />
 </layer-list>

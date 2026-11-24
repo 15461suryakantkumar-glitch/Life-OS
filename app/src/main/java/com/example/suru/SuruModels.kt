@@ -233,3 +233,21 @@ data class SuruDailyBriefing(
     val wellnessNote: String,
     val gentleClosing: String
 )
+
+data class LifeContextSnapshot(
+    val userName: String,
+    val level: Int,
+    val totalXp: Int,
+    val dailyStreak: Int,
+    val pendingTasksSummary: String,
+    val pendingTaskTitles: List<String> = emptyList(),
+    val completedTasksCount: Int,
+    val upcomingEventsSummary: String,
+    val screenTimeTodayMinutes: Int,
+    val focusMinutesToday: Int,
+    val dailyFocusGoalMinutes: Int = 120,
+    val habitsCompletedToday: Int = 0,
+    val habitsTotal: Int = 0,
+    val productivityScore: Int = 0
+)
+

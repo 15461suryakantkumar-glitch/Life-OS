@@ -37,18 +37,18 @@ import com.example.data.local.TaskPriority
 import java.util.Calendar
 
 object LifeOsGlanceColors {
-    val BgObsidian = ColorProvider(Color(0xFF0A0C12))
-    val SurfaceCharcoal = ColorProvider(Color(0xFF131724))
-    val SurfaceElevated = ColorProvider(Color(0xFF1B2032))
-    val Violet = ColorProvider(Color(0xFF8B5CF6))
-    val Cyan = ColorProvider(Color(0xFF22D3EE))
+    val BgObsidian = ColorProvider(Color(0xFF161124))
+    val SurfaceCharcoal = ColorProvider(Color(0xFF261E40))
+    val SurfaceElevated = ColorProvider(Color(0xFF312652))
+    val Violet = ColorProvider(Color(0xFFA78BFA))
+    val Cyan = ColorProvider(Color(0xFFF3C6DC))
     val Emerald = ColorProvider(Color(0xFF10B981))
-    val Amber = ColorProvider(Color(0xFFF59E0B))
-    val Rose = ColorProvider(Color(0xFFF43F5E))
-    val InkPrimary = ColorProvider(Color(0xFFF8FAFC))
-    val InkSecondary = ColorProvider(Color(0xFF94A3B8))
-    val InkMuted = ColorProvider(Color(0xFF64748B))
-    val ProgressTrack = ColorProvider(Color(0xFF262C40))
+    val Amber = ColorProvider(Color(0xFFD97706))
+    val Rose = ColorProvider(Color(0xFFE11D48))
+    val InkPrimary = ColorProvider(Color(0xFFFAF7FF))
+    val InkSecondary = ColorProvider(Color(0xFFD6CCEE))
+    val InkMuted = ColorProvider(Color(0xFF9E90C2))
+    val ProgressTrack = ColorProvider(Color(0xFF46386B))
 }
 
 val NAVIGATE_TO_PARAM = ActionParameters.Key<String>("navigate_to")
@@ -62,7 +62,7 @@ fun openLifeOsRouteAction(route: String): Action {
 fun priorityColorProvider(priority: TaskPriority): ColorProvider {
     return when (priority) {
         TaskPriority.LOW -> LifeOsGlanceColors.InkSecondary
-        TaskPriority.MEDIUM -> LifeOsGlanceColors.Cyan
+        TaskPriority.MEDIUM -> LifeOsGlanceColors.Violet
         TaskPriority.HIGH -> LifeOsGlanceColors.Amber
         TaskPriority.CRITICAL -> LifeOsGlanceColors.Rose
     }
@@ -133,17 +133,15 @@ fun GlanceWidgetHeader(
                 Image(
                     provider = ImageProvider(trailingIconRes),
                     contentDescription = "Action",
-                    modifier = GlanceModifier.size(16.dp)
+                    modifier = ModifierSize16()
                 )
             }
         }
     }
 }
 
-/**
- * Decodes a lightweight 140x140 KUTTA widget bitmap directly from local drawables.
- * Never displays Cycle Care or private wellness metrics.
- */
+private fun ModifierSize16() = GlanceModifier.size(16.dp)
+
 fun decodeKuttaWidgetBitmap(
     context: Context,
     happiness: Int,
@@ -162,4 +160,3 @@ fun decodeKuttaWidgetBitmap(
         ?: BitmapFactory.decodeResource(context.resources, R.drawable.kutta_idle)
     return Bitmap.createScaledBitmap(decoded, 140, 140, true)
 }
-

@@ -88,10 +88,12 @@ import com.example.data.local.TaskPriority
 import com.example.data.local.TaskSectionEntity
 import com.example.kutta.KuttaDialogueBubble
 import com.example.kutta.KuttaEmotion
-import com.example.kutta.KuttaEvent
 import com.example.kutta.KuttaEventHandler
 import com.example.kutta.KuttaMascot
 import com.example.ui.components.EmptyStateCard
+import com.example.ui.components.FeeloraScreenBackdrop
+import com.example.ui.components.FeeloraSegmentedRow
+import com.example.ui.components.FeeloraTopHeader
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
@@ -114,7 +116,10 @@ fun TasksScreen(
     onDeleteSection: (TaskSectionEntity) -> Unit,
     onQuickAddTaskInSection: (Long, String) -> Unit,
     onTapKutta: () -> Unit = {},
-    onAskSuruBacklog: () -> Unit = {}
+    onAskSuruBacklog: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
+    onOpenNotifications: () -> Unit = {},
+    onOpenProfile: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
@@ -172,53 +177,64 @@ fun TasksScreen(
         showSectionCreator = false
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(tokens.background)
-            .testTag("tasks_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Header + Inline New Section trigger
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Tasks", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-                    Text(
-                        text = "Organize sections & add tasks inline",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = tokens.inkSecondary
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    FeeloraScreenBackdrop(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("tasks_screen"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Unified FEELORA Top Header
+            item {
+                FeeloraTopHeader(
+                    title = "Tasks",
+                    subtitle = "Organize sections & add tasks inline",
+                    userName = state.prefs.userName,
+                    avatarPreset = state.prefs.avatarPreset,
+                    avatarUri = state.prefs.avatarPhotoUri,
+                    unreadNotifications = state.unreadNotificationsCount,
+                    onOpenDrawer = onOpenDrawer,
+                    onOpenNotifications = onOpenNotifications,
+                    onOpenProfile = onOpenProfile
+                )
+            }
+
+            // Action Bar: SURU Backlog Recovery & New Section Trigger
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     OutlinedButton(
                         onClick = onAskSuruBacklog,
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                        modifier = Modifier.height(38.dp).testTag("tasks_ask_suru_btn")
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("tasks_ask_suru_btn")
                     ) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("SURU Backlog", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
                     }
                     FilledTonalButton(
                         onClick = { showSectionCreator = !showSectionCreator },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(38.dp).testTag("new_section_btn")
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("new_section_btn")
                     ) {
                         Icon(
                             imageVector = if (showSectionCreator) Icons.Filled.Close else Icons.Filled.Add,
                             contentDescription = null,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
-                            text = if (showSectionCreator) "Close" else "Section",
+                            text = if (showSectionCreator) "Close" else "New Section",
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             softWrap = false
@@ -226,204 +242,211 @@ fun TasksScreen(
                     }
                 }
             }
-        }
 
-        // Inline Section Creator Bar
-        item {
-            AnimatedVisibility(
-                visible = showSectionCreator,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                ObsidianCard(
-                    borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
-                    elevated = true,
-                    contentPadding = PaddingValues(12.dp)
+            // Inline Section Creator Bar
+            item {
+                AnimatedVisibility(
+                    visible = showSectionCreator,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
                 ) {
-                    Text(
-                        text = "New Section",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(Modifier.height(6.dp))
+                    ObsidianCard(
+                        borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
+                        elevated = true,
+                        contentPadding = PaddingValues(14.dp)
+                    ) {
+                        Text(
+                            text = "New Section",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = newSectionName,
+                                onValueChange = { newSectionName = it },
+                                placeholder = { Text("e.g. Physics, Chemistry, Bio, Tests", maxLines = 1) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Words,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { submitNewSection() }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                                    unfocusedBorderColor = tokens.borderSubtle,
+                                    focusedTextColor = tokens.inkPrimary,
+                                    unfocusedTextColor = tokens.inkPrimary
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(sectionFocusRequester)
+                                    .testTag("new_section_input")
+                            )
+                            FilledIconButton(
+                                onClick = { submitNewSection() },
+                                enabled = newSectionName.isNotBlank(),
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("save_section_btn")
+                            ) {
+                                Icon(Icons.Filled.Check, contentDescription = "Save section")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Compact KUTTA Study Companion Strip
+            item {
+                val studyVisual = remember(state.kuttaState, state.tasks) {
+                    if (state.kuttaState.isTransientOverride) {
+                        state.kuttaState
+                    } else if (state.pendingTasksCount > 0) {
+                        KuttaEventHandler.stateForBaseline(
+                            emotion = KuttaEmotion.FOCUSED,
+                            dialogueIndex = state.completedTasksCount
+                        )
+                    } else {
+                        state.kuttaState
+                    }
+                }
+                ObsidianCard(elevated = true, contentPadding = PaddingValues(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        OutlinedTextField(
-                            value = newSectionName,
-                            onValueChange = { newSectionName = it },
-                            placeholder = { Text("e.g. Physics, Chemistry, Bio, Tests", maxLines = 1) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Words,
-                                imeAction = ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(onDone = { submitNewSection() }),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                                unfocusedBorderColor = tokens.borderSubtle,
-                                focusedTextColor = tokens.inkPrimary,
-                                unfocusedTextColor = tokens.inkPrimary
-                            ),
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(sectionFocusRequester)
-                                .testTag("new_section_input")
+                        KuttaMascot(
+                            visualState = studyVisual,
+                            size = 64.dp,
+                            onTap = onTapKutta
                         )
-                        FilledIconButton(
-                            onClick = { submitNewSection() },
-                            enabled = newSectionName.isNotBlank(),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.size(48.dp).testTag("save_section_btn")
-                        ) {
-                            Icon(Icons.Filled.Check, contentDescription = "Save section")
-                        }
+                        Spacer(Modifier.width(10.dp))
+                        KuttaDialogueBubble(
+                            message = studyVisual.dialogue,
+                            emotion = studyVisual.emotion,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
-        }
 
-        // Compact KUTTA Study Companion Strip
-        item {
-            val studyVisual = remember(state.kuttaState, state.tasks) {
-                if (state.kuttaState.isTransientOverride) {
-                    state.kuttaState
-                } else if (state.pendingTasksCount > 0) {
-                    KuttaEventHandler.stateForBaseline(
-                        emotion = KuttaEmotion.FOCUSED,
-                        dialogueIndex = state.completedTasksCount
-                    )
-                } else {
-                    state.kuttaState
-                }
-            }
-            ObsidianCard(elevated = true, contentPadding = PaddingValues(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    KuttaMascot(
-                        visualState = studyVisual,
-                        size = 64.dp,
-                        onTap = onTapKutta
-                    )
-                    Spacer(Modifier.width(10.dp))
-                    KuttaDialogueBubble(
-                        message = studyVisual.dialogue,
-                        emotion = studyVisual.emotion,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-
-        // Compact Progress Strip
-        item {
-            ObsidianCard(elevated = true, contentPadding = PaddingValues(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Task Progress", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+            // Compact Progress Strip
+            item {
+                ObsidianCard(elevated = true, contentPadding = PaddingValues(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Task Progress", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                            Text(
+                                text = if (filteredTasks.isEmpty()) "No tasks yet" else "$doneCount of ${filteredTasks.size} completed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
                         Text(
-                            text = if (filteredTasks.isEmpty()) "No tasks yet" else "$doneCount of ${filteredTasks.size} completed",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.inkSecondary
+                            text = "${(progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                    Text(
-                        text = "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.secondary,
-                        fontWeight = FontWeight.Bold
+                    Spacer(Modifier.height(8.dp))
+                    NeonProgressBar(progress = progress, heightDp = 6)
+                }
+            }
+
+            // View Mode Filter Pills
+            if (state.taskSections.isNotEmpty() || state.tasks.isNotEmpty()) {
+                item {
+                    val modes = listOf("ALL", "DAILY", "WEEKLY")
+                    FeeloraSegmentedRow(
+                        items = modes,
+                        selectedItem = viewMode,
+                        labelFor = {
+                            when (it) {
+                                "DAILY" -> "Today"
+                                "WEEKLY" -> "7 Days"
+                                else -> "All Tasks"
+                            }
+                        },
+                        onSelect = { viewMode = it },
+                        tagPrefix = "tasks_filter"
                     )
                 }
-                Spacer(Modifier.height(8.dp))
-                NeonProgressBar(progress = progress, heightDp = 6)
             }
-        }
 
-        // View Mode Filter Chips
-        if (state.taskSections.isNotEmpty() || state.tasks.isNotEmpty()) {
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("ALL" to "All", "DAILY" to "Today", "WEEKLY" to "7 Days").forEach { (key, label) ->
-                        FilterChip(
-                            selected = viewMode == key,
-                            onClick = { viewMode = key },
-                            label = { Text(label, maxLines = 1, softWrap = false) }
-                        )
-                    }
+            // Empty Slate vs Permanent Sections
+            if (state.taskSections.isEmpty() && ungroupedTasks.isEmpty()) {
+                item {
+                    EmptyStateCard(
+                        icon = Icons.Filled.FolderOpen,
+                        title = "No sections yet",
+                        subtitle = "Chalo Malkin! Create subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
+                        actionLabel = "Create First Section",
+                        onAction = { showSectionCreator = true },
+                        modifier = Modifier.testTag("tasks_empty_state")
+                    )
                 }
-            }
-        }
-
-        // Empty Slate vs Permanent Sections
-        if (state.taskSections.isEmpty() && ungroupedTasks.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    icon = Icons.Filled.FolderOpen,
-                    title = "No sections yet",
-                    subtitle = "Chalo Malkin! Create subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
-                    actionLabel = "Create First Section",
-                    onAction = { showSectionCreator = true },
-                    modifier = Modifier.testTag("tasks_empty_state")
-                )
-            }
-        } else {
-            items(state.taskSections, key = { "sec_${it.id}" }) { section ->
-                val sectionTasks = filteredTasks.filter { it.sectionId == section.id }
-                TaskSectionCard(
-                    title = section.name,
-                    tasks = sectionTasks,
-                    isInlineAdding = activeInlineSectionId == section.id,
-                    onStartInlineAdd = { activeInlineSectionId = section.id },
-                    onCloseInlineAdd = { activeInlineSectionId = null },
-                    onQuickAddTask = { title -> onQuickAddTaskInSection(section.id, title) },
-                    onToggleTask = onToggleTask,
-                    onEditTask = { editingTask = it },
-                    onDeleteTask = onDeleteTask,
-                    onRenameSection = { renamingSection = section },
-                    onDeleteSection = {
-                        val totalInSection = state.tasks.count { it.sectionId == section.id }
-                        if (totalInSection == 0) {
-                            onDeleteSection(section)
-                        } else {
-                            deletingSectionConfirm = section to totalInSection
-                        }
-                    },
-                    sectionTag = "section_card_${section.id}"
-                )
-            }
-
-            if (ungroupedTasks.isNotEmpty()) {
-                item(key = "sec_general") {
+            } else {
+                items(state.taskSections, key = { "sec_${it.id}" }) { section ->
+                    val sectionTasks = filteredTasks.filter { it.sectionId == section.id }
                     TaskSectionCard(
-                        title = "General",
-                        tasks = ungroupedTasks,
-                        isInlineAdding = activeInlineSectionId == 0L,
-                        onStartInlineAdd = { activeInlineSectionId = 0L },
+                        title = section.name,
+                        tasks = sectionTasks,
+                        isInlineAdding = activeInlineSectionId == section.id,
+                        onStartInlineAdd = { activeInlineSectionId = section.id },
                         onCloseInlineAdd = { activeInlineSectionId = null },
-                        onQuickAddTask = { title -> onQuickAddTaskInSection(0L, title) },
+                        onQuickAddTask = { title -> onQuickAddTaskInSection(section.id, title) },
                         onToggleTask = onToggleTask,
                         onEditTask = { editingTask = it },
                         onDeleteTask = onDeleteTask,
-                        onRenameSection = null,
-                        onDeleteSection = null,
-                        sectionTag = "section_card_general"
+                        onRenameSection = { renamingSection = section },
+                        onDeleteSection = {
+                            val totalInSection = state.tasks.count { it.sectionId == section.id }
+                            if (totalInSection == 0) {
+                                onDeleteSection(section)
+                            } else {
+                                deletingSectionConfirm = section to totalInSection
+                            }
+                        },
+                        sectionTag = "section_card_${section.id}"
                     )
                 }
-            }
-        }
 
-        item { Spacer(Modifier.height(24.dp)) }
+                if (ungroupedTasks.isNotEmpty()) {
+                    item(key = "sec_general") {
+                        TaskSectionCard(
+                            title = "General",
+                            tasks = ungroupedTasks,
+                            isInlineAdding = activeInlineSectionId == 0L,
+                            onStartInlineAdd = { activeInlineSectionId = 0L },
+                            onCloseInlineAdd = { activeInlineSectionId = null },
+                            onQuickAddTask = { title -> onQuickAddTaskInSection(0L, title) },
+                            onToggleTask = onToggleTask,
+                            onEditTask = { editingTask = it },
+                            onDeleteTask = onDeleteTask,
+                            onRenameSection = null,
+                            onDeleteSection = null,
+                            sectionTag = "section_card_general"
+                        )
+                    }
+                }
+            }
+
+            item { Spacer(Modifier.height(24.dp)) }
+        }
     }
 
     editingTask?.let { task ->
@@ -541,7 +564,7 @@ private fun TaskSectionCard(
     ObsidianCard(
         modifier = Modifier.testTag(sectionTag),
         borderColor = if (isInlineAdding) MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f) else tokens.borderSubtle,
-        contentPadding = PaddingValues(12.dp)
+        contentPadding = PaddingValues(14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -567,7 +590,7 @@ private fun TaskSectionCard(
                 color = if (tasks.isNotEmpty() && doneCount == tasks.size) EmeraldSuccess else MaterialTheme.colorScheme.primary
             )
             if (onRenameSection != null) {
-                IconButton(onClick = onRenameSection) {
+                IconButton(onClick = onRenameSection, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Filled.Edit,
                         contentDescription = "Rename section",
@@ -577,7 +600,7 @@ private fun TaskSectionCard(
                 }
             }
             if (onDeleteSection != null) {
-                IconButton(onClick = onDeleteSection) {
+                IconButton(onClick = onDeleteSection, modifier = Modifier.size(48.dp)) {
                     Icon(
                         Icons.Filled.DeleteOutline,
                         contentDescription = "Delete section",
@@ -669,7 +692,9 @@ private fun TaskSectionCard(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = Color.White
                     ),
-                    modifier = Modifier.size(48.dp).testTag("${sectionTag}_inline_submit")
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("${sectionTag}_inline_submit")
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = "Add task")
                 }
@@ -714,6 +739,7 @@ private fun SectionTaskRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(tokens.smallRadius))
             .background(rowBg)
             .clickable(onClick = onToggle)
@@ -766,10 +792,10 @@ private fun SectionTaskRow(
             maxLines = 1,
             softWrap = false
         )
-        IconButton(onClick = onEdit) {
+        IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Filled.Edit, contentDescription = "Edit task", tint = tokens.inkSecondary, modifier = Modifier.size(16.dp))
         }
-        IconButton(onClick = onDelete) {
+        IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
             Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete task", tint = RoseAlert, modifier = Modifier.size(16.dp))
         }
     }
@@ -867,7 +893,6 @@ private fun TaskEditorDialog(
                         )
                     }
                 }
-                // Log Distraction quick actions for this task
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -876,7 +901,7 @@ private fun TaskEditorDialog(
                     OutlinedButton(
                         onClick = { onLogDistraction(10) },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp)
+                        modifier = Modifier.heightIn(min = 38.dp)
                     ) {
                         Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = RoseAlert, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))

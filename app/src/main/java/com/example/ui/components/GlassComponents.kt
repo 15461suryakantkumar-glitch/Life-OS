@@ -63,12 +63,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskPriority
 import com.example.data.local.UserAvatarPreset
@@ -560,8 +562,23 @@ fun LevelUpBanner(
 fun UserAvatarBadge(
     preset: UserAvatarPreset,
     size: Dp = 40.dp,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    photoUri: String? = null,
+    displayName: String = ""
 ) {
+    if (!photoUri.isNullOrBlank()) {
+        val tokens = LifeOsThemeTokensProvider.current
+        AsyncImage(
+            model = photoUri,
+            contentDescription = if (displayName.isNotBlank()) "$displayName profile picture" else "Profile picture",
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .border(1.5.dp, tokens.borderAccent.copy(alpha = 0.65f), CircleShape)
+        )
+        return
+    }
     val (bgTop, bgBottom, faceBase, earAccent) = when (preset) {
         UserAvatarPreset.SUNNY_CLOUD -> listOf(
             Color(0xFFBAE6FD), Color(0xFF38BDF8), Color(0xFFFFFFFF), Color(0xFFFDE047)

@@ -27,62 +27,39 @@ enum class LifeOsThemeMode(
     val previewSecondary: Color,
     val previewSurface: Color
 ) {
-    FEELORA_LIGHT(
-        displayName = "Feelora Lavender",
-        subtitle = "Light · Soft lavender & pastel blush",
-        isDark = false,
-        previewPrimary = FeeloraLightPrimary,
-        previewSecondary = FeeloraLightAccent,
-        previewSurface = FeeloraLightBg
-    ),
-    FEELORA_DARK(
-        displayName = "Feelora Velvet",
-        subtitle = "Dark · Deep plum & luminous lavender",
+    HYBRID_LAVENDER(
+        displayName = "Hybrid Lavender",
+        subtitle = "Default · Velvet plum, muted lavender & warm cream",
         isDark = true,
-        previewPrimary = FeeloraDarkPrimary,
-        previewSecondary = FeeloraDarkSecondary,
-        previewSurface = FeeloraDarkBg
+        previewPrimary = HybridLavenderPrimary,
+        previewSecondary = HybridLavenderSecondary,
+        previewSurface = HybridLavenderCard
     ),
     MIDNIGHT_AURORA(
         displayName = "Midnight Aurora",
-        subtitle = "Dark · Luminous glass & sleek edges",
+        subtitle = "Dark · Deep midnight purple, violet & cyan glass",
         isDark = true,
         previewPrimary = AuroraPrimary,
         previewSecondary = AuroraSecondary,
         previewSurface = AuroraCard
     ),
-    ALABASTER_CLOUD(
-        displayName = "Alabaster Cloud",
-        subtitle = "Light · Airy soft-pill elevation",
-        isDark = false,
-        previewPrimary = AlabasterPrimary,
-        previewSecondary = AlabasterSecondary,
-        previewSurface = AlabasterCard
-    ),
     MATCHA_MIST(
         displayName = "Matcha Mist",
-        subtitle = "Light · Crisp botanical studio",
+        subtitle = "Light · Botanical sage green & soft cream",
         isDark = false,
         previewPrimary = MatchaPrimary,
         previewSecondary = MatchaSecondary,
         previewSurface = MatchaCard
-    ),
-    WARM_LINEN(
-        displayName = "Warm Linen",
-        subtitle = "Light · Classic serif & warm paper",
-        isDark = false,
-        previewPrimary = LinenPrimary,
-        previewSecondary = LinenSecondary,
-        previewSurface = LinenCard
     );
 
     companion object {
         fun fromStored(raw: String?): LifeOsThemeMode {
-            if (raw.isNullOrBlank()) return FEELORA_DARK
+            if (raw.isNullOrBlank()) return HYBRID_LAVENDER
             entries.firstOrNull { it.name == raw }?.let { return it }
             return when (raw) {
-                "VIOLET_CYAN", "CYBER_INDIGO", "AURORA_PULSE" -> MIDNIGHT_AURORA
-                else -> FEELORA_DARK
+                "MIDNIGHT_AURORA", "VIOLET_CYAN", "CYBER_INDIGO", "AURORA_PULSE" -> MIDNIGHT_AURORA
+                "MATCHA_MIST", "ALABASTER_CLOUD", "WARM_LINEN" -> MATCHA_MIST
+                else -> HYBRID_LAVENDER
             }
         }
     }
@@ -104,6 +81,7 @@ data class LifeOsThemeTokens(
     val inkMuted: Color,
     val primary: Color,
     val secondary: Color,
+    val tertiary: Color,
     val cardRadius: Dp,
     val heroRadius: Dp,
     val smallRadius: Dp,
@@ -111,6 +89,31 @@ data class LifeOsThemeTokens(
     val cardBorderWidth: Dp,
     val cardElevation: Dp,
     val typographyLabel: String
+)
+
+private val HybridLavenderTokens = LifeOsThemeTokens(
+    mode = LifeOsThemeMode.HYBRID_LAVENDER,
+    isDark = true,
+    background = HybridLavenderBg,
+    surfaceBase = HybridLavenderBase,
+    surfaceCard = HybridLavenderCard,
+    surfaceElevated = HybridLavenderElevated,
+    surfaceHighlight = HybridLavenderHighlight,
+    borderSubtle = HybridLavenderBorder,
+    borderAccent = HybridLavenderBorderGlow,
+    inkPrimary = HybridLavenderInkPrimary,
+    inkSecondary = HybridLavenderInkSecondary,
+    inkMuted = HybridLavenderInkMuted,
+    primary = HybridLavenderPrimary,
+    secondary = HybridLavenderSecondary,
+    tertiary = HybridLavenderTertiary,
+    cardRadius = 22.dp,
+    heroRadius = 26.dp,
+    smallRadius = 14.dp,
+    pillRadius = 50.dp,
+    cardBorderWidth = 1.dp,
+    cardElevation = 0.dp,
+    typographyLabel = "Editorial Lavender"
 )
 
 private val MidnightAuroraTokens = LifeOsThemeTokens(
@@ -128,37 +131,14 @@ private val MidnightAuroraTokens = LifeOsThemeTokens(
     inkMuted = AuroraInkMuted,
     primary = AuroraPrimary,
     secondary = AuroraSecondary,
-    cardRadius = 16.dp,
-    heroRadius = 20.dp,
-    smallRadius = 10.dp,
-    pillRadius = 10.dp,
-    cardBorderWidth = 1.dp,
-    cardElevation = 0.dp,
-    typographyLabel = "Geometric Tech"
-)
-
-private val AlabasterCloudTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.ALABASTER_CLOUD,
-    isDark = false,
-    background = AlabasterBg,
-    surfaceBase = AlabasterBase,
-    surfaceCard = AlabasterCard,
-    surfaceElevated = AlabasterElevated,
-    surfaceHighlight = AlabasterHighlight,
-    borderSubtle = AlabasterBorder,
-    borderAccent = AlabasterBorderGlow,
-    inkPrimary = AlabasterInkPrimary,
-    inkSecondary = AlabasterInkSecondary,
-    inkMuted = AlabasterInkMuted,
-    primary = AlabasterPrimary,
-    secondary = AlabasterSecondary,
-    cardRadius = 24.dp,
-    heroRadius = 28.dp,
-    smallRadius = 14.dp,
+    tertiary = AuroraTertiary,
+    cardRadius = 18.dp,
+    heroRadius = 22.dp,
+    smallRadius = 12.dp,
     pillRadius = 50.dp,
     cardBorderWidth = 1.dp,
-    cardElevation = 3.dp,
-    typographyLabel = "Airy Minimalist"
+    cardElevation = 0.dp,
+    typographyLabel = "Midnight Glass"
 )
 
 private val MatchaMistTokens = LifeOsThemeTokens(
@@ -176,88 +156,17 @@ private val MatchaMistTokens = LifeOsThemeTokens(
     inkMuted = MatchaInkMuted,
     primary = MatchaPrimary,
     secondary = MatchaSecondary,
-    cardRadius = 12.dp,
-    heroRadius = 16.dp,
-    smallRadius = 8.dp,
-    pillRadius = 8.dp,
-    cardBorderWidth = 1.2.dp,
-    cardElevation = 1.dp,
-    typographyLabel = "Botanical Studio"
-)
-
-private val WarmLinenTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.WARM_LINEN,
-    isDark = false,
-    background = LinenBg,
-    surfaceBase = LinenBase,
-    surfaceCard = LinenCard,
-    surfaceElevated = LinenElevated,
-    surfaceHighlight = LinenHighlight,
-    borderSubtle = LinenBorder,
-    borderAccent = LinenBorderGlow,
-    inkPrimary = LinenInkPrimary,
-    inkSecondary = LinenInkSecondary,
-    inkMuted = LinenInkMuted,
-    primary = LinenPrimary,
-    secondary = LinenSecondary,
-    cardRadius = 18.dp,
-    heroRadius = 22.dp,
-    smallRadius = 12.dp,
-    pillRadius = 14.dp,
-    cardBorderWidth = 1.dp,
-    cardElevation = 2.dp,
-    typographyLabel = "Editorial Serif"
-)
-
-private val FeeloraLightTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.FEELORA_LIGHT,
-    isDark = false,
-    background = FeeloraLightBg,
-    surfaceBase = FeeloraLightBase,
-    surfaceCard = FeeloraLightCard,
-    surfaceElevated = FeeloraLightElevated,
-    surfaceHighlight = FeeloraLightHighlight,
-    borderSubtle = FeeloraLightBorder,
-    borderAccent = FeeloraLightBorderGlow,
-    inkPrimary = FeeloraLightInkPrimary,
-    inkSecondary = FeeloraLightInkSecondary,
-    inkMuted = FeeloraLightInkMuted,
-    primary = FeeloraLightPrimary,
-    secondary = FeeloraLightSecondary,
-    cardRadius = 22.dp,
-    heroRadius = 26.dp,
-    smallRadius = 14.dp,
-    pillRadius = 50.dp,
-    cardBorderWidth = 1.dp,
-    cardElevation = 2.dp,
-    typographyLabel = "Feelora Lavender"
-)
-
-private val FeeloraDarkTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.FEELORA_DARK,
-    isDark = true,
-    background = FeeloraDarkBg,
-    surfaceBase = FeeloraDarkBase,
-    surfaceCard = FeeloraDarkCard,
-    surfaceElevated = FeeloraDarkElevated,
-    surfaceHighlight = FeeloraDarkHighlight,
-    borderSubtle = FeeloraDarkBorder,
-    borderAccent = FeeloraDarkBorderGlow,
-    inkPrimary = FeeloraDarkInkPrimary,
-    inkSecondary = FeeloraDarkInkSecondary,
-    inkMuted = FeeloraDarkInkMuted,
-    primary = FeeloraDarkPrimary,
-    secondary = FeeloraDarkSecondary,
+    tertiary = MatchaTertiary,
     cardRadius = 20.dp,
     heroRadius = 24.dp,
     smallRadius = 12.dp,
     pillRadius = 50.dp,
     cardBorderWidth = 1.dp,
-    cardElevation = 0.dp,
-    typographyLabel = "Feelora Velvet"
+    cardElevation = 1.dp,
+    typographyLabel = "Botanical Studio"
 )
 
-val LocalLifeOsTokens = staticCompositionLocalOf { FeeloraDarkTokens }
+val LocalLifeOsTokens = staticCompositionLocalOf { HybridLavenderTokens }
 
 object LifeOsThemeTokensProvider {
     val current: LifeOsThemeTokens
@@ -267,25 +176,20 @@ object LifeOsThemeTokensProvider {
 }
 
 fun tokensForMode(mode: LifeOsThemeMode): LifeOsThemeTokens = when (mode) {
-    LifeOsThemeMode.FEELORA_LIGHT -> FeeloraLightTokens
-    LifeOsThemeMode.FEELORA_DARK -> FeeloraDarkTokens
+    LifeOsThemeMode.HYBRID_LAVENDER -> HybridLavenderTokens
     LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTokens
-    LifeOsThemeMode.ALABASTER_CLOUD -> AlabasterCloudTokens
     LifeOsThemeMode.MATCHA_MIST -> MatchaMistTokens
-    LifeOsThemeMode.WARM_LINEN -> WarmLinenTokens
 }
 
 private fun typographyForMode(mode: LifeOsThemeMode): Typography = when (mode) {
-    LifeOsThemeMode.FEELORA_LIGHT, LifeOsThemeMode.FEELORA_DARK -> FeeloraLavenderTypography
+    LifeOsThemeMode.HYBRID_LAVENDER -> HybridLavenderTypography
     LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTypography
-    LifeOsThemeMode.ALABASTER_CLOUD -> AlabasterCloudTypography
     LifeOsThemeMode.MATCHA_MIST -> MatchaMistTypography
-    LifeOsThemeMode.WARM_LINEN -> WarmLinenTypography
 }
 
 @Composable
 fun LifeOsTheme(
-    themeMode: LifeOsThemeMode = LifeOsThemeMode.FEELORA_DARK,
+    themeMode: LifeOsThemeMode = LifeOsThemeMode.HYBRID_LAVENDER,
     content: @Composable () -> Unit
 ) {
     val tokens = tokensForMode(themeMode)
@@ -299,17 +203,17 @@ fun LifeOsTheme(
     )
 
     val colorScheme = if (tokens.isDark) {
-        val isFeeloraDark = themeMode == LifeOsThemeMode.FEELORA_DARK
+        val isHybrid = themeMode == LifeOsThemeMode.HYBRID_LAVENDER
         darkColorScheme(
             primary = tokens.primary,
-            onPrimary = if (isFeeloraDark) FeeloraDarkBg else Color.White,
-            primaryContainer = if (isFeeloraDark) FeeloraDarkSecondaryContainer else tokens.primary.copy(alpha = 0.22f),
+            onPrimary = if (isHybrid) HybridLavenderBg else Color.White,
+            primaryContainer = if (isHybrid) HybridLavenderHighlight else tokens.primary.copy(alpha = 0.24f),
             onPrimaryContainer = tokens.inkPrimary,
             secondary = tokens.secondary,
             onSecondary = tokens.background,
-            secondaryContainer = if (isFeeloraDark) FeeloraDarkSecondaryContainer else tokens.secondary.copy(alpha = 0.18f),
+            secondaryContainer = tokens.secondary.copy(alpha = 0.18f),
             onSecondaryContainer = tokens.inkPrimary,
-            tertiary = EmeraldSuccess,
+            tertiary = tokens.tertiary,
             onTertiary = tokens.background,
             background = tokens.background,
             onBackground = tokens.inkPrimary,
@@ -328,17 +232,16 @@ fun LifeOsTheme(
             onError = Color.White
         )
     } else {
-        val isFeeloraLight = themeMode == LifeOsThemeMode.FEELORA_LIGHT
         lightColorScheme(
             primary = tokens.primary,
-            onPrimary = if (isFeeloraLight) FeeloraLightInkPrimary else Color.White,
-            primaryContainer = if (isFeeloraLight) FeeloraLightElevated else tokens.primary.copy(alpha = 0.14f),
-            onPrimaryContainer = if (isFeeloraLight) FeeloraLightInkPrimary else tokens.primary,
+            onPrimary = Color.White,
+            primaryContainer = tokens.surfaceElevated,
+            onPrimaryContainer = tokens.inkPrimary,
             secondary = tokens.secondary,
             onSecondary = Color.White,
-            secondaryContainer = if (isFeeloraLight) FeeloraLightAccent else tokens.secondary.copy(alpha = 0.14f),
+            secondaryContainer = tokens.secondary.copy(alpha = 0.14f),
             onSecondaryContainer = tokens.inkPrimary,
-            tertiary = EmeraldSuccess,
+            tertiary = tokens.tertiary,
             onTertiary = Color.White,
             background = tokens.background,
             onBackground = tokens.inkPrimary,

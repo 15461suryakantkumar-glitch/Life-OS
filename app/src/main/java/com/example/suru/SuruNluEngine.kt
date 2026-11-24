@@ -1,6 +1,5 @@
 package com.example.suru
 
-import com.example.data.ai.LifeContextSnapshot
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.SuruMemoryEntity
 import com.example.data.local.TaskCategory
