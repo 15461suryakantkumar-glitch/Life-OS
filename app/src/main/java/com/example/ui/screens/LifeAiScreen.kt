@@ -52,17 +52,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 
@@ -72,6 +69,7 @@ fun LifeAiScreen(
     onSendPrompt: (String) -> Unit,
     onDismissError: () -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
@@ -92,36 +90,40 @@ fun LifeAiScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(tokens.background)
             .testTag("life_ai_screen")
     ) {
-        // AI Neural Core Header
+        // AI Assistant Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(ObsidianBase)
-                .padding(16.dp),
+                .background(tokens.surfaceBase)
+                .border(0.5.dp, tokens.borderSubtle)
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
                 painter = painterResource(id = R.drawable.img_ai_core_1795431261833),
-                contentDescription = "LIFE AI Neural Core",
+                contentDescription = "LIFE AI Assistant",
                 modifier = Modifier
-                    .size(46.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .border(1.dp, MaterialTheme.colorScheme.secondary, CircleShape),
                 contentScale = ContentScale.Crop
             )
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("LIFE AI", style = MaterialTheme.typography.titleLarge, color = InkPrimary)
+                Text("LIFE AI", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
                 Text(
                     text = if (state.isCloudAiAvailable) "On-device + Cloud AI ready" else "On-device engine active (offline ₹0)",
                     style = MaterialTheme.typography.bodySmall,
-                    color = InkSecondary
+                    color = tokens.inkSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             StatusPill(
-                text = if (state.isCloudAiAvailable) "HYBRID" else "LOCAL READY",
+                text = if (state.isCloudAiAvailable) "Hybrid" else "Local Ready",
                 color = EmeraldSuccess,
                 icon = Icons.Filled.AutoAwesome
             )
@@ -138,7 +140,7 @@ fun LifeAiScreen(
             quickPrompts.forEach { sample ->
                 AssistChip(
                     onClick = { onSendPrompt(sample) },
-                    label = { Text(sample, maxLines = 1) },
+                    label = { Text(sample, maxLines = 1, softWrap = false) },
                     enabled = !state.isAiLoading
                 )
             }
@@ -156,7 +158,7 @@ fun LifeAiScreen(
                     Text(
                         text = state.aiErrorMessage,
                         style = MaterialTheme.typography.bodySmall,
-                        color = InkPrimary,
+                        color = tokens.inkPrimary,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = onDismissError) { Text("Dismiss") }
@@ -175,15 +177,15 @@ fun LifeAiScreen(
                 item {
                     GradientGlowCard(modifier = Modifier.testTag("ai_empty_hero")) {
                         Text(
-                            text = "Command LIFE AI, ${state.prefs.userName.ifBlank { "Operator" }}",
+                            text = "Ask LIFE AI, ${state.prefs.userName.ifBlank { "Friend" }}",
                             style = MaterialTheme.typography.titleLarge,
-                            color = InkPrimary
+                            color = tokens.inkPrimary
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            text = "Instant offline task creation, habit setup, calendar scheduling, daily planning, and productivity insights — zero cloud setup required.",
+                            text = "Instant offline task creation, habit setup, calendar scheduling, daily planning, and productivity insights — ready with zero extra setup.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = InkSecondary
+                            color = tokens.inkSecondary
                         )
                         Spacer(Modifier.height(12.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -192,7 +194,7 @@ fun LifeAiScreen(
                                     onClick = { onSendPrompt(cmd) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text(cmd, maxLines = 1)
+                                    Text(cmd, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -201,38 +203,32 @@ fun LifeAiScreen(
             } else {
                 items(state.aiMessages, key = { it.id }) { msg ->
                     val align = if (msg.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+                    val bubbleShape = RoundedCornerShape(
+                        topStart = 18.dp,
+                        topEnd = 18.dp,
+                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
+                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
+                    )
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = align) {
                         Column(
                             modifier = Modifier
                                 .widthIn(max = 320.dp)
-                                .clip(
-                                    RoundedCornerShape(
-                                        topStart = 18.dp,
-                                        topEnd = 18.dp,
-                                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
-                                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
-                                    )
-                                )
+                                .clip(bubbleShape)
                                 .background(
-                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                                    else CharcoalElevated
+                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    else tokens.surfaceCard
                                 )
                                 .border(
                                     1.dp,
-                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else BorderHairline,
-                                    RoundedCornerShape(
-                                        topStart = 18.dp,
-                                        topEnd = 18.dp,
-                                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
-                                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
-                                    )
+                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else tokens.borderSubtle,
+                                    bubbleShape
                                 )
                                 .padding(14.dp)
                         ) {
                             Text(
                                 text = msg.text,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = InkPrimary
+                                color = tokens.inkPrimary
                             )
                             if (!msg.actionBadge.isNullOrBlank()) {
                                 Spacer(Modifier.height(8.dp))
@@ -259,7 +255,7 @@ fun LifeAiScreen(
                             color = MaterialTheme.colorScheme.secondary
                         )
                         Spacer(Modifier.width(10.dp))
-                        Text("LIFE AI is processing...", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        Text("LIFE AI is thinking...", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                     }
                 }
             }
@@ -269,7 +265,8 @@ fun LifeAiScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(ObsidianBase)
+                .background(tokens.surfaceBase)
+                .border(0.5.dp, tokens.borderSubtle)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -277,13 +274,15 @@ fun LifeAiScreen(
                 value = input,
                 onValueChange = { input = it },
                 modifier = Modifier.weight(1f).testTag("ai_prompt_input"),
-                placeholder = { Text("Command LIFE AI...") },
+                placeholder = { Text("Ask LIFE AI to add tasks, schedule, or analyze...") },
                 maxLines = 3,
                 colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = tokens.surfaceCard,
+                    unfocusedContainerColor = tokens.surfaceCard,
                     focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                    unfocusedBorderColor = BorderHairline,
-                    focusedTextColor = InkPrimary,
-                    unfocusedTextColor = InkPrimary
+                    unfocusedBorderColor = tokens.borderSubtle,
+                    focusedTextColor = tokens.inkPrimary,
+                    unfocusedTextColor = tokens.inkPrimary
                 )
             )
             Spacer(Modifier.width(8.dp))
@@ -302,7 +301,7 @@ fun LifeAiScreen(
                 ),
                 modifier = Modifier.size(48.dp).testTag("ai_send_btn")
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send command")
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send prompt")
             }
         }
     }

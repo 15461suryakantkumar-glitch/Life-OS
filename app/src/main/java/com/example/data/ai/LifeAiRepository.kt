@@ -302,25 +302,25 @@ internal object LocalLifeAiEngine {
 
             val reply = if (!hasAnyActivity) {
                 buildString {
-                    appendLine("$displayName's Command Insights (Lv.${context.level} · ${context.totalXp} XP):")
+                    appendLine("$displayName's Daily Insights (Lv.${context.level} · ${context.totalXp} XP):")
                     appendLine("• Clean slate active — Score: ${context.productivityScore}% | Streak: ${context.dailyStreak}d")
                     appendLine("• Focus Progress: 0m / $goalCompact target")
-                    append("Quick start: Add your first mission (e.g., \"Add Finish Physics Notes tomorrow\") or start a 25m Focus Timer on Home to earn your first XP.")
+                    append("Quick start: Add your first task (e.g., \"Add Finish Physics Notes tomorrow\") or start a 25m Focus Timer on Home.")
                 }
             } else {
                 val wellnessTip = when {
                     context.screenTimeTodayMinutes == 0 -> "No screen usage logged yet today."
-                    context.screenTimeTodayMinutes > 180 -> "Screen time ($screenCompact) is running high — run a 25m DND sprint."
+                    context.screenTimeTodayMinutes > 180 -> "Screen time ($screenCompact) is running high — try a 25m focus sprint."
                     else -> "Screen time ($screenCompact) is balanced."
                 }
                 buildString {
-                    appendLine("$displayName's Command Insights (Lv.${context.level} · ${context.totalXp} XP):")
+                    appendLine("$displayName's Daily Insights (Lv.${context.level} · ${context.totalXp} XP):")
                     appendLine("• Productivity Score: ${context.productivityScore}% | Streak: ${context.dailyStreak}d")
                     appendLine("• Tasks: ${context.completedTasksCount} completed, $pendingCount pending")
                     appendLine("• Habits Today: ${context.habitsCompletedToday}/${context.habitsTotal} | Focus: $focusCompact / $goalCompact")
                     appendLine("• Wellness: $wellnessTip")
                     if (nextMission != null) {
-                        append("Next target: \"$nextMission\". Completing it advances XP, streaks, and companion evolution.")
+                        append("Suggested next task: \"$nextMission\". Completing it boosts your XP, streak, and companion mood.")
                     } else {
                         append("All queued tasks completed — great momentum!")
                     }

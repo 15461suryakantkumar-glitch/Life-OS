@@ -8,6 +8,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -31,6 +34,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -58,10 +62,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.local.HabitEntity
@@ -72,13 +78,10 @@ import com.example.ui.components.DashboardWidgetCard
 import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.LevelUpBanner
 import com.example.ui.components.StatusPill
+import com.example.ui.components.UserAvatarBadge
 import com.example.ui.components.WidgetCustomizerList
 import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
 import kotlinx.coroutines.delay
@@ -90,6 +93,7 @@ fun HomeScreen(
     onToggleTask: (TaskEntity) -> Unit,
     onToggleHabit: (HabitEntity) -> Unit,
     onSelectTimerPreset: (Int) -> Unit,
+    onSelectTimerTask: (Long?) -> Unit,
     onToggleTimer: () -> Unit,
     onResetTimer: () -> Unit,
     onFinishTimerEarly: () -> Unit,
@@ -102,9 +106,10 @@ fun HomeScreen(
     onDismissLevelUp: () -> Unit = {},
     onShowMessage: (String) -> Unit = {}
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showWidgetsSheet by remember { mutableStateOf(false) }
-    var widgetsSheetTab by remember { mutableIntStateOf(0) } // 0 = Home-Screen Widgets (Glance), 1 = Dashboard Cards
+    var widgetsSheetTab by remember { mutableIntStateOf(0) } // 0 = Home Widgets, 1 = Dashboard Cards
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -118,35 +123,60 @@ fun HomeScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().testTag("home_screen"),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .background(tokens.background)
+            .testTag("home_screen"),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Compact Hero Command Banner
+        // Compact Hero Command Banner with Top-Corner Profile Avatar Button
         item {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.large)
+                    .clip(RoundedCornerShape(tokens.heroRadius))
+                    .border(
+                        tokens.cardBorderWidth,
+                        tokens.borderSubtle,
+                        RoundedCornerShape(tokens.heroRadius)
+                    )
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.img_hero_command_1795431263383),
-                    contentDescription = "LIFE OS Command Banner",
-                    modifier = Modifier.matchParentSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    ObsidianBase.copy(alpha = 0.58f),
-                                    ObsidianBase.copy(alpha = 0.90f)
+                if (tokens.isDark) {
+                    Image(
+                        painter = painterResource(id = R.drawable.img_hero_command_1795431263383),
+                        contentDescription = "Life OS Banner",
+                        modifier = Modifier.matchParentSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        tokens.surfaceBase.copy(alpha = 0.60f),
+                                        tokens.surfaceBase.copy(alpha = 0.92f)
+                                    )
                                 )
                             )
-                        )
-                )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(
+                                        tokens.primary.copy(alpha = 0.14f),
+                                        tokens.surfaceCard,
+                                        tokens.secondary.copy(alpha = 0.12f)
+                                    )
+                                )
+                            )
+                    )
+                }
+
                 Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -155,29 +185,34 @@ fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = buildString {
-                                    append("LIFE OS")
-                                    if (state.prefs.userHandle.isNotBlank()) append(" · ${state.prefs.userHandle}")
-                                },
+                                text = "LIFE OS${if (state.prefs.userHandle.isNotBlank()) " · ${state.prefs.userHandle}" else ""}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Operator" }}",
+                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Explorer" }}",
                                 style = MaterialTheme.typography.headlineMedium,
-                                color = InkPrimary,
-                                maxLines = 2
+                                color = tokens.inkPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "${DateTimeUtils.formatFullDate(state.todayEpochDay)} · ${DateTimeUtils.formatLiveTime(currentTimeMillis)}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = InkSecondary,
-                                maxLines = 1
+                                color = tokens.inkSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
-                        Row {
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
                             IconButton(
                                 onClick = {
                                     widgetsSheetTab = 1
@@ -187,8 +222,8 @@ fun HomeScreen(
                             ) {
                                 Icon(
                                     Icons.Filled.DashboardCustomize,
-                                    contentDescription = "Customize Dashboard Cards",
-                                    tint = InkPrimary
+                                    contentDescription = "Customize Cards",
+                                    tint = tokens.inkPrimary
                                 )
                             }
                             IconButton(
@@ -198,16 +233,35 @@ fun HomeScreen(
                                 Icon(
                                     Icons.Filled.Settings,
                                     contentDescription = "Settings",
-                                    tint = InkPrimary
+                                    tint = tokens.inkPrimary
+                                )
+                            }
+                            // Top-Corner Profile Avatar Access (48dp touch target)
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onNavigateToSection("profile") }
+                                    .testTag("home_profile_btn"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                UserAvatarBadge(
+                                    preset = state.prefs.avatarPreset,
+                                    size = 38.dp,
+                                    modifier = Modifier.border(
+                                        width = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                        shape = CircleShape
+                                    )
                                 )
                             }
                         }
                     }
 
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(9.dp))
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         StatusPill(
@@ -223,35 +277,35 @@ fun HomeScreen(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Quick Command Actions Row (zero truncation on narrow 360dp screens)
+                    // Non-clipping Quick Command Actions Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilledTonalButton(
                             onClick = onQuickAddTaskClick,
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f).height(40.dp).testTag("home_quick_task_btn")
                         ) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "Tasks",
-                                style = MaterialTheme.typography.labelLarge,
+                                text = "Task",
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false
                             )
                         }
                         FilledTonalButton(
                             onClick = { onNavigateToSection("life_ai") },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f).height(40.dp).testTag("home_life_ai_btn")
                         ) {
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "LIFE AI",
-                                style = MaterialTheme.typography.labelLarge,
+                                text = "AI",
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -261,14 +315,14 @@ fun HomeScreen(
                                 widgetsSheetTab = 0
                                 showWidgetsSheet = true
                             },
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
                             modifier = Modifier.weight(1f).height(40.dp).testTag("home_widgets_btn")
                         ) {
                             Icon(Icons.Filled.Widgets, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(3.dp))
                             Text(
                                 text = "Widgets",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false
                             )
@@ -278,7 +332,7 @@ fun HomeScreen(
             }
         }
 
-        // Quick Module Dock (direct 1-tap access to Wellness, Growth, Friends)
+        // Quick Module Dock (zero clipping on narrow 360dp screens)
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -293,16 +347,16 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                 )
                 QuickModuleChip(
-                    label = "Pet & XP",
+                    label = "Pet",
                     sub = state.prefs.petName,
-                    icon = Icons.Filled.AutoAwesome,
+                    icon = Icons.Filled.Pets,
                     accent = MaterialTheme.colorScheme.primary,
                     onClick = { onNavigateToSection("growth") },
                     modifier = Modifier.weight(1f)
                 )
                 QuickModuleChip(
                     label = "Friends",
-                    sub = if (state.friends.isEmpty()) "0 linked" else "${state.friends.size} linked",
+                    sub = "${state.friends.size} linked",
                     icon = Icons.Filled.Groups,
                     accent = AmberWarning,
                     onClick = { onNavigateToSection("friends") },
@@ -311,7 +365,7 @@ fun HomeScreen(
             }
         }
 
-        // Level-Up Celebration Banner (animated entrance when leveling up)
+        // Level-Up Celebration Banner
         item {
             LevelUpBanner(
                 level = state.levelUpBanner,
@@ -320,7 +374,7 @@ fun HomeScreen(
             )
         }
 
-        // Pet Reaction Toast Banner if active
+        // Pet Reaction Toast Banner
         item {
             AnimatedVisibility(
                 visible = state.petReactionBanner != null,
@@ -328,19 +382,18 @@ fun HomeScreen(
                 exit = fadeOut() + shrinkVertically()
             ) {
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(tokens.smallRadius),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = state.petReactionBanner.orEmpty(),
                             style = MaterialTheme.typography.bodySmall,
-                            color = InkPrimary,
+                            color = tokens.inkPrimary,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -348,24 +401,24 @@ fun HomeScreen(
             }
         }
 
-        // Movable & Customizable Widgets
+        // Customizable Dashboard Cards (filtered to avoid duplicate cards)
         if (visibleWidgets.isEmpty()) {
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(CharcoalElevated)
-                        .padding(24.dp),
+                        .clip(RoundedCornerShape(tokens.cardRadius))
+                        .background(tokens.surfaceElevated)
+                        .padding(22.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("No cards active on your dashboard.", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
-                    Spacer(Modifier.height(8.dp))
+                    Text("No cards active on Home.", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                    Spacer(Modifier.height(6.dp))
                     TextButton(onClick = {
                         widgetsSheetTab = 1
                         showWidgetsSheet = true
                     }) {
-                        Text("Customize Cards")
+                        Text("Customize Cards", maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -379,6 +432,7 @@ fun HomeScreen(
                         onToggleTask = onToggleTask,
                         onToggleHabit = onToggleHabit,
                         onSelectTimerPreset = onSelectTimerPreset,
+                        onSelectTimerTask = onSelectTimerTask,
                         onToggleTimer = onToggleTimer,
                         onResetTimer = onResetTimer,
                         onFinishTimerEarly = onFinishTimerEarly,
@@ -395,23 +449,27 @@ fun HomeScreen(
                         widgetsSheetTab = 1
                         showWidgetsSheet = true
                     },
-                    border = BorderStroke(1.dp, BorderHairline),
+                    border = BorderStroke(1.dp, tokens.borderSubtle),
                     modifier = Modifier.fillMaxWidth().height(42.dp)
                 ) {
                     Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Customize Cards (${visibleWidgets.size}/${state.widgets.size})", maxLines = 1)
+                    Text(
+                        text = "Customize Cards (${visibleWidgets.size}/${state.widgets.size})",
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
         }
 
-        item { Spacer(Modifier.height(20.dp)) }
+        item { Spacer(Modifier.height(16.dp)) }
     }
 
     if (showWidgetsSheet) {
         ModalBottomSheet(
             onDismissRequest = { showWidgetsSheet = false },
-            containerColor = ObsidianBase
+            containerColor = tokens.surfaceBase
         ) {
             Column(
                 modifier = Modifier
@@ -422,35 +480,35 @@ fun HomeScreen(
                 Text(
                     text = if (widgetsSheetTab == 0) "Home-Screen Widgets" else "Dashboard Cards",
                     style = MaterialTheme.typography.headlineMedium,
-                    color = InkPrimary
+                    color = tokens.inkPrimary
                 )
                 Text(
                     text = if (widgetsSheetTab == 0) {
-                        "Pin live Android Jetpack Glance widgets directly to your home screen."
+                        "Pin live Android Glance widgets directly to your home screen."
                     } else {
-                        "Choose which compact cards appear on your Home tab."
+                        "Choose which cards appear on your Home tab."
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = InkSecondary
+                    color = tokens.inkSecondary
                 )
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = widgetsSheetTab == 0,
                         onClick = { widgetsSheetTab = 0 },
-                        label = { Text("Home Widgets", maxLines = 1) },
+                        label = { Text("Home Widgets", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
-                            selectedLabelColor = InkPrimary
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            selectedLabelColor = tokens.inkPrimary
                         )
                     )
                     FilterChip(
                         selected = widgetsSheetTab == 1,
                         onClick = { widgetsSheetTab = 1 },
-                        label = { Text("Dashboard Cards", maxLines = 1) },
+                        label = { Text("Dashboard Cards", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f),
-                            selectedLabelColor = InkPrimary
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            selectedLabelColor = tokens.inkPrimary
                         )
                     )
                 }
@@ -478,40 +536,44 @@ fun HomeScreen(
 private fun QuickModuleChip(
     label: String,
     sub: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     accent: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     Surface(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
-        color = CharcoalElevated,
-        border = BorderStroke(1.dp, BorderHairline)
+        shape = RoundedCornerShape(tokens.cardRadius * 0.85f),
+        color = tokens.surfaceCard,
+        shadowElevation = tokens.cardElevation,
+        border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp)
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 9.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(5.dp))
+                Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelMedium,
-                    color = InkPrimary,
+                    color = tokens.inkPrimary,
                     maxLines = 1,
-                    softWrap = false
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Spacer(Modifier.height(2.dp))
             Text(
                 text = sub,
                 style = MaterialTheme.typography.labelSmall,
-                color = InkSecondary,
+                color = tokens.inkSecondary,
                 fontWeight = FontWeight.Normal,
                 maxLines = 1,
-                softWrap = false
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

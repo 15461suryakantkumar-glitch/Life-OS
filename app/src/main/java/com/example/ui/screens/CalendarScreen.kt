@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.RecurrencePattern
@@ -64,13 +65,7 @@ import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
-import com.example.ui.theme.InkMuted
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
-import com.example.ui.theme.ObsidianVoid
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
@@ -82,6 +77,7 @@ fun CalendarScreen(
     onSaveEvent: (String, String, Long, Int, Int, TaskCategory, RecurrencePattern, Int, Boolean) -> Unit,
     onDeleteEvent: (CalendarEventEntity) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     val today = state.todayEpochDay
     var selectedEpochDay by remember { mutableLongStateOf(today) }
     var calendarView by remember { mutableStateOf("MONTH") } // MONTH | WEEK | DAY
@@ -107,7 +103,7 @@ fun CalendarScreen(
     }
 
     Scaffold(
-        containerColor = ObsidianVoid,
+        containerColor = tokens.background,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showCreateDialog = true },
@@ -125,11 +121,15 @@ fun CalendarScreen(
                 .padding(innerPadding)
                 .testTag("calendar_screen"),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Smart Calendar", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
-                Text("Schedule blocks, recurring events, task deadlines & countdowns", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                Text("Smart Calendar", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+                Text(
+                    "Schedule focus blocks, recurring events, task deadlines, and countdowns",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.inkSecondary
+                )
             }
 
             // View mode switch: Monthly / Weekly / Daily
@@ -188,7 +188,7 @@ fun CalendarScreen(
             // Important Date Countdowns
             if (countdownEvents.isNotEmpty()) {
                 item {
-                    SectionHeader(title = "Countdowns", subtitle = "Upcoming milestones")
+                    SectionHeader(title = "Countdowns", subtitle = "Upcoming milestone dates")
                 }
                 item {
                     Row(
@@ -198,7 +198,7 @@ fun CalendarScreen(
                         countdownEvents.forEach { cd ->
                             val daysLeft = DateTimeUtils.daysBetween(today, cd.dateEpochDay).coerceAtLeast(0)
                             ObsidianCard(
-                                modifier = Modifier.width(190.dp),
+                                modifier = Modifier.width(184.dp),
                                 elevated = true
                             ) {
                                 Row(
@@ -211,13 +211,30 @@ fun CalendarScreen(
                                         onClick = { onDeleteEvent(cd) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete countdown", tint = InkMuted, modifier = Modifier.size(16.dp))
+                                        Icon(
+                                            Icons.Filled.DeleteOutline,
+                                            contentDescription = "Delete countdown",
+                                            tint = tokens.inkMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
                                     }
                                 }
-                                Spacer(Modifier.height(8.dp))
-                                Text(cd.title, style = MaterialTheme.typography.titleMedium, color = InkPrimary, maxLines = 2)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = cd.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = tokens.inkPrimary,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Spacer(Modifier.height(4.dp))
-                                Text(DateTimeUtils.formatFullDate(cd.dateEpochDay), style = MaterialTheme.typography.labelSmall, color = InkSecondary)
+                                Text(
+                                    text = DateTimeUtils.formatFullDate(cd.dateEpochDay),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.inkSecondary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
                         }
                     }
@@ -235,7 +252,11 @@ fun CalendarScreen(
             if (selectedDayEvents.isEmpty() && selectedDayTasks.isEmpty()) {
                 item {
                     ObsidianCard {
-                        Text("No events or deadlines on this date.", style = MaterialTheme.typography.bodyMedium, color = InkSecondary)
+                        Text(
+                            "No events or task deadlines scheduled for this date.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = tokens.inkSecondary
+                        )
                     }
                 }
             } else {
@@ -249,18 +270,20 @@ fun CalendarScreen(
                                 Text(
                                     text = DateTimeUtils.formatTimeOfDay(event.startMinuteOfDay),
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.secondary
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                                 Text(
                                     text = "${event.durationMinutes}m",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = InkMuted
+                                    color = tokens.inkMuted
                                 )
                             }
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(event.title, style = MaterialTheme.typography.titleMedium, color = InkPrimary)
+                                Text(event.title, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                                 if (event.notes.isNotBlank()) {
-                                    Text(event.notes, style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                                    Text(event.notes, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                 }
                                 Spacer(Modifier.height(6.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -297,7 +320,7 @@ fun CalendarScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Task Deadline", style = MaterialTheme.typography.labelSmall, color = AmberWarning)
-                                Text(task.title, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                                Text(task.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                             }
                             CategoryBadge(task.category)
                         }
@@ -343,6 +366,7 @@ private fun MonthlyCalendarGrid(
     onNextMonth: () -> Unit,
     onSelectDay: (Long) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     val firstCal = remember(year, monthZeroBased) {
         Calendar.getInstance().apply { set(year, monthZeroBased, 1) }
     }
@@ -356,15 +380,17 @@ private fun MonthlyCalendarGrid(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onPrevMonth) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month")
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous month", tint = tokens.inkPrimary)
             }
             Text(
                 text = DateTimeUtils.formatMonthYear(year, monthZeroBased),
                 style = MaterialTheme.typography.titleLarge,
-                color = InkPrimary
+                color = tokens.inkPrimary,
+                maxLines = 1,
+                softWrap = false
             )
             IconButton(onClick = onNextMonth) {
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month")
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next month", tint = tokens.inkPrimary)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -373,7 +399,7 @@ private fun MonthlyCalendarGrid(
                 Text(
                     text = dow,
                     style = MaterialTheme.typography.labelSmall,
-                    color = InkMuted,
+                    color = tokens.inkMuted,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f)
                 )
@@ -395,18 +421,18 @@ private fun MonthlyCalendarGrid(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(42.dp)
-                                .clip(RoundedCornerShape(10.dp))
+                                .height(40.dp)
+                                .clip(RoundedCornerShape(tokens.smallRadius))
                                 .background(
                                     when {
                                         isSelected -> MaterialTheme.colorScheme.primary
-                                        isToday -> CharcoalElevated
+                                        isToday -> tokens.surfaceElevated
                                         else -> Color.Transparent
                                     }
                                 )
                                 .then(
                                     if (isToday && !isSelected) {
-                                        Modifier.border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(10.dp))
+                                        Modifier.border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(tokens.smallRadius))
                                     } else Modifier
                                 )
                                 .clickable { onSelectDay(epoch) },
@@ -416,7 +442,7 @@ private fun MonthlyCalendarGrid(
                                 Text(
                                     text = dayNum.toString(),
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = if (isSelected) Color.White else InkPrimary,
+                                    color = if (isSelected) Color.White else tokens.inkPrimary,
                                     fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal
                                 )
                                 if (hasMarker) {
@@ -430,7 +456,7 @@ private fun MonthlyCalendarGrid(
                             }
                         }
                     } else {
-                        Spacer(modifier = Modifier.weight(1f).height(42.dp))
+                        Spacer(modifier = Modifier.weight(1f).height(40.dp))
                     }
                 }
             }
@@ -446,6 +472,7 @@ private fun WeeklyCalendarStrip(
     eventDays: Set<Long>,
     onSelectDay: (Long) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -459,15 +486,16 @@ private fun WeeklyCalendarStrip(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(if (isSelected) MaterialTheme.colorScheme.primary else CharcoalElevated)
+                    .clip(RoundedCornerShape(tokens.cardRadius))
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary else tokens.surfaceCard)
+                    .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else tokens.borderSubtle, RoundedCornerShape(tokens.cardRadius))
                     .clickable { onSelectDay(day) }
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(shortDay, style = MaterialTheme.typography.labelSmall, color = if (isSelected) Color.White else InkSecondary)
+                Text(shortDay, style = MaterialTheme.typography.labelSmall, color = if (isSelected) Color.White else tokens.inkSecondary, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
-                Text(num, style = MaterialTheme.typography.titleMedium, color = if (isSelected) Color.White else InkPrimary)
+                Text(num, style = MaterialTheme.typography.titleMedium, color = if (isSelected) Color.White else tokens.inkPrimary)
                 Spacer(Modifier.height(4.dp))
                 if (eventDays.contains(day)) {
                     Box(
@@ -488,6 +516,7 @@ private fun CreateEventDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, Int, Int, TaskCategory, RecurrencePattern, Int, Boolean) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var title by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var startHour by remember { mutableIntStateOf(9) }
@@ -499,8 +528,8 @@ private fun CreateEventDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBase,
-        title = { Text("Schedule · ${DateTimeUtils.formatFullDate(initialEpochDay)}") },
+        containerColor = tokens.surfaceBase,
+        title = { Text("Schedule · ${DateTimeUtils.formatFullDate(initialEpochDay)}", color = tokens.inkPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -513,11 +542,11 @@ private fun CreateEventDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Location / Notes") },
+                    label = { Text("Location or notes") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Start Time", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Start Time", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -526,11 +555,11 @@ private fun CreateEventDialog(
                         FilterChip(
                             selected = startHour == hr,
                             onClick = { startHour = hr },
-                            label = { Text(DateTimeUtils.formatTimeOfDay(hr * 60)) }
+                            label = { Text(DateTimeUtils.formatTimeOfDay(hr * 60), maxLines = 1, softWrap = false) }
                         )
                     }
                 }
-                Text("Duration & Alert", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Duration & Reminder", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -539,14 +568,14 @@ private fun CreateEventDialog(
                         FilterChip(
                             selected = duration == dur,
                             onClick = { duration = dur },
-                            label = { Text("${dur}m") }
+                            label = { Text("${dur}m", maxLines = 1, softWrap = false) }
                         )
                     }
                     listOf(10, 15, 30).forEach { rem ->
                         FilterChip(
                             selected = reminder == rem,
                             onClick = { reminder = rem },
-                            label = { Text("${rem}m alert") }
+                            label = { Text("${rem}m before", maxLines = 1, softWrap = false) }
                         )
                     }
                 }
@@ -555,12 +584,28 @@ private fun CreateEventDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     TaskCategory.entries.forEach { c ->
-                        FilterChip(selected = category == c, onClick = { category = c }, label = { Text(c.label) })
+                        FilterChip(
+                            selected = category == c,
+                            onClick = { category = c },
+                            label = { Text(c.label, maxLines = 1, softWrap = false) }
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    RecurrencePattern.entries.forEach { rec ->
+                        FilterChip(
+                            selected = recurrence == rec,
+                            onClick = { recurrence = rec },
+                            label = { Text(rec.label, maxLines = 1, softWrap = false) }
+                        )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = isCountdown, onCheckedChange = { isCountdown = it })
-                    Text("Pin as Important Countdown Milestone", style = MaterialTheme.typography.bodySmall, color = InkPrimary)
+                    Text("Pin as a Milestone Countdown", style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary)
                 }
             }
         },
@@ -570,7 +615,7 @@ private fun CreateEventDialog(
                 enabled = title.isNotBlank(),
                 modifier = Modifier.testTag("save_event_confirm_btn")
             ) {
-                Text("Schedule")
+                Text("Schedule", maxLines = 1, softWrap = false)
             }
         },
         dismissButton = {

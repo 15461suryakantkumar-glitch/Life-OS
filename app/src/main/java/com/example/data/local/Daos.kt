@@ -124,6 +124,9 @@ interface AppUsageDao {
     @Query("SELECT * FROM app_usage_logs ORDER BY dateEpochDay DESC, minutesUsed DESC")
     fun observeAllLogs(): Flow<List<AppUsageLogEntity>>
 
+    @Query("SELECT * FROM app_usage_logs WHERE dateEpochDay = :epochDay")
+    suspend fun getLogsForDay(epochDay: Long): List<AppUsageLogEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLog(log: AppUsageLogEntity): Long
 
@@ -131,6 +134,21 @@ interface AppUsageDao {
     suspend fun deleteLog(log: AppUsageLogEntity)
 
     @Query("DELETE FROM app_usage_logs")
+    suspend fun clearAll()
+}
+
+@Dao
+interface DailyProgressDao {
+    @Query("SELECT * FROM daily_progress_logs ORDER BY epochDay ASC")
+    fun observeAllLogs(): Flow<List<DailyProgressLogEntity>>
+
+    @Query("SELECT * FROM daily_progress_logs WHERE epochDay = :epochDay LIMIT 1")
+    suspend fun getForDay(epochDay: Long): DailyProgressLogEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: DailyProgressLogEntity)
+
+    @Query("DELETE FROM daily_progress_logs")
     suspend fun clearAll()
 }
 

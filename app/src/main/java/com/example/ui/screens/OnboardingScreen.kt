@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -25,15 +27,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AlternateEmail
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,6 +42,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -49,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,67 +72,78 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.local.CompanionSpecies
+import com.example.data.local.PersonalityQuizEvaluator
 import com.example.data.local.UserPreferencesState
+import com.example.ui.components.AppointedCompanionRevealCard
 import com.example.ui.components.ObsidianCard
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
-import com.example.ui.theme.ElectricCyan
-import com.example.ui.theme.ElectricViolet
-import com.example.ui.theme.InkMuted
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
-import com.example.ui.theme.ObsidianVoid
+import com.example.ui.components.PersonalityQuizQuestionCard
+import com.example.ui.theme.LifeOsThemeMode
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
-import com.example.ui.theme.ThemeAccentPreset
+import com.example.ui.theme.tokensForMode
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OnboardingScreen(
     existingPrefs: UserPreferencesState,
+    onPreviewThemeMode: (LifeOsThemeMode) -> Unit = {},
     onCompleteSignIn: (
         name: String,
         identityOrEmail: String,
         petName: String,
+        companionSpecies: CompanionSpecies,
         focusGoalMinutes: Int,
-        accentPreset: ThemeAccentPreset
+        themeMode: LifeOsThemeMode
     ) -> Unit
 ) {
+    var step by rememberSaveable { mutableIntStateOf(0) } // 0 = Profile & Theme, 1 = Personality Quiz, 2 = Appointed Companion Reveal
     var name by rememberSaveable { mutableStateOf(existingPrefs.userName) }
     var identity by rememberSaveable {
         mutableStateOf(existingPrefs.userEmail.ifBlank { existingPrefs.userHandle })
     }
-    var petName by rememberSaveable { mutableStateOf(existingPrefs.petName.ifBlank { "NOVA" }) }
     var focusGoalMinutes by rememberSaveable { mutableIntStateOf(existingPrefs.dailyFocusGoalMinutes) }
-    var selectedPreset by rememberSaveable { mutableStateOf(existingPrefs.accentPreset) }
+    var selectedTheme by rememberSaveable { mutableStateOf(existingPrefs.themeMode) }
     var showNameError by rememberSaveable { mutableStateOf(false) }
 
+    var q1 by rememberSaveable { mutableIntStateOf(0) }
+    var q2 by rememberSaveable { mutableIntStateOf(0) }
+    var q3 by rememberSaveable { mutableIntStateOf(0) }
+
+    val appointedSpecies = remember(q1, q2, q3) {
+        PersonalityQuizEvaluator.appointCompanion(q1, q2, q3)
+    }
+    var customPetName by rememberSaveable(appointedSpecies) { mutableStateOf(appointedSpecies.defaultName) }
+
+    val tokens = tokensForMode(selectedTheme)
     val focusManager = LocalFocusManager.current
 
-    fun submitForm() {
+    fun submitAll() {
         if (name.isBlank()) {
             showNameError = true
+            step = 0
             return
         }
         focusManager.clearFocus()
         onCompleteSignIn(
             name.trim(),
             identity.trim(),
-            petName.trim(),
+            customPetName.trim().ifBlank { appointedSpecies.defaultName },
+            appointedSpecies,
             focusGoalMinutes,
-            selectedPreset
+            selectedTheme
         )
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(tokens.background)
             .drawBehind {
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            selectedPreset.primary.copy(alpha = 0.24f),
+                            tokens.primary.copy(alpha = if (tokens.isDark) 0.24f else 0.14f),
                             Color.Transparent
                         ),
                         center = Offset(size.width * 0.18f, size.height * 0.12f),
@@ -139,7 +153,7 @@ fun OnboardingScreen(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            selectedPreset.secondary.copy(alpha = 0.16f),
+                            tokens.secondary.copy(alpha = if (tokens.isDark) 0.16f else 0.10f),
                             Color.Transparent
                         ),
                         center = Offset(size.width * 0.88f, size.height * 0.78f),
@@ -157,21 +171,20 @@ fun OnboardingScreen(
                 .fillMaxSize()
                 .widthIn(max = 540.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp),
+                .padding(horizontal = 20.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Neon Emblem Header
             Box(
                 modifier = Modifier
-                    .size(92.dp)
-                    .clip(RoundedCornerShape(26.dp))
+                    .size(78.dp)
+                    .clip(RoundedCornerShape(22.dp))
                     .border(
                         width = 1.5.dp,
-                        brush = Brush.linearGradient(listOf(ElectricCyan, ElectricViolet)),
-                        shape = RoundedCornerShape(26.dp)
+                        brush = Brush.linearGradient(listOf(tokens.primary, tokens.secondary)),
+                        shape = RoundedCornerShape(22.dp)
                     )
-                    .background(ObsidianBase),
+                    .background(tokens.surfaceBase),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
@@ -182,283 +195,310 @@ fun OnboardingScreen(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = CharcoalElevated,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderHairline)
+                color = tokens.surfaceElevated,
+                border = BorderStroke(1.dp, tokens.borderSubtle)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Filled.VerifiedUser,
                         contentDescription = null,
-                        tint = selectedPreset.secondary,
+                        tint = tokens.secondary,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "LOCAL-FIRST · OFFLINE READY",
+                        text = when (step) {
+                            0 -> "STEP 1 OF 2 · PROFILE & THEME"
+                            1 -> "STEP 2 OF 2 · PERSONALITY MATCH"
+                            else -> "YOUR APPOINTED COMPANION"
+                        },
                         style = MaterialTheme.typography.labelSmall,
-                        color = InkSecondary,
+                        color = tokens.inkSecondary,
                         maxLines = 1,
                         softWrap = false
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             Text(
-                text = "Initialize LIFE OS",
+                text = when (step) {
+                    0 -> "Welcome to Life OS"
+                    1 -> "Meet Your Study Partner"
+                    else -> "Say Hi to ${appointedSpecies.displayTitle}"
+                },
                 style = MaterialTheme.typography.displayMedium,
-                color = InkPrimary,
+                color = tokens.inkPrimary,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
-                text = "Sign in locally and personalize your workspace, companion, and daily focus profile.",
+                text = when (step) {
+                    0 -> "Set your name, daily focus goal, and preferred look."
+                    1 -> "Answer 3 quick questions so Life OS can match your ideal companion."
+                    else -> "Appointed exclusively for your style at Level 1 · 0 XP."
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                color = InkSecondary,
+                color = tokens.inkSecondary,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(18.dp))
 
-            // Sign-In & Name Entry Card
-            ObsidianCard(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.LockOpen,
-                        contentDescription = null,
-                        tint = selectedPreset.secondary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Operator Sign-In",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = InkPrimary
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it
-                        if (showNameError && it.isNotBlank()) showNameError = false
-                    },
-                    label = { Text("Your Name") },
-                    placeholder = { Text("Enter your name") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Person,
-                            contentDescription = null,
-                            tint = if (showNameError) RoseAlert else selectedPreset.secondary
-                        )
-                    },
-                    isError = showNameError,
-                    supportingText = if (showNameError) {
-                        { Text("Please enter your name to launch LIFE OS.", color = RoseAlert) }
-                    } else null,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Words,
-                        imeAction = ImeAction.Next
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = selectedPreset.secondary,
-                        unfocusedBorderColor = BorderHairline,
-                        focusedLabelColor = selectedPreset.secondary,
-                        unfocusedLabelColor = InkSecondary,
-                        focusedTextColor = InkPrimary,
-                        unfocusedTextColor = InkPrimary
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("onboarding_name_input")
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = identity,
-                    onValueChange = { identity = it },
-                    label = { Text("Email or Handle (Optional)") },
-                    placeholder = { Text("you@domain.com or @handle") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.AlternateEmail,
-                            contentDescription = null,
-                            tint = InkSecondary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = selectedPreset.primary,
-                        unfocusedBorderColor = BorderHairline,
-                        focusedLabelColor = selectedPreset.primary,
-                        unfocusedLabelColor = InkSecondary,
-                        focusedTextColor = InkPrimary,
-                        unfocusedTextColor = InkPrimary
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("onboarding_identity_input")
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                OutlinedTextField(
-                    value = petName,
-                    onValueChange = { petName = it },
-                    label = { Text("Digital Companion Name") },
-                    placeholder = { Text("NOVA") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.AutoAwesome,
-                            contentDescription = null,
-                            tint = selectedPreset.primary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { submitForm() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = selectedPreset.primary,
-                        unfocusedBorderColor = BorderHairline,
-                        focusedLabelColor = selectedPreset.primary,
-                        unfocusedLabelColor = InkSecondary,
-                        focusedTextColor = InkPrimary,
-                        unfocusedTextColor = InkPrimary
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("onboarding_pet_input")
-                )
-
-                Spacer(Modifier.height(16.dp))
-
-                Text(
-                    text = "Daily Deep-Focus Target",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = InkPrimary
-                )
-                Spacer(Modifier.height(6.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(60, 90, 120, 180, 240).forEach { mins ->
-                        val selected = focusGoalMinutes == mins
-                        FilterChip(
-                            selected = selected,
-                            onClick = { focusGoalMinutes = mins },
-                            label = { Text("${mins}m / day") },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = selectedPreset.primary.copy(alpha = 0.24f),
-                                selectedLabelColor = InkPrimary,
-                                containerColor = CharcoalElevated,
-                                labelColor = InkSecondary
-                            )
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-
-                Text(
-                    text = "Command Accent",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = InkPrimary
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ThemeAccentPreset.entries.forEach { preset ->
-                        val active = selectedPreset == preset
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (active) preset.primary.copy(alpha = 0.18f) else CharcoalElevated)
-                                .border(
-                                    width = 1.dp,
-                                    color = if (active) preset.secondary else BorderHairline,
-                                    shape = RoundedCornerShape(12.dp)
+            ObsidianCard(modifier = Modifier.fillMaxWidth()) {
+                when (step) {
+                    0 -> {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = {
+                                name = it
+                                if (showNameError && it.isNotBlank()) showNameError = false
+                            },
+                            label = { Text("Your Name") },
+                            placeholder = { Text("Enter your name") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.Person,
+                                    contentDescription = null,
+                                    tint = if (showNameError) RoseAlert else tokens.secondary
                                 )
-                                .clickable { selectedPreset = preset }
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                            },
+                            isError = showNameError,
+                            supportingText = if (showNameError) {
+                                { Text("Please enter your name to continue.", color = RoseAlert) }
+                            } else null,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                imeAction = ImeAction.Next
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = tokens.secondary,
+                                unfocusedBorderColor = tokens.borderSubtle,
+                                focusedLabelColor = tokens.secondary,
+                                unfocusedLabelColor = tokens.inkSecondary,
+                                focusedTextColor = tokens.inkPrimary,
+                                unfocusedTextColor = tokens.inkPrimary
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("onboarding_name_input")
+                        )
+
+                        Spacer(Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = identity,
+                            onValueChange = { identity = it },
+                            label = { Text("Email or Handle (Optional)") },
+                            placeholder = { Text("you@domain.com or @handle") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.AlternateEmail,
+                                    contentDescription = null,
+                                    tint = tokens.inkSecondary
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Done
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = tokens.primary,
+                                unfocusedBorderColor = tokens.borderSubtle,
+                                focusedLabelColor = tokens.primary,
+                                unfocusedLabelColor = tokens.inkSecondary,
+                                focusedTextColor = tokens.inkPrimary,
+                                unfocusedTextColor = tokens.inkPrimary
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("onboarding_identity_input")
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Text("Daily Focus Target", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Box(
+                            listOf(60, 90, 120, 180, 240).forEach { mins ->
+                                val selected = focusGoalMinutes == mins
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { focusGoalMinutes = mins },
+                                    label = { Text("${mins}m / day", maxLines = 1, softWrap = false) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = tokens.primary.copy(alpha = 0.22f),
+                                        selectedLabelColor = tokens.inkPrimary,
+                                        containerColor = tokens.surfaceElevated,
+                                        labelColor = tokens.inkSecondary
+                                    )
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+
+                        Text("Workspace Theme", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                        Spacer(Modifier.height(8.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LifeOsThemeMode.entries.forEach { mode ->
+                                val active = selectedTheme == mode
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(tokens.smallRadius))
+                                        .background(if (active) mode.previewPrimary.copy(alpha = 0.16f) else tokens.surfaceElevated)
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (active) mode.previewPrimary else tokens.borderSubtle,
+                                            shape = RoundedCornerShape(tokens.smallRadius)
+                                        )
+                                        .clickable {
+                                            selectedTheme = mode
+                                            onPreviewThemeMode(mode)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(mode.displayName, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                                        Text(mode.subtitle, style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                        Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewSurface).border(1.dp, tokens.borderSubtle, CircleShape))
+                                        Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewPrimary))
+                                        Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewSecondary))
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(18.dp))
+
+                        Button(
+                            onClick = {
+                                if (name.isBlank()) {
+                                    showNameError = true
+                                } else {
+                                    focusManager.clearFocus()
+                                    step = 1
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = tokens.primary,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(tokens.smallRadius),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(50.dp)
+                                .testTag("onboarding_next_btn")
+                        ) {
+                            Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Continue to Personality Match", maxLines = 1, softWrap = false)
+                        }
+                    }
+
+                    1 -> {
+                        PersonalityQuizQuestionCard(0, q1) { q1 = it }
+                        Spacer(Modifier.height(14.dp))
+                        PersonalityQuizQuestionCard(1, q2) { q2 = it }
+                        Spacer(Modifier.height(14.dp))
+                        PersonalityQuizQuestionCard(2, q3) { q3 = it }
+                        Spacer(Modifier.height(18.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { step = 0 },
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                modifier = Modifier.height(48.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Back", maxLines = 1, softWrap = false)
+                            }
+                            Button(
+                                onClick = {
+                                    customPetName = appointedSpecies.defaultName
+                                    step = 2
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = tokens.primary,
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f).height(48.dp).testTag("onboarding_reveal_btn")
+                            ) {
+                                Text("Find My Companion", maxLines = 1, softWrap = false)
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    else -> {
+                        AppointedCompanionRevealCard(
+                            species = appointedSpecies,
+                            petName = customPetName,
+                            onPetNameChange = { customPetName = it }
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { step = 1 },
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                modifier = Modifier.height(50.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Retake", maxLines = 1, softWrap = false)
+                            }
+                            Button(
+                                onClick = { submitAll() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = tokens.primary,
+                                    contentColor = Color.White
+                                ),
                                 modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(preset.primary)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(preset.secondary)
-                            )
+                                    .weight(1f)
+                                    .height(50.dp)
+                                    .testTag("onboarding_submit_btn")
+                            ) {
+                                Text("Launch Life OS", maxLines = 1, softWrap = false)
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
-
-                Spacer(Modifier.height(20.dp))
-
-                Button(
-                    onClick = { submitForm() },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = selectedPreset.primary,
-                        contentColor = InkPrimary
-                    ),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("onboarding_submit_btn")
-                ) {
-                    Text(
-                        text = "Sign In & Launch LIFE OS",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
             }
 
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(12.dp))
 
             Text(
-                text = "Your profile, tasks, habits, and widgets are saved locally on this device.",
+                text = "Your profile, tasks, and habits stay safely saved on this device.",
                 style = MaterialTheme.typography.bodySmall,
-                color = InkMuted,
+                color = tokens.inkMuted,
                 textAlign = TextAlign.Center
             )
         }

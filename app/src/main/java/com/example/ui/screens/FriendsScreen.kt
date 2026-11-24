@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.FriendEntity
 import com.example.data.local.UserPreferencesRepository
@@ -74,15 +74,10 @@ import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
+import com.example.ui.components.UserAvatarBadge
 import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.InkMuted
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
-import com.example.ui.theme.ObsidianVoid
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
@@ -114,6 +109,7 @@ fun FriendsScreen(
     onUpdatePrivacy: (Boolean, Boolean, Boolean, Boolean) -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     val context = LocalContext.current
     @Suppress("DEPRECATION")
     val clipboard = LocalClipboardManager.current
@@ -166,24 +162,24 @@ fun FriendsScreen(
 
     fun launchSystemShare() {
         val summary = buildString {
-            appendLine("Connect with ${prefs.userName.ifBlank { "me" }} on LIFE OS!")
-            appendLine("Friend Code: $myCode")
+            appendLine("Connect with ${prefs.userName.ifBlank { "me" }} on Life OS!")
+            appendLine("Friend ID: $myCode")
             if (prefs.shareXpWithFriends) appendLine("Level ${prefs.level} · ${prefs.totalXp} XP")
-            if (prefs.shareStreaksWithFriends) appendLine("Streak: ${prefs.dailyStreak}d")
+            if (prefs.shareStreaksWithFriends) appendLine("Daily Streak: ${prefs.dailyStreak}d")
             appendLine()
-            appendLine("Tap link or paste token inside LIFE OS -> Friends -> Add Friend:")
+            appendLine("Open Life OS -> Friends -> Add Friend and paste this link or Friend ID:")
             append(myInviteLink)
         }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "LIFE OS Friend Invite · $myCode")
+            putExtra(Intent.EXTRA_SUBJECT, "Life OS Friend Invite · $myCode")
             putExtra(Intent.EXTRA_TEXT, summary)
         }
-        context.startActivity(Intent.createChooser(intent, "Share LIFE OS Progress"))
+        context.startActivity(Intent.createChooser(intent, "Share Life OS Progress"))
     }
 
     Scaffold(
-        containerColor = ObsidianVoid,
+        containerColor = tokens.background,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showAddDialog = true },
@@ -201,7 +197,7 @@ fun FriendsScreen(
                 .padding(innerPadding)
                 .testTag("friends_screen"),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Row(
@@ -210,18 +206,22 @@ fun FriendsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Friends & Sync", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
-                        Text("Connect by code, link, or local Wi-Fi to compare XP & streaks", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                        Text("Friends & Sync", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+                        Text(
+                            "Connect via Friend ID, invite link, or local Wi-Fi at ₹0 cost",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.inkSecondary
+                        )
                     }
                     StatusPill(
-                        text = if (state.isOnline) "ONLINE" else "OFFLINE",
+                        text = if (state.isOnline) "Online" else "Offline",
                         color = if (state.isOnline) EmeraldSuccess else AmberWarning,
                         icon = if (state.isOnline) Icons.Filled.CloudDone else Icons.Filled.CloudOff
                     )
                 }
             }
 
-            // Your Shareable Profile & Live Sync Card
+            // Shareable Profile & Live Sync Card
             item {
                 GradientGlowCard {
                     Row(
@@ -229,16 +229,22 @@ fun FriendsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        UserAvatarBadge(preset = prefs.avatarPreset, size = 44.dp)
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = prefs.userName.ifBlank { "Operator" },
+                                text = prefs.userName.ifBlank { "Member" },
                                 style = MaterialTheme.typography.titleLarge,
-                                color = InkPrimary
+                                color = tokens.inkPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${prefs.userHandle.ifBlank { "@operator" }} · Code: $myCode",
+                                text = "${prefs.userHandle.ifBlank { "@member" }} · ID: $myCode",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         IconButton(
@@ -247,7 +253,7 @@ fun FriendsScreen(
                                 onShowMessage("Copied live sync token to clipboard")
                             }
                         ) {
-                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy sync token", tint = InkPrimary)
+                            Icon(Icons.Filled.ContentCopy, contentDescription = "Copy sync token", tint = tokens.inkPrimary)
                         }
                         IconButton(onClick = { launchSystemShare() }) {
                             Icon(Icons.Filled.Share, contentDescription = "Share invite link", tint = MaterialTheme.colorScheme.secondary)
@@ -261,12 +267,15 @@ fun FriendsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { launchSystemShare() },
+                            onClick = {
+                                clipboard.setText(AnnotatedString(myCode))
+                                onShowMessage("Copied Friend ID: $myCode")
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Share Invite", maxLines = 1)
+                            Text("Copy ID", maxLines = 1, softWrap = false)
                         }
                         OutlinedButton(
                             onClick = onToggleNearbyRadar,
@@ -279,7 +288,7 @@ fun FriendsScreen(
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text(if (state.isPeerRadarActive) "Scanning..." else "Wi-Fi Sync", maxLines = 1)
+                            Text(if (state.isPeerRadarActive) "Scanning" else "Wi-Fi Sync", maxLines = 1, softWrap = false)
                         }
                     }
 
@@ -289,21 +298,21 @@ fun FriendsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(tokens.smallRadius))
                             .clickable { showPrivacyPanel = !showPrivacyPanel }
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Lock, contentDescription = null, tint = InkSecondary, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Lock, contentDescription = null, tint = tokens.inkSecondary, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Privacy & Sharing Toggles", style = MaterialTheme.typography.labelLarge, color = InkPrimary)
+                            Text("Privacy & Sharing Controls", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
                         }
                         Icon(
                             imageVector = if (showPrivacyPanel) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                             contentDescription = "Toggle privacy controls",
-                            tint = InkSecondary
+                            tint = tokens.inkSecondary
                         )
                     }
 
@@ -353,11 +362,11 @@ fun FriendsScreen(
                             Icon(Icons.Filled.WifiTethering, contentDescription = null, tint = EmeraldSuccess)
                             Spacer(Modifier.width(8.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Nearby Wi-Fi Peers", style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                                Text("Nearby Wi-Fi Peers", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                                 Text(
-                                    text = if (state.nearbyPeers.isEmpty()) "Listening on local Wi-Fi for other LIFE OS devices..." else "${state.nearbyPeers.size} peer(s) discovered",
+                                    text = if (state.nearbyPeers.isEmpty()) "Listening on local Wi-Fi for nearby Life OS users..." else "${state.nearbyPeers.size} peer(s) discovered",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = InkSecondary
+                                    color = tokens.inkSecondary
                                 )
                             }
                         }
@@ -367,17 +376,17 @@ fun FriendsScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(CharcoalElevated)
+                                        .clip(RoundedCornerShape(tokens.smallRadius))
+                                        .background(tokens.surfaceElevated)
                                         .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(peer.serviceName, style = MaterialTheme.typography.bodyMedium, color = InkPrimary)
+                                    Text(peer.serviceName, style = MaterialTheme.typography.bodyMedium, color = tokens.inkPrimary)
                                     OutlinedButton(onClick = { onSyncNearbyPeer(peer) }) {
                                         Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Sync")
+                                        Text("Sync", maxLines = 1, softWrap = false)
                                     }
                                 }
                                 Spacer(Modifier.height(6.dp))
@@ -393,7 +402,7 @@ fun FriendsScreen(
                     EmptyStateCard(
                         icon = Icons.Filled.Groups,
                         title = "No friends connected yet",
-                        subtitle = "Add a friend with their Friend Code, invite link, username, or sync over local Wi-Fi to unlock XP & streak comparisons.",
+                        subtitle = "Connect with a Friend ID, invite link, username, or local Wi-Fi sync to compare XP and streaks.",
                         actionLabel = "Add First Friend",
                         onAction = { showAddDialog = true },
                         modifier = Modifier.testTag("friends_empty_card")
@@ -411,7 +420,7 @@ fun FriendsScreen(
                                 title = "XP Comparison",
                                 subtitle = "You (${prefs.totalXp} XP) vs ${topFriend.displayName} (${topFriend.xp} XP)"
                             )
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(8.dp))
                             NeonProgressBar(progress = userRatio)
                             Spacer(Modifier.height(6.dp))
                             Text(
@@ -421,7 +430,7 @@ fun FriendsScreen(
                                     "${topFriend.xp - prefs.totalXp} XP behind ${topFriend.displayName}."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = InkSecondary
+                                color = tokens.inkSecondary
                             )
                         }
                     }
@@ -429,8 +438,8 @@ fun FriendsScreen(
 
                 item {
                     SectionHeader(
-                        title = "Leaderboard",
-                        subtitle = "Tap a friend to compare XP, streaks & challenges"
+                        title = "Circle Leaderboard",
+                        subtitle = "Tap any friend to compare XP, streaks, and challenges"
                     )
                 }
 
@@ -438,7 +447,7 @@ fun FriendsScreen(
                     val friend = row.sourceFriend
                     ObsidianCard(
                         onClick = { if (friend != null) selectedFriend = friend },
-                        borderColor = if (row.isCurrentUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outline
+                        borderColor = if (row.isCurrentUser) MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f) else tokens.borderSubtle
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -448,25 +457,25 @@ fun FriendsScreen(
                                 modifier = Modifier
                                     .size(34.dp)
                                     .clip(CircleShape)
-                                    .background(if (index == 0) AmberWarning.copy(alpha = 0.22f) else CharcoalElevated),
+                                    .background(if (index == 0) AmberWarning.copy(alpha = 0.22f) else tokens.surfaceElevated),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
                                     text = "#${index + 1}",
                                     style = MaterialTheme.typography.labelLarge,
-                                    color = if (index == 0) AmberWarning else InkPrimary,
+                                    color = if (index == 0) AmberWarning else tokens.inkPrimary,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(row.name, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                                Text(row.name, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                                 val subtitle = when {
                                     row.isPrivate -> "Private profile"
                                     friend != null && !friend.shareChallenges -> "Lv.${row.level} · ${friend.statusText}"
                                     else -> "Lv.${row.level} · ${row.challengesDone}/${row.challengesTotal} challenges"
                                 }
-                                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
@@ -484,7 +493,7 @@ fun FriendsScreen(
                             }
                             if (friend != null) {
                                 IconButton(onClick = { onRemoveFriend(friend) }) {
-                                    Icon(Icons.Filled.DeleteOutline, contentDescription = "Remove friend", tint = InkMuted)
+                                    Icon(Icons.Filled.DeleteOutline, contentDescription = "Remove friend", tint = tokens.inkMuted)
                                 }
                             }
                         }
@@ -527,6 +536,7 @@ private fun PrivacyToggleRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -534,7 +544,7 @@ private fun PrivacyToggleRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = InkPrimary, modifier = Modifier.weight(1f))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
@@ -545,6 +555,7 @@ private fun AddFriendDialog(
     onImportInvite: (String, (Boolean, String) -> Unit) -> Unit,
     onAddByUsername: (String, String, String) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var mode by remember { mutableStateOf("CODE") } // CODE | USERNAME
     var inviteInput by remember { mutableStateOf("") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
@@ -555,17 +566,17 @@ private fun AddFriendDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBase,
-        title = { Text("Add Friend", style = MaterialTheme.typography.titleLarge) },
+        containerColor = tokens.surfaceBase,
+        title = { Text("Add Friend", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = mode == "CODE",
                         onClick = { mode = "CODE"; errorMsg = null },
-                        label = { Text("Code / Link", maxLines = 1, softWrap = false) },
+                        label = { Text("Friend ID / Link", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                         )
                     )
                     FilterChip(
@@ -573,7 +584,7 @@ private fun AddFriendDialog(
                         onClick = { mode = "USERNAME"; errorMsg = null },
                         label = { Text("Username", maxLines = 1, softWrap = false) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
                         )
                     )
                 }
@@ -582,7 +593,7 @@ private fun AddFriendDialog(
                     OutlinedTextField(
                         value = inviteInput,
                         onValueChange = { inviteInput = it; errorMsg = null },
-                        label = { Text("Sync token, link, or LIFE-XXXX code") },
+                        label = { Text("Sync token, invite link, or Friend ID") },
                         placeholder = { Text("lifeos://friend?data=LIFEOS1:... or LIFE-ARIA-4821") },
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth().testTag("friend_invite_input")
@@ -594,21 +605,21 @@ private fun AddFriendDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Friend's display name") },
+                        label = { Text("Display name") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("friend_name_input")
                     )
                     OutlinedTextField(
                         value = handle,
                         onValueChange = { handle = it },
-                        label = { Text("Username / handle (e.g. @aria)") },
+                        label = { Text("Username (e.g. @aria)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("friend_handle_input")
                     )
                     OutlinedTextField(
                         value = code,
                         onValueChange = { code = it },
-                        label = { Text("Friend code (optional)") },
+                        label = { Text("Friend ID (optional)") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -625,13 +636,13 @@ private fun AddFriendDialog(
                     },
                     enabled = inviteInput.isNotBlank(),
                     modifier = Modifier.testTag("confirm_add_friend_btn")
-                ) { Text("Connect") }
+                ) { Text("Connect", maxLines = 1, softWrap = false) }
             } else {
                 Button(
                     onClick = { onAddByUsername(name, handle, code) },
                     enabled = name.isNotBlank(),
                     modifier = Modifier.testTag("confirm_add_friend_btn")
-                ) { Text("Add") }
+                ) { Text("Add", maxLines = 1, softWrap = false) }
             }
         },
         dismissButton = {
@@ -646,13 +657,14 @@ private fun FriendComparisonDialog(
     friend: FriendEntity,
     onDismiss: () -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     val prefs = state.prefs
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBase,
+        containerColor = tokens.surfaceBase,
         title = {
             Column {
-                Text(friend.displayName, style = MaterialTheme.typography.titleLarge, color = InkPrimary)
+                Text(friend.displayName, style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
                 Text("${friend.handle} · ${friend.petStageName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
         },
@@ -682,7 +694,7 @@ private fun FriendComparisonDialog(
                     Text(
                         text = "Last synced ${DateTimeUtils.formatShortDate(friend.lastSyncedAtMillis)} · ${friend.statusText}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = InkMuted
+                        color = tokens.inkMuted
                     )
                 }
             }
@@ -695,19 +707,20 @@ private fun FriendComparisonDialog(
 
 @Composable
 private fun ComparisonRow(metric: String, yours: String, theirs: String) {
+    val tokens = LifeOsThemeTokensProvider.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(CharcoalElevated)
-            .border(1.dp, BorderHairline, RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(tokens.smallRadius))
+            .background(tokens.surfaceElevated)
+            .border(1.dp, tokens.borderSubtle, RoundedCornerShape(tokens.smallRadius))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(metric, style = MaterialTheme.typography.labelMedium, color = InkSecondary, modifier = Modifier.weight(1f))
+        Text(metric, style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary, modifier = Modifier.weight(1f))
         Text(yours, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Text(" vs ", style = MaterialTheme.typography.labelSmall, color = InkMuted)
+        Text(" vs ", style = MaterialTheme.typography.labelSmall, color = tokens.inkMuted)
         Text(theirs, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.secondary)
     }
 }

@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ai.AiExecutionResult
@@ -13,6 +14,10 @@ import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
 import com.example.data.local.CalendarEventEntity
 import com.example.data.local.ChallengeEntity
+import com.example.data.local.CompanionMood
+import com.example.data.local.CompanionMoodResolver
+import com.example.data.local.CompanionSpecies
+import com.example.data.local.DailyProgressLogEntity
 import com.example.data.local.FriendEntity
 import com.example.data.local.HabitEntity
 import com.example.data.local.LifeOsDatabase
@@ -25,15 +30,20 @@ import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
 import com.example.data.local.TaskSectionEntity
 import com.example.data.local.TaskSectionMapper
+import com.example.data.local.UserAvatarPreset
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesState
 import com.example.data.local.WidgetConfigEntity
 import com.example.data.social.FriendSyncCodec
 import com.example.data.social.FriendSyncManager
 import com.example.data.social.NearbyFriendPeer
-import com.example.ui.theme.ThemeAccentPreset
+import com.example.notifications.TaskReminderScheduler
+import com.example.ui.theme.LifeOsThemeMode
+import com.example.util.DailyAnalysisReport
 import com.example.util.DateTimeUtils
+import com.example.util.ProductivityAnalyzer
 import com.example.util.ProductivityCalculator
+import com.example.util.WeeklyAnalysisReport
 import com.example.widgets.LifeOsWidgetUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -53,19 +63,20 @@ data class AchievementBadge(
 
 object BadgeCatalog {
     val all = listOf(
-        AchievementBadge("FIRST_LAUNCH", "Command Online", "Initialized your LIFE OS command center", 0),
-        AchievementBadge("STREAK_3", "3-Day Ignition", "Maintained a 3-day active streak", 75),
-        AchievementBadge("TASK_MASTER_5", "Execution Engine", "Completed 5 or more tasks", 100),
-        AchievementBadge("DEEP_FOCUS", "Flow Architect", "Logged 60+ minutes of deep focus", 120),
-        AchievementBadge("LEVEL_5", "Cyber Sentinel", "Reached Level 5 & evolved NOVA", 200),
-        AchievementBadge("AI_COMMANDER", "Neural Sync", "Executed a command via LIFE AI", 0)
+        AchievementBadge("FIRST_LAUNCH", "Ready to Go", "Set up your Life OS workspace", 0),
+        AchievementBadge("STREAK_3", "3-Day Streak", "Stayed active for 3 days in a row", 75),
+        AchievementBadge("TASK_MASTER_5", "Task Finisher", "Completed 5 or more tasks", 100),
+        AchievementBadge("DEEP_FOCUS", "Deep Focus", "Logged 60+ minutes of focus time", 120),
+        AchievementBadge("LEVEL_5", "Steady Explorer", "Reached Level 5 with your companion", 200),
+        AchievementBadge("AI_COMMANDER", "AI Planner", "Ran a command with LIFE AI", 0)
     )
 }
 
 data class StudyTimerState(
     val selectedMinutes: Int = 25,
     val remainingSeconds: Int = 25 * 60,
-    val isRunning: Boolean = false
+    val isRunning: Boolean = false,
+    val linkedTaskId: Long? = null
 )
 
 data class LifeOsUiState(
@@ -78,6 +89,7 @@ data class LifeOsUiState(
     val widgets: List<WidgetConfigEntity> = emptyList(),
     val quickNote: String = "",
     val usageLogs: List<AppUsageLogEntity> = emptyList(),
+    val dailyProgressLogs: List<DailyProgressLogEntity> = emptyList(),
     val challenges: List<ChallengeEntity> = emptyList(),
     val friends: List<FriendEntity> = emptyList(),
     val aiMessages: List<AiMessageEntity> = emptyList(),
@@ -87,7 +99,8 @@ data class LifeOsUiState(
     val petReactionBanner: String? = null,
     val levelUpBanner: Int? = null,
     val statusSnackbar: String? = null,
-    val usageStatsStatusLabel: String = "Manual Tracking Active",
+    val hasUsageStatsPermission: Boolean = false,
+    val usageStatsStatusLabel: String = "Manual Tracking (Offline Safe)",
     val isOnline: Boolean = false,
     val isCloudAiAvailable: Boolean = false,
     val isPeerRadarActive: Boolean = false,
@@ -100,6 +113,9 @@ data class LifeOsUiState(
 
     val completedTasksCount: Int
         get() = tasks.count { it.isCompleted }
+
+    val pendingTasksCount: Int
+        get() = tasks.count { !it.isCompleted }
 
     val todayUsageLogs: List<AppUsageLogEntity>
         get() = usageLogs.filter { it.dateEpochDay == todayEpochDay }
@@ -124,6 +140,35 @@ data class LifeOsUiState(
             screenMinutesToday = totalScreenMinutesToday,
             dailyScreenLimitMinutes = prefs.dailyScreenLimitMinutes
         )
+
+    val companionMood: CompanionMood
+        get() = CompanionMoodResolver.resolve(
+            isTimerRunning = studyTimer.isRunning,
+            petHappiness = prefs.petHappiness,
+            petEnergy = prefs.petEnergy,
+            hasRecentPositiveAction = petReactionBanner != null,
+            pendingTasks = tasks.filter { !it.isCompleted },
+            distractingMinutesToday = distractingMinutesToday,
+            dailyScreenLimitMinutes = prefs.dailyScreenLimitMinutes
+        )
+
+    val dailyAnalysis: DailyAnalysisReport
+        get() = ProductivityAnalyzer.analyzeDaily(
+            prefs = prefs,
+            tasks = tasks,
+            habits = habits,
+            todayUsageLogs = todayUsageLogs,
+            todayEpochDay = todayEpochDay
+        )
+
+    val weeklyAnalysis: WeeklyAnalysisReport
+        get() = ProductivityAnalyzer.analyzeWeekly(
+            prefs = prefs,
+            tasks = tasks,
+            usageLogs = usageLogs,
+            dailyProgressLogs = dailyProgressLogs,
+            todayEpochDay = todayEpochDay
+        )
 }
 
 class LifeOsViewModel(application: Application) : AndroidViewModel(application) {
@@ -140,6 +185,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val petReactionState = MutableStateFlow<String?>(null)
     private val levelUpBannerState = MutableStateFlow<Int?>(null)
     private val snackbarState = MutableStateFlow<String?>(null)
+    private val usagePermissionTick = MutableStateFlow(0)
 
     private var timerJob: Job? = null
 
@@ -155,6 +201,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private data class SecondaryFlows(
         val note: QuickNoteEntity?,
         val usage: List<AppUsageLogEntity>,
+        val dailyProgress: List<DailyProgressLogEntity>,
         val challenges: List<ChallengeEntity>,
         val friends: List<FriendEntity>,
         val aiMessages: List<AiMessageEntity>
@@ -172,7 +219,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private data class SocialNetworkFlows(
         val isOnline: Boolean,
         val isPeerRadarActive: Boolean,
-        val nearbyPeers: List<NearbyFriendPeer>
+        val nearbyPeers: List<NearbyFriendPeer>,
+        val usageTick: Int
     )
 
     private val tasksAndSectionsFlow = combine(
@@ -192,14 +240,21 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         CoreFlows(prefs, tasksAndSections.first, tasksAndSections.second, events, habits, widgets)
     }
 
+    private val usageAndProgressFlow = combine(
+        db.appUsageDao().observeAllLogs(),
+        db.dailyProgressDao().observeAllLogs()
+    ) { usage, dailyProgress ->
+        usage to dailyProgress
+    }
+
     private val secondaryFlow = combine(
         db.quickNoteDao().observeNote(),
-        db.appUsageDao().observeAllLogs(),
+        usageAndProgressFlow,
         db.challengeDao().observeAllChallenges(),
         db.friendDao().observeAllFriends(),
         db.aiMessageDao().observeMessages()
-    ) { note, usage, challenges, friends, aiMessages ->
-        SecondaryFlows(note, usage, challenges, friends, aiMessages)
+    ) { note, usagePair, challenges, friends, aiMessages ->
+        SecondaryFlows(note, usagePair.first, usagePair.second, challenges, friends, aiMessages)
     }
 
     private val feedbackBannersFlow = combine(
@@ -222,9 +277,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val socialNetworkFlow = combine(
         friendSyncManager.observeNetworkOnline(),
         friendSyncManager.isPeerRadarActive,
-        friendSyncManager.nearbyPeers
-    ) { online, radar, peers ->
-        SocialNetworkFlows(online, radar, peers)
+        friendSyncManager.nearbyPeers,
+        usagePermissionTick
+    ) { online, radar, peers, tick ->
+        SocialNetworkFlows(online, radar, peers, tick)
     }
 
     val uiState: StateFlow<LifeOsUiState> = combine(
@@ -238,6 +294,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         friendSyncManager.updateOutgoingToken(
             FriendSyncCodec.buildShareToken(core.prefs, completedChal, totalChal)
         )
+        val hasUsagePerm = usageBridge.hasSystemUsagePermission()
         LifeOsUiState(
             isPrefsLoaded = true,
             prefs = core.prefs,
@@ -248,6 +305,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             widgets = core.widgets,
             quickNote = sec.note?.content ?: "",
             usageLogs = sec.usage,
+            dailyProgressLogs = sec.dailyProgress,
             challenges = sec.challenges,
             friends = sec.friends,
             aiMessages = sec.aiMessages,
@@ -257,6 +315,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             petReactionBanner = trans.petReaction,
             levelUpBanner = trans.levelUpBanner,
             statusSnackbar = trans.snackbar,
+            hasUsageStatsPermission = hasUsagePerm,
             usageStatsStatusLabel = usageBridge.getSourceStatusLabel(),
             isOnline = social.isOnline,
             isCloudAiAvailable = social.isOnline && aiRepo.isCloudAiAvailable(),
@@ -273,7 +332,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         soundManager.preload()
         viewModelScope.launch {
             LifeOsSeeder.seedInitialDataIfNeeded(db)
+            prefsRepo.recordLoginDay()
+            syncSystemUsageStatsIfGranted(showToast = false)
             LifeOsWidgetUpdater.updateAllWidgets(getApplication())
+            val p = uiState.value.prefs
+            TaskReminderScheduler.syncSchedule(
+                context = getApplication(),
+                notificationsEnabled = p.notificationsEnabled,
+                taskRemindersEnabled = p.taskRemindersEnabled
+            )
         }
     }
 
@@ -287,6 +354,24 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             LifeOsWidgetUpdater.updateAllWidgets(getApplication())
         }
+    }
+
+    private suspend fun recordDailyProgressDelta(
+        focusDelta: Int = 0,
+        xpDelta: Int = 0,
+        tasksCompletedDelta: Int = 0,
+        distractingDelta: Int = 0
+    ) {
+        val today = DateTimeUtils.todayEpochDay()
+        val existing = db.dailyProgressDao().getForDay(today) ?: DailyProgressLogEntity(epochDay = today)
+        db.dailyProgressDao().upsert(
+            existing.copy(
+                focusMinutes = (existing.focusMinutes + focusDelta).coerceAtLeast(0),
+                xpEarned = (existing.xpEarned + xpDelta).coerceAtLeast(0),
+                tasksCompleted = (existing.tasksCompleted + tasksCompletedDelta).coerceAtLeast(0),
+                distractingMinutes = (existing.distractingMinutes + distractingDelta).coerceAtLeast(0)
+            )
+        )
     }
 
     fun clearSnackbar() {
@@ -309,13 +394,14 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         snackbarState.value = message
     }
 
-    // --- ONBOARDING & LOCAL SESSION ---
+    // --- ONBOARDING & COMPANION MATCH ---
     fun completeOnboarding(
         name: String,
         identityOrEmail: String,
         petName: String,
+        companionSpecies: CompanionSpecies,
         focusGoalMinutes: Int,
-        accentPreset: ThemeAccentPreset
+        themeMode: LifeOsThemeMode
     ) {
         if (name.isBlank()) return
         viewModelScope.launch {
@@ -323,11 +409,27 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 name = name,
                 identityOrEmail = identityOrEmail,
                 petName = petName,
+                companionSpecies = companionSpecies,
                 focusGoal = focusGoalMinutes,
-                accentPreset = accentPreset
+                themeMode = themeMode
             )
             prefsRepo.unlockBadge("FIRST_LAUNCH")
-            snackbarState.value = "Welcome to LIFE OS, ${name.trim()}"
+            TaskReminderScheduler.syncSchedule(
+                context = getApplication(),
+                notificationsEnabled = true,
+                taskRemindersEnabled = true
+            )
+            snackbarState.value = "Welcome to Life OS, ${name.trim()}!"
+            syncHomeWidgets()
+        }
+    }
+
+    fun reappointCompanion(species: CompanionSpecies, customName: String?) {
+        viewModelScope.launch {
+            prefsRepo.appointCompanionFromQuiz(species, customName)
+            val resolvedName = customName?.trim()?.takeIf { it.isNotBlank() } ?: species.defaultName
+            petReactionState.value = "$resolvedName (${species.displayTitle}) is now your companion!"
+            snackbarState.value = "Companion updated to $resolvedName"
             syncHomeWidgets()
         }
     }
@@ -360,6 +462,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         prefsRepo.awardXpAndBoostPet(xpDelta, happinessDelta, energyDelta)
+        recordDailyProgressDelta(xpDelta = xpDelta)
 
         val sfxEnabled = currentPrefs.soundEffectsEnabled
         when {
@@ -392,21 +495,40 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.taskDao().updateTask(updated)
 
             if (shouldAwardXp) {
+                recordDailyProgressDelta(tasksCompletedDelta = 1)
                 applyXpAndPlaySound(
                     xpDelta = task.xpReward,
-                    happinessDelta = 7,
+                    happinessDelta = 8,
                     energyDelta = 3,
                     isTaskCompletion = true
                 )
-                petReactionState.value = "${uiState.value.prefs.petName} gained +${task.xpReward} XP from \"${task.title}\"!"
+                petReactionState.value = "${uiState.value.prefs.petName} is cheering! +${task.xpReward} XP from \"${task.title}\""
                 snackbarState.value = "+${task.xpReward} XP earned"
                 updateChallengeProgress("Daily Momentum", 1)
                 updateChallengeProgress("Weekly Velocity", task.xpReward)
                 evaluateBadges()
             } else if (nowCompleted) {
                 soundManager.playTaskComplete(uiState.value.prefs.soundEffectsEnabled)
-                snackbarState.value = "Task completed (XP already claimed)"
+                snackbarState.value = "Task completed"
             }
+
+            // Clear reminder notification automatically if zero pending tasks remain
+            val remainingPending = db.taskDao().getAllTasksOnce().count { !it.isCompleted }
+            if (remainingPending == 0) {
+                TaskReminderScheduler.clearReminderNotification(getApplication())
+            }
+            syncHomeWidgets()
+        }
+    }
+
+    fun logTaskDistraction(task: TaskEntity, minutes: Int) {
+        if (minutes <= 0) return
+        viewModelScope.launch {
+            val added = minutes.coerceIn(1, 240)
+            db.taskDao().updateTask(task.copy(distractionMinutes = task.distractionMinutes + added))
+            recordDailyProgressDelta(distractingDelta = added)
+            prefsRepo.adjustPetMoodAndEnergy(happinessDelta = -4, energyDelta = -2)
+            snackbarState.value = "Logged ${added}m distraction on \"${task.title}\""
             syncHomeWidgets()
         }
     }
@@ -509,6 +631,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             db.taskDao().deleteTask(task)
             snackbarState.value = "Task removed"
+            val remainingPending = db.taskDao().getAllTasksOnce().count { !it.isCompleted }
+            if (remainingPending == 0) {
+                TaskReminderScheduler.clearReminderNotification(getApplication())
+            }
             syncHomeWidgets()
         }
     }
@@ -580,8 +706,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 if (shouldAwardXp) {
                     applyXpAndPlaySound(
                         xpDelta = habit.xpReward,
-                        happinessDelta = 5,
-                        energyDelta = 6,
+                        happinessDelta = 6,
+                        energyDelta = 5,
                         isHabitCompletion = true
                     )
                     petReactionState.value = "${uiState.value.prefs.petName} loved your habit streak! +${habit.xpReward} XP"
@@ -646,11 +772,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     // --- STUDY TIMER ---
     fun selectTimerDuration(minutes: Int) {
         timerJob?.cancel()
+        val current = studyTimerState.value
         studyTimerState.value = StudyTimerState(
             selectedMinutes = minutes,
             remainingSeconds = minutes * 60,
-            isRunning = false
+            isRunning = false,
+            linkedTaskId = current.linkedTaskId
         )
+    }
+
+    fun selectFocusLinkedTask(taskId: Long?) {
+        studyTimerState.value = studyTimerState.value.copy(linkedTaskId = taskId)
     }
 
     fun toggleStudyTimer() {
@@ -669,7 +801,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     val nextSec = (latest.remainingSeconds - 1).coerceAtLeast(0)
                     studyTimerState.value = latest.copy(remainingSeconds = nextSec)
                     if (nextSec == 0) {
-                        completeStudySession(latest.selectedMinutes)
+                        completeStudySession(latest.selectedMinutes, latest.linkedTaskId)
                         break
                     }
                 }
@@ -679,11 +811,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetStudyTimer() {
         timerJob?.cancel()
-        val mins = studyTimerState.value.selectedMinutes
+        val current = studyTimerState.value
         studyTimerState.value = StudyTimerState(
-            selectedMinutes = mins,
-            remainingSeconds = mins * 60,
-            isRunning = false
+            selectedMinutes = current.selectedMinutes,
+            remainingSeconds = current.selectedMinutes * 60,
+            isRunning = false,
+            linkedTaskId = current.linkedTaskId
         )
     }
 
@@ -691,18 +824,25 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val state = studyTimerState.value
         val elapsedMins = ((state.selectedMinutes * 60) - state.remainingSeconds) / 60
         if (elapsedMins < 1) {
-            snackbarState.value = "Run timer at least 1 minute to log focus"
+            snackbarState.value = "Run the timer for at least 1 minute to save focus"
             return
         }
         timerJob?.cancel()
         viewModelScope.launch {
-            completeStudySession(elapsedMins)
+            completeStudySession(elapsedMins, state.linkedTaskId)
         }
     }
 
-    private suspend fun completeStudySession(minutes: Int) {
+    private suspend fun completeStudySession(minutes: Int, linkedTaskId: Long?) {
         val xp = (minutes * 2).coerceIn(10, 120)
         prefsRepo.addFocusMinutes(minutes)
+        recordDailyProgressDelta(focusDelta = minutes)
+        if (linkedTaskId != null) {
+            val task = db.taskDao().getAllTasksOnce().firstOrNull { it.id == linkedTaskId }
+            if (task != null) {
+                db.taskDao().updateTask(task.copy(focusMinutesSpent = task.focusMinutesSpent + minutes))
+            }
+        }
         applyXpAndPlaySound(
             xpDelta = xp,
             happinessDelta = 8,
@@ -712,27 +852,117 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         updateChallengeProgress("Deep Focus Sprint", minutes)
         updateChallengeProgress("Weekly Velocity", xp)
         evaluateBadges()
-        petReactionState.value = "Focus sprint logged (${minutes}m)! ${uiState.value.prefs.petName} gained +$xp XP"
-        snackbarState.value = "Logged ${minutes}m focus · +$xp XP"
-        val resetMins = studyTimerState.value.selectedMinutes
-        studyTimerState.value = StudyTimerState(resetMins, resetMins * 60, false)
+        petReactionState.value = "Focus session saved (${minutes}m)! ${uiState.value.prefs.petName} gained +$xp XP"
+        snackbarState.value = "Saved ${minutes}m focus · +$xp XP"
+        val current = studyTimerState.value
+        studyTimerState.value = StudyTimerState(
+            selectedMinutes = current.selectedMinutes,
+            remainingSeconds = current.selectedMinutes * 60,
+            isRunning = false,
+            linkedTaskId = current.linkedTaskId
+        )
         syncHomeWidgets()
     }
 
-    // --- DIGITAL WELLNESS ---
-    fun addManualUsageLog(appName: String, category: AppUsageCategory, minutes: Int, isDistracting: Boolean) {
+    // --- DIGITAL WELLNESS & OS USAGE STATS ---
+    fun buildUsageAccessIntent(): Intent = usageBridge.openUsageAccessSettingsIntent()
+
+    fun refreshUsageStatsStatusAndSync(showToast: Boolean = true) {
+        usagePermissionTick.value += 1
+        viewModelScope.launch {
+            syncSystemUsageStatsIfGranted(showToast = showToast)
+        }
+    }
+
+    private suspend fun syncSystemUsageStatsIfGranted(showToast: Boolean) {
+        if (!usageBridge.hasSystemUsagePermission()) {
+            if (showToast) {
+                snackbarState.value = "Grant Usage Access in Android Settings to auto-sync app screen time."
+            }
+            return
+        }
+        val systemEntries = usageBridge.queryTodayUsageStats()
+        if (systemEntries.isEmpty()) {
+            if (showToast) {
+                snackbarState.value = "Usage Access active — no foreground app sessions over 1m today yet."
+            }
+            return
+        }
+
+        val today = DateTimeUtils.todayEpochDay()
+        val existingToday = db.appUsageDao().getLogsForDay(today)
+        val existingByName = existingToday.associateBy { it.appName.lowercase() }
+        var updatedCount = 0
+
+        systemEntries.forEach { entry ->
+            val match = existingByName[entry.appName.lowercase()]
+            if (match == null) {
+                db.appUsageDao().insertLog(
+                    AppUsageLogEntity(
+                        appName = entry.appName,
+                        categoryName = entry.category.name,
+                        minutesUsed = entry.minutesUsed,
+                        isDistracting = entry.isDistracting,
+                        dateEpochDay = today
+                    )
+                )
+                updatedCount++
+            } else if (entry.minutesUsed > match.minutesUsed) {
+                db.appUsageDao().insertLog(
+                    match.copy(
+                        minutesUsed = entry.minutesUsed,
+                        categoryName = entry.category.name,
+                        isDistracting = entry.isDistracting
+                    )
+                )
+                updatedCount++
+            }
+        }
+        val todayLogs = db.appUsageDao().getLogsForDay(today)
+        val totalDistractingToday = todayLogs.filter { it.isDistracting }.sumOf { it.minutesUsed }
+        val existingDaily = db.dailyProgressDao().getForDay(today) ?: DailyProgressLogEntity(epochDay = today)
+        db.dailyProgressDao().upsert(
+            existingDaily.copy(distractingMinutes = maxOf(existingDaily.distractingMinutes, totalDistractingToday))
+        )
+
+        if (showToast) {
+            snackbarState.value = if (updatedCount > 0) {
+                "Synced $updatedCount app usage ${if (updatedCount == 1) "entry" else "entries"} from Android"
+            } else {
+                "Screen time is up to date"
+            }
+        }
+    }
+
+    fun addManualUsageLog(
+        appName: String,
+        category: AppUsageCategory,
+        minutes: Int,
+        isDistracting: Boolean,
+        linkedTaskId: Long? = null
+    ) {
         if (appName.isBlank() || minutes <= 0) return
         viewModelScope.launch {
+            val clamped = minutes.coerceIn(1, 720)
             db.appUsageDao().insertLog(
                 AppUsageLogEntity(
                     appName = appName.trim(),
                     categoryName = category.name,
-                    minutesUsed = minutes.coerceIn(1, 720),
+                    minutesUsed = clamped,
                     isDistracting = isDistracting,
                     dateEpochDay = DateTimeUtils.todayEpochDay()
                 )
             )
-            snackbarState.value = "Logged ${minutes}m for ${appName.trim()}"
+            if (isDistracting) {
+                recordDailyProgressDelta(distractingDelta = clamped)
+                if (linkedTaskId != null) {
+                    val task = db.taskDao().getAllTasksOnce().firstOrNull { it.id == linkedTaskId }
+                    if (task != null) {
+                        db.taskDao().updateTask(task.copy(distractionMinutes = task.distractionMinutes + clamped))
+                    }
+                }
+            }
+            snackbarState.value = "Logged ${clamped}m for ${appName.trim()}"
         }
     }
 
@@ -742,26 +972,27 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- DIGITAL PET & CHALLENGES ---
+    // --- DIGITAL COMPANION & CHALLENGES ---
     fun interactWithPet(action: String) {
         viewModelScope.launch {
             val currentPrefs = uiState.value.prefs
             when (action) {
                 "TAP" -> {
-                    petReactionState.value = "${currentPrefs.petName} pulses brightly! Mood ${currentPrefs.petHappiness}% · Energy ${currentPrefs.petEnergy}% · Complete tasks, habits, or focus sprints to earn XP."
+                    val mood = uiState.value.companionMood
+                    petReactionState.value = "${currentPrefs.petName} feels ${mood.label.lowercase()} — ${mood.nudgeHint}"
                     return@launch
                 }
                 "FEED" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 4, energyDelta = 12)
-                    petReactionState.value = "${currentPrefs.petName} recharged (+12% Energy · 0 XP)"
+                    petReactionState.value = "${currentPrefs.petName} enjoyed a snack (+12% Energy)"
                 }
                 "PLAY" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 10, energyDelta = -4)
-                    petReactionState.value = "${currentPrefs.petName} cheered up (+10% Mood · 0 XP)"
+                    petReactionState.value = "${currentPrefs.petName} cheered up (+10% Mood)"
                 }
                 "REST" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 2, energyDelta = 18)
-                    petReactionState.value = "${currentPrefs.petName} entered recharge mode (+18% Energy)"
+                    petReactionState.value = "${currentPrefs.petName} took a cozy rest (+18% Energy)"
                 }
             }
             syncHomeWidgets()
@@ -775,7 +1006,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 snackbarState.value = "Equipped ${accessory.label}"
                 syncHomeWidgets()
             } else {
-                snackbarState.value = "Unlock at Level ${accessory.requiredLevel}"
+                snackbarState.value = "Unlocks at Level ${accessory.requiredLevel}"
             }
         }
     }
@@ -790,7 +1021,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 energyDelta = 8,
                 isTaskCompletion = true
             )
-            petReactionState.value = "Challenge cleared! +${challenge.xpReward} XP"
+            petReactionState.value = "Challenge completed! +${challenge.xpReward} XP"
             snackbarState.value = "Claimed +${challenge.xpReward} XP!"
             evaluateBadges()
             syncHomeWidgets()
@@ -860,20 +1091,20 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 focusMinutesToday = existing?.focusMinutesToday ?: 0,
                 challengesCompleted = existing?.challengesCompleted ?: 0,
                 challengesTotal = existing?.challengesTotal ?: 4,
-                petStageName = existing?.petStageName ?: "Spark Wisp",
+                petStageName = existing?.petStageName ?: "Little Spark",
                 sharesStats = true,
-                statusText = if (existing == null) "Awaiting sync packet" else existing.statusText
+                statusText = if (existing == null) "Awaiting progress sync" else existing.statusText
             )
             db.friendDao().insertFriend(entity)
-            snackbarState.value = "${cleanName} connected"
+            snackbarState.value = "$cleanName added"
         }
     }
 
     fun importFriendFromInput(rawInput: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         val parsed = FriendSyncCodec.parseInput(rawInput)
         if (parsed == null) {
-            snackbarState.value = "Invalid invite link or friend code"
-            onResult(false, "Paste a valid LIFEOS1 sync token, invite link, or LIFE-XXXX code.")
+            snackbarState.value = "Invalid invite link or friend ID"
+            onResult(false, "Paste a valid LIFEOS1 sync token, invite link, or LIFE-XXXX Friend ID.")
             return
         }
         viewModelScope.launch {
@@ -881,7 +1112,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             val entity = parsed.toFriendEntity(existingId = existing?.id ?: 0L)
             db.friendDao().insertFriend(entity)
             val msg = if (existing != null) {
-                "Updated ${entity.displayName}'s synced progress"
+                "Updated ${entity.displayName}'s progress"
             } else {
                 "Connected ${entity.displayName} (${entity.handle})"
             }
@@ -894,17 +1125,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val state = uiState.value
         if (state.isPeerRadarActive) {
             friendSyncManager.stopNearbyPeerSync()
-            snackbarState.value = "Nearby Wi-Fi discovery paused"
+            snackbarState.value = "Nearby Wi-Fi sync paused"
         } else if (!state.isOnline) {
-            snackbarState.value = "Connect to Wi-Fi or internet to discover nearby peers"
+            snackbarState.value = "Connect to Wi-Fi to discover nearby devices"
         } else {
-            val label = state.prefs.userHandle.ifBlank { state.prefs.userName.ifBlank { "Operator" } }
+            val label = state.prefs.userHandle.ifBlank { state.prefs.userName.ifBlank { "Explorer" } }
             friendSyncManager.startNearbyPeerSync(
                 scope = viewModelScope,
                 serviceLabel = label,
                 outgoingToken = buildMyShareToken()
             )
-            snackbarState.value = "Scanning local Wi-Fi for LIFE OS peers..."
+            snackbarState.value = "Scanning Wi-Fi for nearby Life OS users..."
         }
     }
 
@@ -1032,7 +1263,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                                 db.calendarEventDao().insertEvent(
                                     CalendarEventEntity(
                                         title = task.title,
-                                        notes = "Auto-blocked by LIFE AI",
+                                        notes = "Scheduled by LIFE AI",
                                         dateEpochDay = today + 1,
                                         startMinuteOfDay = startMin,
                                         durationMinutes = 60,
@@ -1041,7 +1272,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                                 )
                             }
                             if (pending.isNotEmpty()) {
-                                badge = "Tomorrow Organized · ${pending.size} Focus Blocks"
+                                badge = "Tomorrow Planned · ${pending.size} Focus Blocks"
                             }
                         }
                     }
@@ -1060,11 +1291,24 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- SETTINGS ---
-    fun updateProfile(name: String, handle: String, focusGoal: Int, screenLimit: Int) {
+    // --- PROFILE, THEMES & SETTINGS ---
+    fun updateProfile(
+        name: String,
+        handle: String,
+        focusGoal: Int,
+        screenLimit: Int,
+        avatarPreset: UserAvatarPreset? = null
+    ) {
         viewModelScope.launch {
-            prefsRepo.updateProfile(name, handle, focusGoal, screenLimit)
+            prefsRepo.updateProfile(name, handle, focusGoal, screenLimit, avatarPreset)
             snackbarState.value = "Profile saved"
+        }
+    }
+
+    fun updateAvatarPreset(avatarPreset: UserAvatarPreset) {
+        viewModelScope.launch {
+            prefsRepo.updateAvatarPreset(avatarPreset)
+            snackbarState.value = "Avatar updated to ${avatarPreset.label}"
         }
     }
 
@@ -1076,9 +1320,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updateAccentPreset(preset: ThemeAccentPreset) {
+    fun updateThemeMode(mode: LifeOsThemeMode) {
         viewModelScope.launch {
-            prefsRepo.updateAccentPreset(preset)
+            prefsRepo.updateThemeMode(mode)
+            snackbarState.value = "Theme switched to ${mode.displayName}"
         }
     }
 
@@ -1093,9 +1338,28 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updateNotifications(enabled: Boolean, reminders: Boolean, wellnessAlerts: Boolean) {
+    fun updateNotifications(
+        enabled: Boolean,
+        reminders: Boolean,
+        wellnessAlerts: Boolean,
+        quietHoursEnabled: Boolean = uiState.value.prefs.quietHoursEnabled,
+        quietStartHour: Int = uiState.value.prefs.quietStartHour,
+        quietEndHour: Int = uiState.value.prefs.quietEndHour
+    ) {
         viewModelScope.launch {
-            prefsRepo.updateNotifications(enabled, reminders, wellnessAlerts)
+            prefsRepo.updateNotifications(
+                enabled = enabled,
+                reminders = reminders,
+                wellnessAlerts = wellnessAlerts,
+                quietHoursEnabled = quietHoursEnabled,
+                quietStartHour = quietStartHour,
+                quietEndHour = quietEndHour
+            )
+            TaskReminderScheduler.syncSchedule(
+                context = getApplication(),
+                notificationsEnabled = enabled,
+                taskRemindersEnabled = reminders
+            )
         }
     }
 
@@ -1113,7 +1377,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         if (uiState.value.prefs.soundEffectsEnabled) {
             soundManager.playStreakActivate(enabled = true)
         } else {
-            snackbarState.value = "Enable Sound Effects first to preview chime"
+            snackbarState.value = "Enable Sound Effects first to preview the chime"
         }
     }
 
@@ -1125,13 +1389,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.calendarEventDao().clearAll()
             db.habitDao().clearAll()
             db.appUsageDao().clearAll()
+            db.dailyProgressDao().clearAll()
             db.challengeDao().clearAll()
             db.friendDao().clearAll()
             db.aiMessageDao().clearAll()
             db.quickNoteDao().saveNote(QuickNoteEntity(id = 1, content = ""))
             prefsRepo.resetDefaults()
             LifeOsSeeder.seedInitialDataIfNeeded(db)
-            snackbarState.value = "Workspace reset to clean slate"
+            TaskReminderScheduler.syncSchedule(getApplication(), notificationsEnabled = false, taskRemindersEnabled = false)
+            snackbarState.value = "Workspace reset to a clean slate"
             syncHomeWidgets()
         }
     }

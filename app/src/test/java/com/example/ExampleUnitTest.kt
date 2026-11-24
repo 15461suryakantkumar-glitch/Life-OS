@@ -4,12 +4,23 @@ import com.example.data.ai.LifeContextSnapshot
 import com.example.data.ai.LocalLifeAiEngine
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.audio.LifeOsSoundManager
+import com.example.data.local.AppUsageCategory
+import com.example.data.local.AppUsageLogEntity
+import com.example.data.local.CompanionMood
+import com.example.data.local.CompanionMoodResolver
+import com.example.data.local.CompanionSpecies
+import com.example.data.local.DailyProgressLogEntity
+import com.example.data.local.PersonalityQuizEvaluator
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
+import com.example.data.local.TaskPriority
 import com.example.data.local.TaskSectionEntity
 import com.example.data.local.TaskSectionMapper
 import com.example.data.local.UserPreferencesState
 import com.example.data.social.FriendSyncCodec
+import com.example.notifications.TaskReminderScheduler
+import com.example.ui.theme.LifeOsThemeMode
+import com.example.util.ProductivityAnalyzer
 import com.example.util.ProductivityCalculator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,7 +29,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Pure JVM unit tests for LIFE OS core offline intelligence, productivity scoring,
+ * Pure JVM unit tests for LIFE OS offline intelligence, productivity scoring,
+ * personality companion matching, mood resolution, analyzer insights, quiet hours,
  * and privacy-preserving friend sync codec.
  */
 class ExampleUnitTest {
@@ -150,7 +162,6 @@ class ExampleUnitTest {
         assertEquals("LIFE-ARIA-4821", parsed.friendCode)
         assertEquals(950, parsed.xp)
         assertEquals(9, parsed.streakDays)
-        // Focus sharing was disabled -> masked to 0
         assertFalse(parsed.shareFocus)
         assertEquals(0, parsed.focusMinutesToday)
         assertEquals(2, parsed.challengesCompleted)
@@ -192,5 +203,144 @@ class ExampleUnitTest {
         val section = TaskSectionEntity(id = 4L, name = "Physics")
         val task = TaskEntity(sectionId = section.id, title = "Solve Electrostatics", deadlineEpochDay = 20_000L)
         assertEquals(4L, task.sectionId)
+    }
+
+    @Test
+    fun personalityQuiz_appointsDeterministicCompanionSpecies() {
+        assertEquals(CompanionSpecies.MOCHI_BEAR, PersonalityQuizEvaluator.appointCompanion(0, 0, 0))
+        assertEquals(CompanionSpecies.PEBBLE_FOX, PersonalityQuizEvaluator.appointCompanion(1, 2, 1))
+        assertEquals(CompanionSpecies.PIP_OWL, PersonalityQuizEvaluator.appointCompanion(2, 1, 3))
+        assertEquals(CompanionSpecies.BOBA_OTTER, PersonalityQuizEvaluator.appointCompanion(3, 3, 2))
+    }
+
+    @Test
+    fun companionMoodResolver_reactsToTimerPendingAgeDistractionAndNightHours() {
+        val now = 1_700_000_000_000L
+        val threeHoursMs = 3L * 60L * 60L * 1000L
+        val staleTask = TaskEntity(
+            title = "Pending Mock Paper",
+            deadlineEpochDay = 20_000L,
+            createdAtMillis = now - threeHoursMs
+        )
+
+        assertEquals(
+            CompanionMood.FOCUSED,
+            CompanionMoodResolver.resolve(
+                isTimerRunning = true,
+                petHappiness = 70,
+                petEnergy = 80,
+                hasRecentPositiveAction = false,
+                pendingTasks = listOf(staleTask),
+                distractingMinutesToday = 100,
+                dailyScreenLimitMinutes = 180,
+                nowMillis = now,
+                hourOfDay = 14
+            )
+        )
+
+        assertEquals(
+            CompanionMood.WORRIED,
+            CompanionMoodResolver.resolve(
+                isTimerRunning = false,
+                petHappiness = 75,
+                petEnergy = 80,
+                hasRecentPositiveAction = false,
+                pendingTasks = listOf(staleTask),
+                distractingMinutesToday = 10,
+                dailyScreenLimitMinutes = 180,
+                nowMillis = now,
+                hourOfDay = 14
+            )
+        )
+
+        assertEquals(
+            CompanionMood.SLEEPY,
+            CompanionMoodResolver.resolve(
+                isTimerRunning = false,
+                petHappiness = 75,
+                petEnergy = 80,
+                hasRecentPositiveAction = false,
+                pendingTasks = emptyList(),
+                distractingMinutesToday = 0,
+                dailyScreenLimitMinutes = 180,
+                nowMillis = now,
+                hourOfDay = 23
+            )
+        )
+
+        assertEquals(
+            CompanionMood.CHILL,
+            CompanionMoodResolver.resolve(
+                isTimerRunning = false,
+                petHappiness = 75,
+                petEnergy = 80,
+                hasRecentPositiveAction = false,
+                pendingTasks = emptyList(),
+                distractingMinutesToday = 10,
+                dailyScreenLimitMinutes = 180,
+                nowMillis = now,
+                hourOfDay = 14
+            )
+        )
+    }
+
+    @Test
+    fun productivityAnalyzer_producesDailyAndWeeklyActionableInsights() {
+        val today = 20_000L
+        val now = 1_700_000_000_000L
+        val prefs = UserPreferencesState(
+            isSignedIn = true,
+            dailyFocusGoalMinutes = 120,
+            dailyScreenLimitMinutes = 180,
+            focusMinutesLoggedToday = 45,
+            loginEpochDays = setOf(today - 2, today - 1, today)
+        )
+        val tasks = listOf(
+            TaskEntity(
+                title = "Organic Chemistry",
+                priorityName = TaskPriority.HIGH.name,
+                deadlineEpochDay = today,
+                createdAtMillis = now - (3L * 3600L * 1000L),
+                distractionMinutes = 25
+            )
+        )
+        val usage = listOf(
+            AppUsageLogEntity(
+                appName = "Instagram",
+                categoryName = AppUsageCategory.SOCIAL.name,
+                minutesUsed = 50,
+                isDistracting = true,
+                dateEpochDay = today
+            )
+        )
+        val progressLogs = listOf(
+            DailyProgressLogEntity(epochDay = today - 1, focusMinutes = 90, xpEarned = 180, tasksCompleted = 3, distractingMinutes = 20),
+            DailyProgressLogEntity(epochDay = today, focusMinutes = 45, xpEarned = 60, tasksCompleted = 0, distractingMinutes = 50)
+        )
+
+        val daily = ProductivityAnalyzer.analyzeDaily(prefs, tasks, emptyList(), usage, todayEpochDay = today, nowMillis = now)
+        assertEquals(1, daily.agedPendingCount)
+        assertEquals("Organic Chemistry", daily.focusTaskSuggestion)
+        assertTrue(daily.recommendations.any { it.contains("Organic Chemistry") })
+
+        val weekly = ProductivityAnalyzer.analyzeWeekly(prefs, tasks, usage, progressLogs, todayEpochDay = today)
+        assertEquals(3, weekly.activeLoginDaysCount)
+        assertEquals(135, weekly.weeklyFocusMinutes)
+        assertEquals(70, weekly.weeklyDistractingMinutes)
+    }
+
+    @Test
+    fun taskReminderScheduler_evaluatesQuietHoursCorrectly() {
+        assertTrue(TaskReminderScheduler.isWithinQuietHours(currentHour = 23, quietHoursEnabled = true, startHour = 22, endHour = 7))
+        assertTrue(TaskReminderScheduler.isWithinQuietHours(currentHour = 5, quietHoursEnabled = true, startHour = 22, endHour = 7))
+        assertFalse(TaskReminderScheduler.isWithinQuietHours(currentHour = 14, quietHoursEnabled = true, startHour = 22, endHour = 7))
+        assertFalse(TaskReminderScheduler.isWithinQuietHours(currentHour = 23, quietHoursEnabled = false, startHour = 22, endHour = 7))
+    }
+
+    @Test
+    fun themeModes_includeOneDarkAndThreeLightModes() {
+        assertEquals(4, LifeOsThemeMode.entries.size)
+        assertEquals(1, LifeOsThemeMode.entries.count { it.isDark })
+        assertEquals(3, LifeOsThemeMode.entries.count { !it.isDark })
     }
 }

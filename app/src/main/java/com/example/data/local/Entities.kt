@@ -26,16 +26,16 @@ enum class RecurrencePattern(val label: String) {
 }
 
 enum class DashboardWidgetType(val title: String, val subtitle: String) {
-    TASKS("Today's Tasks", "Pending missions & quick checkoff"),
-    CALENDAR("Upcoming Events", "Timeline & next scheduled blocks"),
-    COUNTDOWN("Countdown", "Important milestones & days left"),
-    HABIT_TRACKER("Habit Tracker", "Daily consistency & streaks"),
-    STUDY_TIMER("Focus Timer", "Deep-work Pomodoro countdown"),
-    PRODUCTIVITY_SCORE("Productivity Score", "Live daily execution rating"),
-    XP_TRACKER("XP & Level", "Level progress & next milestone"),
-    DIGITAL_PET("Digital Companion", "Mood, energy & stage status"),
-    QUICK_NOTES("Quick Notes", "Instant scratchpad synced locally"),
-    DAILY_STATS("Daily Statistics", "Completed tasks, focus & screen time")
+    TASKS("Today's Tasks", "Pending tasks and quick check-off"),
+    CALENDAR("Upcoming Schedule", "Timeline and next scheduled blocks"),
+    COUNTDOWN("Countdowns", "Upcoming milestones and days left"),
+    HABIT_TRACKER("Habit Tracker", "Daily consistency and streaks"),
+    STUDY_TIMER("Focus Timer", "Deep-work timer countdown"),
+    PRODUCTIVITY_SCORE("Productivity Score", "Live daily execution score"),
+    XP_TRACKER("XP & Level", "Level progress and next milestone"),
+    DIGITAL_PET("Companion", "Mood, energy, and daily status"),
+    QUICK_NOTES("Quick Notes", "Instant scratchpad saved locally"),
+    DAILY_STATS("Daily Summary", "Tasks completed, focus, and screen time")
 }
 
 enum class AppUsageCategory(val label: String) {
@@ -84,7 +84,9 @@ data class TaskEntity(
     val completedAtMillis: Long? = null,
     val xpReward: Int = 35,
     val xpAwarded: Boolean = false,
-    val createdAtMillis: Long = System.currentTimeMillis()
+    val createdAtMillis: Long = System.currentTimeMillis(),
+    val distractionMinutes: Int = 0,
+    val focusMinutesSpent: Int = 0
 ) {
     val priority: TaskPriority
         get() = TaskPriority.entries.firstOrNull { it.name == priorityName } ?: TaskPriority.MEDIUM
@@ -161,6 +163,15 @@ data class AppUsageLogEntity(
         get() = AppUsageCategory.entries.firstOrNull { it.name == categoryName } ?: AppUsageCategory.UTILITY
 }
 
+@Entity(tableName = "daily_progress_logs")
+data class DailyProgressLogEntity(
+    @PrimaryKey val epochDay: Long,
+    val focusMinutes: Int = 0,
+    val xpEarned: Int = 0,
+    val tasksCompleted: Int = 0,
+    val distractingMinutes: Int = 0
+)
+
 @Entity(tableName = "challenges")
 data class ChallengeEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -185,7 +196,7 @@ data class FriendEntity(
     val focusMinutesToday: Int = 0,
     val challengesCompleted: Int = 0,
     val challengesTotal: Int = 4,
-    val petStageName: String = "Spark Wisp",
+    val petStageName: String = "Little Spark",
     val sharesStats: Boolean = true,
     val shareXp: Boolean = true,
     val shareStreaks: Boolean = true,

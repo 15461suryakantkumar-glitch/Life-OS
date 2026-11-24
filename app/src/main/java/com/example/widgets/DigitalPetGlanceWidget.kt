@@ -55,12 +55,12 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
         val prefs = withContext(Dispatchers.IO) {
             UserPreferencesRepository(context).preferencesFlow.first()
         }
-        // Render compact 120x120 companion bitmap once before provideContent()
         val petBitmap = renderDigitalPetWidgetBitmap(
             stage = prefs.petStage,
             happiness = prefs.petHappiness,
             energy = prefs.petEnergy,
-            accessory = prefs.equippedAccessory
+            accessory = prefs.equippedAccessory,
+            species = prefs.companionSpecies
         )
 
         provideContent {
@@ -85,7 +85,7 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
         ) {
             GlanceWidgetHeader(
                 title = prefs.petName,
-                badgeText = "Lv.${prefs.level} · ${prefs.petStage.title}",
+                badgeText = "Lv.${prefs.level} · ${prefs.companionSpecies.displayTitle}",
                 headerAction = openLifeOsRouteAction("growth")
             )
 
@@ -134,7 +134,7 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
                     if (isTall) {
                         Spacer(GlanceModifier.height(4.dp))
                         Text(
-                            text = "Gear: ${prefs.equippedAccessory.label}",
+                            text = "Accessory: ${prefs.equippedAccessory.label}",
                             style = TextStyle(color = LifeOsGlanceColors.InkSecondary, fontSize = 10.sp),
                             maxLines = 1
                         )
@@ -144,17 +144,16 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
 
             Spacer(GlanceModifier.height(8.dp))
 
-            // Interactive Charge & Boost actions directly on the Home Screen
             Row(modifier = GlanceModifier.fillMaxWidth()) {
                 PetActionButton(
-                    label = "⚡ Charge (+12E)",
+                    label = "Snack (+12E)",
                     actionType = "FEED",
                     accentColor = LifeOsGlanceColors.Violet,
                     modifier = GlanceModifier.defaultWeight()
                 )
                 Spacer(GlanceModifier.width(8.dp))
                 PetActionButton(
-                    label = "★ Cheer (+10M)",
+                    label = "Cheer (+10M)",
                     actionType = "PLAY",
                     accentColor = LifeOsGlanceColors.Cyan,
                     modifier = GlanceModifier.defaultWeight()

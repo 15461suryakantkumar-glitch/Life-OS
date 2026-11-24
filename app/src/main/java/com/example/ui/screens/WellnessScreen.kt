@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -34,6 +37,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -51,10 +55,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
+import com.example.data.local.TaskEntity
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.MetricTile
 import com.example.ui.components.NeonProgressBar
@@ -62,14 +69,8 @@ import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.theme.AmberWarning
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.InkMuted
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
-import com.example.ui.theme.ObsidianVoid
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
@@ -77,9 +78,13 @@ import com.example.util.DateTimeUtils
 @Composable
 fun WellnessScreen(
     state: LifeOsUiState,
-    onAddManualUsage: (String, AppUsageCategory, Int, Boolean) -> Unit,
-    onDeleteUsage: (AppUsageLogEntity) -> Unit
+    onAddManualUsage: (String, AppUsageCategory, Int, Boolean, Long?) -> Unit,
+    onDeleteUsage: (AppUsageLogEntity) -> Unit,
+    onBuildUsageAccessIntent: () -> Intent,
+    onRefreshUsageStats: () -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
+    val context = LocalContext.current
     var showLogDialog by remember { mutableStateOf(false) }
 
     val today = state.todayEpochDay
@@ -89,7 +94,6 @@ fun WellnessScreen(
     val limit = state.prefs.dailyScreenLimitMinutes.coerceAtLeast(60)
     val usageRatio = (totalToday.toFloat() / limit).coerceIn(0f, 1.5f)
 
-    // Build 7-day trend points
     val weeklyTrend = remember(state.usageLogs, today) {
         (6 downTo 0).map { daysAgo ->
             val day = today - daysAgo
@@ -98,21 +102,25 @@ fun WellnessScreen(
         }
     }
 
+    val perTaskDistractions = remember(state.tasks) {
+        state.tasks.filter { it.distractionMinutes > 0 }.sortedByDescending { it.distractionMinutes }
+    }
+
     val feedbackMessage = remember(totalToday, distractingToday, limit) {
         when {
-            totalToday > limit -> "Screen budget exceeded by ${totalToday - limit}m. Enable a 45m Focus Sprint to reset attention."
-            distractingToday > 90 -> "Distracting apps account for ${distractingToday}m today. Trim social blocks before evening study."
-            else -> "Healthy digital balance today (${DateTimeUtils.formatMinutesCompact(totalToday)} logged vs ${DateTimeUtils.formatMinutesCompact(limit)} budget)."
+            totalToday > limit -> "Daily screen budget exceeded by ${totalToday - limit}m. Try a 45m Focus Sprint to reset."
+            distractingToday > 90 -> "Distracting apps took ${distractingToday}m today. Trim social breaks during study hours."
+            else -> "Healthy screen balance today (${DateTimeUtils.formatMinutesCompact(totalToday)} logged vs ${DateTimeUtils.formatMinutesCompact(limit)} budget)."
         }
     }
 
     Scaffold(
-        containerColor = ObsidianVoid,
+        containerColor = tokens.background,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { showLogDialog = true },
                 containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = ObsidianVoid,
+                contentColor = Color.White,
                 modifier = Modifier.testTag("add_usage_fab")
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Log App Usage")
@@ -125,26 +133,62 @@ fun WellnessScreen(
                 .padding(innerPadding)
                 .testTag("wellness_screen"),
             contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Digital Wellness", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
-                Text("Screen time telemetry, distraction audits & weekly trends", style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                Text("Digital Wellbeing", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+                Text("Real UsageStats sync, distraction audits & weekly trends", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
             }
 
-            // Architecture transparency banner (Manual/Sample vs OS UsageStats)
+            // OS UsageStats Permission & Sync Banner
             item {
-                ObsidianCard(borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)) {
+                ObsidianCard(
+                    borderColor = if (state.hasUsageStatsPermission) EmeraldSuccess.copy(alpha = 0.5f) else MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                        Icon(
+                            imageVector = if (state.hasUsageStatsPermission) Icons.Filled.Shield else Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = if (state.hasUsageStatsPermission) EmeraldSuccess else MaterialTheme.colorScheme.secondary
+                        )
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(state.usageStatsStatusLabel, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                            Text(state.usageStatsStatusLabel, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                             Text(
-                                "Using manual on-device logs. Architecture is wired to AndroidUsageStatsBridge for optional OS UsageStats opt-in.",
+                                text = if (state.hasUsageStatsPermission) {
+                                    "Android Usage Access is active. Pull real app usage anytime."
+                                } else {
+                                    "Grant Usage Access in Android Settings for automatic screen-time sync, or log apps manually anytime."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = InkSecondary
+                                color = tokens.inkSecondary
                             )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!state.hasUsageStatsPermission) {
+                            Button(
+                                onClick = {
+                                    runCatching { context.startActivity(onBuildUsageAccessIntent()) }
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(38.dp).testTag("grant_usage_access_btn")
+                            ) {
+                                Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Grant Usage Access", maxLines = 1, softWrap = false)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = onRefreshUsageStats,
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                modifier = Modifier.height(38.dp).testTag("sync_usage_stats_btn")
+                            ) {
+                                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Sync OS Stats", maxLines = 1, softWrap = false)
+                            }
                         }
                     }
                 }
@@ -159,25 +203,25 @@ fun WellnessScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Today's Screen Time", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                            Text("Today's Screen Time", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                             Text(
                                 text = DateTimeUtils.formatMinutesCompact(totalToday),
                                 style = MaterialTheme.typography.displayMedium,
-                                color = InkPrimary
+                                color = tokens.inkPrimary
                             )
                         }
                         StatusPill(
-                            text = if (totalToday > limit) "OVER LIMIT" else "WITHIN BUDGET",
+                            text = if (totalToday > limit) "OVER BUDGET" else "WITHIN BUDGET",
                             color = if (totalToday > limit) RoseAlert else EmeraldSuccess
                         )
                     }
                     Spacer(Modifier.height(10.dp))
                     NeonProgressBar(progress = usageRatio.coerceAtMost(1f))
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Daily budget: ${DateTimeUtils.formatMinutesCompact(limit)} · Productive vs Distracting split",
+                        text = "Daily budget: ${DateTimeUtils.formatMinutesCompact(limit)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = InkSecondary
+                        color = tokens.inkSecondary
                     )
                 }
             }
@@ -204,20 +248,59 @@ fun WellnessScreen(
                 }
             }
 
-            // Wellness Feedback
             item {
                 ObsidianCard(elevated = true) {
-                    Text("Wellness Feedback", style = MaterialTheme.typography.titleMedium, color = InkPrimary)
+                    Text("Wellbeing Summary", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                     Spacer(Modifier.height(4.dp))
-                    Text(feedbackMessage, style = MaterialTheme.typography.bodyMedium, color = InkSecondary)
+                    Text(feedbackMessage, style = MaterialTheme.typography.bodyMedium, color = tokens.inkSecondary)
+                }
+            }
+
+            // Per-Task Distraction Summary
+            if (perTaskDistractions.isNotEmpty()) {
+                item {
+                    ObsidianCard {
+                        SectionHeader(
+                            title = "Per-Task Distraction",
+                            subtitle = "Distraction minutes linked to specific tasks"
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        val maxDist = perTaskDistractions.maxOf { it.distractionMinutes }.coerceAtLeast(15).toFloat()
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            perTaskDistractions.take(5).forEach { task ->
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = task.title,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = tokens.inkPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "${task.distractionMinutes}m",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = RoseAlert
+                                        )
+                                    }
+                                    Spacer(Modifier.height(3.dp))
+                                    NeonProgressBar(progress = task.distractionMinutes / maxDist, heightDp = 5)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
             // 7-Day Usage Trend Chart
             item {
                 ObsidianCard {
-                    SectionHeader(title = "7-Day Usage Trend", subtitle = "Daily total minutes (tap + to log)")
-                    Spacer(Modifier.height(14.dp))
+                    SectionHeader(title = "7-Day Screen Trend", subtitle = "Daily total minutes")
+                    Spacer(Modifier.height(12.dp))
                     val primary = MaterialTheme.colorScheme.primary
                     val secondary = MaterialTheme.colorScheme.secondary
                     val maxVal = (weeklyTrend.maxOfOrNull { it.second } ?: 180).coerceAtLeast(limit).toFloat()
@@ -225,7 +308,7 @@ fun WellnessScreen(
                     Canvas(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(130.dp)
+                            .height(120.dp)
                     ) {
                         val barCount = weeklyTrend.size
                         val slotWidth = size.width / barCount
@@ -239,7 +322,7 @@ fun WellnessScreen(
                             drawRoundRect(
                                 brush = Brush.verticalGradient(
                                     when {
-                                        mins <= 0 -> listOf(BorderHairline, BorderHairline)
+                                        mins <= 0 -> listOf(tokens.borderSubtle, tokens.borderSubtle)
                                         isOver -> listOf(RoseAlert, AmberWarning)
                                         else -> listOf(secondary, primary)
                                     }
@@ -257,23 +340,22 @@ fun WellnessScreen(
                                 modifier = Modifier.weight(1f),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text(dayLabel, style = MaterialTheme.typography.labelSmall, color = InkSecondary)
-                                Text("${mins}m", style = MaterialTheme.typography.labelSmall, color = InkMuted)
+                                Text(dayLabel, style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                                Text("${mins}m", style = MaterialTheme.typography.labelSmall, color = tokens.inkMuted)
                             }
                         }
                     }
                 }
             }
 
-            // Most-Used & Distracting Apps Breakdown
             item {
-                SectionHeader(title = "Today's Application Breakdown", subtitle = "Manual entries")
+                SectionHeader(title = "Today's App Breakdown", subtitle = if (state.hasUsageStatsPermission) "OS + manual entries" else "Manual entries")
             }
 
             if (todayLogs.isEmpty()) {
                 item {
                     ObsidianCard {
-                        Text("No app sessions logged today. Tap + to record screen time.", style = MaterialTheme.typography.bodyMedium, color = InkSecondary)
+                        Text("No app sessions logged today. Tap + to record usage or grant Usage Access above.", style = MaterialTheme.typography.bodyMedium, color = tokens.inkSecondary)
                     }
                 }
             } else {
@@ -286,8 +368,8 @@ fun WellnessScreen(
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (log.isDistracting) RoseAlert.copy(alpha = 0.18f) else CharcoalElevated),
+                                    .clip(RoundedCornerShape(tokens.smallRadius))
+                                    .background(if (log.isDistracting) RoseAlert.copy(alpha = 0.16f) else tokens.surfaceElevated),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -298,9 +380,9 @@ fun WellnessScreen(
                             }
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(log.appName, style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                                Text(log.appName, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text(log.category.label, style = MaterialTheme.typography.bodySmall, color = InkSecondary)
+                                    Text(log.category.label, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                     if (log.isDistracting) {
                                         Text("· Distracting", style = MaterialTheme.typography.bodySmall, color = RoseAlert)
                                     }
@@ -309,10 +391,10 @@ fun WellnessScreen(
                             Text(
                                 text = DateTimeUtils.formatMinutesCompact(log.minutesUsed),
                                 style = MaterialTheme.typography.titleMedium,
-                                color = InkPrimary
+                                color = tokens.inkPrimary
                             )
                             IconButton(onClick = { onDeleteUsage(log) }) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = "Remove log", tint = InkMuted)
+                                Icon(Icons.Filled.DeleteOutline, contentDescription = "Remove entry", tint = tokens.inkMuted)
                             }
                         }
                     }
@@ -325,9 +407,10 @@ fun WellnessScreen(
 
     if (showLogDialog) {
         LogUsageDialog(
+            pendingTasks = state.tasks.filter { !it.isCompleted },
             onDismiss = { showLogDialog = false },
-            onSave = { name, cat, mins, distracting ->
-                onAddManualUsage(name, cat, mins, distracting)
+            onSave = { name, cat, mins, distracting, linkedTaskId ->
+                onAddManualUsage(name, cat, mins, distracting, linkedTaskId)
                 showLogDialog = false
             }
         )
@@ -336,24 +419,27 @@ fun WellnessScreen(
 
 @Composable
 private fun LogUsageDialog(
+    pendingTasks: List<TaskEntity>,
     onDismiss: () -> Unit,
-    onSave: (String, AppUsageCategory, Int, Boolean) -> Unit
+    onSave: (String, AppUsageCategory, Int, Boolean, Long?) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var appName by remember { mutableStateOf("") }
-    var minutesText by remember { mutableStateOf("30") }
+    var minutesText by remember { mutableStateOf("25") }
     var category by remember { mutableStateOf(AppUsageCategory.PRODUCTIVE) }
     var isDistracting by remember { mutableStateOf(false) }
+    var linkedTaskId by remember { mutableStateOf<Long?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBase,
-        title = { Text("Log App Screen Time") },
+        containerColor = tokens.surfaceBase,
+        title = { Text("Log App Screen Time", color = tokens.inkPrimary) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = appName,
                     onValueChange = { appName = it },
-                    label = { Text("App name (e.g. Obsidian, YouTube)") },
+                    label = { Text("App name (e.g. YouTube, Notion)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("usage_app_name_input")
                 )
@@ -375,20 +461,47 @@ private fun LogUsageDialog(
                                 category = c
                                 isDistracting = c == AppUsageCategory.SOCIAL || c == AppUsageCategory.ENTERTAINMENT
                             },
-                            label = { Text(c.label) }
+                            label = { Text(c.label, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = isDistracting, onCheckedChange = { isDistracting = it })
-                    Text("Mark as distracting app", style = MaterialTheme.typography.bodySmall, color = InkPrimary)
+                    Text("Mark as distracting app", style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary)
+                }
+                if (isDistracting && pendingTasks.isNotEmpty()) {
+                    Text("Link distraction to task (optional)", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        FilterChip(
+                            selected = linkedTaskId == null,
+                            onClick = { linkedTaskId = null },
+                            label = { Text("None", maxLines = 1, softWrap = false) }
+                        )
+                        pendingTasks.take(5).forEach { task ->
+                            FilterChip(
+                                selected = linkedTaskId == task.id,
+                                onClick = { linkedTaskId = task.id },
+                                label = {
+                                    Text(
+                                        text = task.title,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
             }
         },
         confirmButton = {
             val mins = minutesText.toIntOrNull() ?: 0
             Button(
-                onClick = { onSave(appName, category, mins, isDistracting) },
+                onClick = { onSave(appName, category, mins, isDistracting, linkedTaskId) },
                 enabled = appName.isNotBlank() && mins > 0
             ) { Text("Log") }
         },

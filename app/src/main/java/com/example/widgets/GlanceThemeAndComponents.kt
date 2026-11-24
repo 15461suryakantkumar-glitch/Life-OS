@@ -37,6 +37,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.example.MainActivity
 import com.example.R
+import com.example.data.local.CompanionSpecies
 import com.example.data.local.PetAccessory
 import com.example.data.local.PetGrowthStage
 import com.example.data.local.TaskPriority
@@ -146,153 +147,178 @@ fun GlanceWidgetHeader(
 }
 
 /**
- * Renders a compact 120x120px geometric Digital Companion bitmap before provideContent()
- * so RemoteViews memory stays tiny (~57KB) while preserving stage & accessory visual polish.
+ * Renders a compact 120x120px soft-3D appointed Companion bitmap before provideContent()
+ * so RemoteViews memory stays tiny while preserving species, mood & accessory visual polish.
  */
 fun renderDigitalPetWidgetBitmap(
     stage: PetGrowthStage,
     happiness: Int,
     energy: Int,
-    accessory: PetAccessory
+    accessory: PetAccessory,
+    species: CompanionSpecies = CompanionSpecies.MOCHI_BEAR
 ): Bitmap {
     val sizePx = 120
     val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val cx = sizePx / 2f
-    val cy = sizePx / 2f + 4f
+    val cy = sizePx * 0.54f
 
-    val violet = 0xFF8B5CF6.toInt()
-    val cyan = 0xFF22D3EE.toInt()
-    val amber = 0xFFF59E0B.toInt()
+    val (highlightCol, baseCol, shadowCol, earInnerCol, creamCol) = when (species) {
+        CompanionSpecies.MOCHI_BEAR -> intArrayOf(0xFFFFF5EB.toInt(), 0xFFE7CBB3.toInt(), 0xFFC09B7C.toInt(), 0xFFFCA5A5.toInt(), 0xFFFFFBF7.toInt())
+        CompanionSpecies.PEBBLE_FOX -> intArrayOf(0xFFFDBA74.toInt(), 0xFFEA580C.toInt(), 0xFF9A3412.toInt(), 0xFFFFEDD5.toInt(), 0xFFFFF7ED.toInt())
+        CompanionSpecies.BOBA_OTTER -> intArrayOf(0xFFD6B59C.toInt(), 0xFF9C7254.toInt(), 0xFF6B4830.toInt(), 0xFFFCE7D6.toInt(), 0xFFF7E5D5.toInt())
+        CompanionSpecies.PIP_OWL -> intArrayOf(0xFFA7F3D0.toInt(), 0xFF4F8A7B.toInt(), 0xFF28594E.toInt(), 0xFFD1FAE5.toInt(), 0xFFECFDF5.toInt())
+    }
 
-    // Aura glow
+    // Soft studio glow behind companion
     val auraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         shader = RadialGradient(
             cx, cy, sizePx * 0.48f,
-            intArrayOf(0x558B5CF6, 0x2222D3EE, 0x00000000),
+            intArrayOf(0x4410B981, 0x2238BDF8, 0x00000000),
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP
         )
     }
     canvas.drawCircle(cx, cy, sizePx * 0.48f, auraPaint)
 
-    // Stage 2+ orbital ring
-    if (stage.ordinal >= PetGrowthStage.PRISM.ordinal || accessory == PetAccessory.ORBITAL_HALO) {
-        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Ears behind head
+    val earPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = baseCol }
+    val innerEarPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = earInnerCol }
+    when (species) {
+        CompanionSpecies.PEBBLE_FOX -> {
+            val lEar = Path().apply {
+                moveTo(cx - 8f, cy - 22f)
+                lineTo(cx - 30f, cy - 44f)
+                lineTo(cx - 30f, cy - 10f)
+                close()
+            }
+            val rEar = Path().apply {
+                moveTo(cx + 8f, cy - 22f)
+                lineTo(cx + 30f, cy - 44f)
+                lineTo(cx + 30f, cy - 10f)
+                close()
+            }
+            canvas.drawPath(lEar, earPaint)
+            canvas.drawPath(rEar, earPaint)
+        }
+        CompanionSpecies.PIP_OWL -> {
+            earPaint.color = shadowCol
+            val lTuft = Path().apply {
+                moveTo(cx - 12f, cy - 24f)
+                lineTo(cx - 28f, cy - 38f)
+                lineTo(cx - 22f, cy - 14f)
+                close()
+            }
+            val rTuft = Path().apply {
+                moveTo(cx + 12f, cy - 24f)
+                lineTo(cx + 28f, cy - 38f)
+                lineTo(cx + 22f, cy - 14f)
+                close()
+            }
+            canvas.drawPath(lTuft, earPaint)
+            canvas.drawPath(rTuft, earPaint)
+        }
+        else -> {
+            val rEar = sizePx * 0.11f
+            canvas.drawCircle(cx - 24f, cy - 26f, rEar, earPaint)
+            canvas.drawCircle(cx + 24f, cy - 26f, rEar, earPaint)
+            canvas.drawCircle(cx - 24f, cy - 26f, rEar * 0.55f, innerEarPaint)
+            canvas.drawCircle(cx + 24f, cy - 26f, rEar * 0.55f, innerEarPaint)
+        }
+    }
+
+    // Soft-3D round head
+    val headR = sizePx * 0.30f
+    val headPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        shader = RadialGradient(
+            cx - headR * 0.3f, cy - headR * 0.35f, headR * 1.6f,
+            intArrayOf(highlightCol, baseCol, shadowCol),
+            floatArrayOf(0f, 0.58f, 1f),
+            Shader.TileMode.CLAMP
+        )
+    }
+    canvas.drawCircle(cx, cy, headR, headPaint)
+
+    // Muzzle / facial patch
+    val creamPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = creamCol }
+    if (species == CompanionSpecies.PIP_OWL) {
+        canvas.drawCircle(cx - headR * 0.32f, cy - 2f, headR * 0.40f, creamPaint)
+        canvas.drawCircle(cx + headR * 0.32f, cy - 2f, headR * 0.40f, creamPaint)
+    } else {
+        canvas.drawOval(
+            RectF(cx - headR * 0.42f, cy + headR * 0.04f, cx + headR * 0.42f, cy + headR * 0.60f),
+            creamPaint
+        )
+    }
+
+    // Eyes & cheeks
+    val inkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF1E293B.toInt() }
+    val blushPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x99FB7185.toInt() }
+    val eyeY = cy - headR * 0.08f
+    val eyeOff = headR * 0.36f
+    canvas.drawOval(RectF(cx - headR * 0.66f, cy + headR * 0.14f, cx - headR * 0.36f, cy + headR * 0.32f), blushPaint)
+    canvas.drawOval(RectF(cx + headR * 0.36f, cy + headR * 0.14f, cx + headR * 0.66f, cy + headR * 0.32f), blushPaint)
+
+    if (energy < 35) {
+        val sleepPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF1E293B.toInt()
+            strokeWidth = 3f
             style = Paint.Style.STROKE
-            strokeWidth = 2.5f
-            color = 0x9922D3EE.toInt()
+            strokeCap = Paint.Cap.ROUND
         }
-        canvas.drawCircle(cx, cy, sizePx * 0.40f, ringPaint)
+        canvas.drawLine(cx - eyeOff - 5f, eyeY, cx - eyeOff + 5f, eyeY, sleepPaint)
+        canvas.drawLine(cx + eyeOff - 5f, eyeY, cx + eyeOff + 5f, eyeY, sleepPaint)
+    } else {
+        canvas.drawCircle(cx - eyeOff, eyeY, headR * 0.14f, inkPaint)
+        canvas.drawCircle(cx + eyeOff, eyeY, headR * 0.14f, inkPaint)
+        val shinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() }
+        canvas.drawCircle(cx - eyeOff - 2f, eyeY - 2f, headR * 0.05f, shinePaint)
+        canvas.drawCircle(cx + eyeOff - 2f, eyeY - 2f, headR * 0.05f, shinePaint)
     }
 
-    // Ears
-    val earSpread = sizePx * 0.19f
-    val earHeight = sizePx * 0.22f
-    val earFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = 0xFF1F2435.toInt()
-    }
-    val earStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2f
-        color = violet
-    }
-    val leftEar = Path().apply {
-        moveTo(cx - earSpread * 0.35f, cy - sizePx * 0.14f)
-        lineTo(cx - earSpread, cy - sizePx * 0.14f - earHeight)
-        lineTo(cx - earSpread * 1.1f, cy - sizePx * 0.02f)
-        close()
-    }
-    val rightEar = Path().apply {
-        moveTo(cx + earSpread * 0.35f, cy - sizePx * 0.14f)
-        lineTo(cx + earSpread, cy - sizePx * 0.14f - earHeight)
-        lineTo(cx + earSpread * 1.1f, cy - sizePx * 0.02f)
-        close()
-    }
-    canvas.drawPath(leftEar, earFill)
-    canvas.drawPath(rightEar, earFill)
-    canvas.drawPath(leftEar, earStroke)
-    earStroke.color = cyan
-    canvas.drawPath(rightEar, earStroke)
-
-    // Faceted Obsidian Head
-    val bodyR = sizePx * 0.24f
-    val headPath = Path().apply {
-        moveTo(cx, cy - bodyR * 0.95f)
-        lineTo(cx + bodyR * 0.95f, cy - bodyR * 0.25f)
-        lineTo(cx + bodyR * 0.72f, cy + bodyR * 0.72f)
-        lineTo(cx, cy + bodyR * 1.02f)
-        lineTo(cx - bodyR * 0.72f, cy + bodyR * 0.72f)
-        lineTo(cx - bodyR * 0.95f, cy - bodyR * 0.25f)
-        close()
-    }
-    val headFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        shader = LinearGradient(cx, cy - bodyR, cx, cy + bodyR, 0xFF171B28.toInt(), 0xFF0A0C12.toInt(), Shader.TileMode.CLAMP)
-    }
-    val headStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2.6f
-        shader = LinearGradient(cx - bodyR, cy, cx + bodyR, cy, violet, cyan, Shader.TileMode.CLAMP)
-    }
-    canvas.drawPath(headPath, headFill)
-    canvas.drawPath(headPath, headStroke)
-
-    // Cyber Scarf
-    if (accessory == PetAccessory.CYBER_SCARF) {
-        val scarfPath = Path().apply {
-            moveTo(cx - bodyR * 0.7f, cy + bodyR * 0.74f)
-            lineTo(cx + bodyR * 0.7f, cy + bodyR * 0.74f)
-            lineTo(cx + bodyR * 0.45f, cy + bodyR * 1.12f)
-            lineTo(cx - bodyR * 0.45f, cy + bodyR * 1.12f)
+    // Nose or beak
+    if (species == CompanionSpecies.PIP_OWL) {
+        val beakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFF59E0B.toInt() }
+        val beak = Path().apply {
+            moveTo(cx - 4f, cy + 3f)
+            lineTo(cx + 4f, cy + 3f)
+            lineTo(cx, cy + 10f)
             close()
         }
-        val scarfPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            shader = LinearGradient(cx - bodyR, cy, cx + bodyR, cy, cyan, violet, Shader.TileMode.CLAMP)
+        canvas.drawPath(beak, beakPaint)
+    } else {
+        canvas.drawOval(RectF(cx - 4f, cy + 3f, cx + 4f, cy + 8f), inkPaint)
+    }
+
+    // Accessories
+    when (accessory) {
+        PetAccessory.HOLO_VISOR -> {
+            val shadePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xEE1E293B.toInt() }
+            canvas.drawRoundRect(RectF(cx - headR * 0.62f, eyeY - 6f, cx - 2f, eyeY + 6f), 5f, 5f, shadePaint)
+            canvas.drawRoundRect(RectF(cx + 2f, eyeY - 6f, cx + headR * 0.62f, eyeY + 6f), 5f, 5f, shadePaint)
         }
-        canvas.drawPath(scarfPath, scarfPaint)
-    }
-
-    // Glowing Eyes
-    val eyeY = cy - bodyR * 0.05f
-    val eyeOff = bodyR * 0.36f
-    val eyeRy = if (energy >= 35) bodyR * 0.18f else bodyR * 0.07f
-    val eyePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (happiness >= 60) cyan else violet
-    }
-    canvas.drawOval(RectF(cx - eyeOff - bodyR * 0.16f, eyeY - eyeRy, cx - eyeOff + bodyR * 0.16f, eyeY + eyeRy), eyePaint)
-    canvas.drawOval(RectF(cx + eyeOff - bodyR * 0.16f, eyeY - eyeRy, cx + eyeOff + bodyR * 0.16f, eyeY + eyeRy), eyePaint)
-
-    // Holo Visor
-    if (accessory == PetAccessory.HOLO_VISOR) {
-        val visorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0x6622D3EE
+        PetAccessory.ASTRAL_CROWN -> {
+            val crownPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(cx - 14f, cy - headR, cx + 14f, cy - headR, 0xFFF59E0B.toInt(), 0xFFFDE047.toInt(), Shader.TileMode.CLAMP)
+            }
+            val crownY = cy - headR - 1f
+            val crown = Path().apply {
+                moveTo(cx - 14f, crownY + 4f)
+                lineTo(cx - 10f, crownY - 9f)
+                lineTo(cx, crownY - 2f)
+                lineTo(cx + 10f, crownY - 9f)
+                lineTo(cx + 14f, crownY + 4f)
+                close()
+            }
+            canvas.drawPath(crown, crownPaint)
         }
-        val visorRect = RectF(cx - bodyR * 0.78f, eyeY - bodyR * 0.24f, cx + bodyR * 0.78f, eyeY + bodyR * 0.22f)
-        canvas.drawRoundRect(visorRect, 6f, 6f, visorPaint)
-    }
-
-    // Astral Crown
-    if (accessory == PetAccessory.ASTRAL_CROWN) {
-        val crownY = cy - bodyR * 1.08f
-        val crown = Path().apply {
-            moveTo(cx - bodyR * 0.45f, crownY + bodyR * 0.15f)
-            lineTo(cx - bodyR * 0.35f, crownY - bodyR * 0.28f)
-            lineTo(cx, crownY - bodyR * 0.05f)
-            lineTo(cx + bodyR * 0.35f, crownY - bodyR * 0.28f)
-            lineTo(cx + bodyR * 0.45f, crownY + bodyR * 0.15f)
-            close()
+        PetAccessory.ORBITAL_HALO -> {
+            val leafPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF10B981.toInt() }
+            canvas.drawOval(RectF(cx - 12f, cy - headR - 10f, cx, cy - headR - 2f), leafPaint)
+            canvas.drawOval(RectF(cx, cy - headR - 11f, cx + 12f, cy - headR - 3f), leafPaint)
         }
-        val crownPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = amber }
-        canvas.drawPath(crown, crownPaint)
+        else -> Unit
     }
-
-    // Core gem
-    val gemPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = if (stage.ordinal >= PetGrowthStage.SENTINEL.ordinal) amber else cyan
-    }
-    canvas.drawCircle(cx, cy - bodyR * 0.48f, bodyR * 0.11f, gemPaint)
 
     return bitmap
 }

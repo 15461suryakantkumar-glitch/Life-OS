@@ -2,35 +2,77 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Deep Obsidian & Charcoal Surfaces (Linear / Arc / Raycast inspired)
-val ObsidianVoid = Color(0xFF06070B)
-val ObsidianBase = Color(0xFF0A0C12)
-val CharcoalSurface = Color(0xFF11141E)
-val CharcoalElevated = Color(0xFF171B28)
-val CharcoalHighlight = Color(0xFF1F2435)
-val BorderHairline = Color(0xFF262C40)
-val BorderGlow = Color(0xFF3A3F5C)
+// 1. Midnight Aurora (Dark)
+val AuroraVoid = Color(0xFF070911)
+val AuroraBase = Color(0xFF0D111C)
+val AuroraCard = Color(0xFF131826)
+val AuroraElevated = Color(0xFF1A2033)
+val AuroraHighlight = Color(0xFF232A42)
+val AuroraBorder = Color(0xFF28304A)
+val AuroraBorderGlow = Color(0xFF424D73)
+val AuroraPrimary = Color(0xFF8B5CF6)
+val AuroraSecondary = Color(0xFF22D3EE)
+val AuroraInkPrimary = Color(0xFFF8FAFC)
+val AuroraInkSecondary = Color(0xFFA0AEC0)
+val AuroraInkMuted = Color(0xFF64748B)
 
-// Electric Violet & Cyan Accents
-val ElectricViolet = Color(0xFF8B5CF6)
-val ElectricVioletDeep = Color(0xFF6D28D9)
-val ElectricVioletSoft = Color(0xFFC4B5FD)
-val ElectricCyan = Color(0xFF22D3EE)
-val ElectricCyanDeep = Color(0xFF0891B2)
-val ElectricCyanSoft = Color(0xFFA5F3FC)
+// 2. Alabaster Cloud (Light Mode 1 - Airy crisp minimalist)
+val AlabasterBg = Color(0xFFF5F7FB)
+val AlabasterBase = Color(0xFFFFFFFF)
+val AlabasterCard = Color(0xFFFFFFFF)
+val AlabasterElevated = Color(0xFFEEF2F8)
+val AlabasterHighlight = Color(0xFFE2E8F2)
+val AlabasterBorder = Color(0xFFDDE4F0)
+val AlabasterBorderGlow = Color(0xFFBFCBE0)
+val AlabasterPrimary = Color(0xFF3B5BDB)
+val AlabasterSecondary = Color(0xFF0CA678)
+val AlabasterInkPrimary = Color(0xFF0F172A)
+val AlabasterInkSecondary = Color(0xFF475569)
+val AlabasterInkMuted = Color(0xFF64748B)
 
-// Alternative Accent Presets (selectable in Settings)
-val AuroraTeal = Color(0xFF14B8A6)
-val AuroraPink = Color(0xFFEC4899)
-val CyberBlue = Color(0xFF3B82F6)
-val CyberIndigo = Color(0xFF6366F1)
+// 3. Matcha Mist (Light Mode 2 - Botanical studio calm)
+val MatchaBg = Color(0xFFF1F6F0)
+val MatchaBase = Color(0xFFF9FCF8)
+val MatchaCard = Color(0xFFFAFCF9)
+val MatchaElevated = Color(0xFFE4EDE2)
+val MatchaHighlight = Color(0xFFD7E4D4)
+val MatchaBorder = Color(0xFFC5D7C2)
+val MatchaBorderGlow = Color(0xFF9AB896)
+val MatchaPrimary = Color(0xFF2D6A4F)
+val MatchaSecondary = Color(0xFFB4690E)
+val MatchaInkPrimary = Color(0xFF13261B)
+val MatchaInkSecondary = Color(0xFF3E5648)
+val MatchaInkMuted = Color(0xFF5F7567)
 
-// Semantic Status Colors
+// 4. Warm Linen (Light Mode 3 - Editorial paper & terracotta)
+val LinenBg = Color(0xFFFAF5EC)
+val LinenBase = Color(0xFFFFFDF9)
+val LinenCard = Color(0xFFFFFDF8)
+val LinenElevated = Color(0xFFF2E9DA)
+val LinenHighlight = Color(0xFFE9DEC9)
+val LinenBorder = Color(0xFFE2D3BE)
+val LinenBorderGlow = Color(0xFFC9B393)
+val LinenPrimary = Color(0xFFC2410C)
+val LinenSecondary = Color(0xFFB45309)
+val LinenInkPrimary = Color(0xFF2A1D13)
+val LinenInkSecondary = Color(0xFF5E4A3A)
+val LinenInkMuted = Color(0xFF826D5D)
+
+// Semantic Status Colors (shared across themes with legible contrast)
 val EmeraldSuccess = Color(0xFF10B981)
-val AmberWarning = Color(0xFFF59E0B)
-val RoseAlert = Color(0xFFF43F5E)
+val AmberWarning = Color(0xFFD97706)
+val RoseAlert = Color(0xFFE11D48)
 
-// Typography Ink Tokens
-val InkPrimary = Color(0xFFF8FAFC)
-val InkSecondary = Color(0xFF94A3B8)
-val InkMuted = Color(0xFF64748B)
+// Legacy compatibility references for non-composable callers
+val ObsidianVoid = AuroraVoid
+val ObsidianBase = AuroraBase
+val CharcoalSurface = AuroraCard
+val CharcoalElevated = AuroraElevated
+val CharcoalHighlight = AuroraHighlight
+val BorderHairline = AuroraBorder
+val BorderGlow = AuroraBorderGlow
+val ElectricViolet = AuroraPrimary
+val ElectricCyan = AuroraSecondary
+val InkPrimary = AuroraInkPrimary
+val InkSecondary = AuroraInkSecondary
+val InkMuted = AuroraInkMuted

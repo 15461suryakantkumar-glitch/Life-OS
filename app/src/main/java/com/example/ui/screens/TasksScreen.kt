@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
@@ -52,6 +53,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -61,7 +63,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,14 +89,8 @@ import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
-import com.example.ui.theme.BorderHairline
-import com.example.ui.theme.CharcoalElevated
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.InkMuted
-import com.example.ui.theme.InkPrimary
-import com.example.ui.theme.InkSecondary
-import com.example.ui.theme.ObsidianBase
-import com.example.ui.theme.ObsidianVoid
+import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 
@@ -106,12 +101,14 @@ fun TasksScreen(
     onConsumeCreateDialogFlag: () -> Unit,
     onToggleTask: (TaskEntity) -> Unit,
     onSaveTask: (Long?, Long, String, String, TaskPriority, TaskCategory, Long, RecurrencePattern) -> Unit,
+    onLogTaskDistraction: (TaskEntity, Int) -> Unit,
     onDeleteTask: (TaskEntity) -> Unit,
     onAddSection: (String) -> Unit,
     onRenameSection: (TaskSectionEntity, String) -> Unit,
     onDeleteSection: (TaskSectionEntity) -> Unit,
     onQuickAddTaskInSection: (Long, String) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
     var showSectionCreator by remember { mutableStateOf(false) }
     var newSectionName by remember { mutableStateOf("") }
@@ -170,7 +167,7 @@ fun TasksScreen(
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(ObsidianVoid)
+            .background(tokens.background)
             .testTag("tasks_screen"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -183,11 +180,11 @@ fun TasksScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Tasks", style = MaterialTheme.typography.headlineLarge, color = InkPrimary)
+                    Text("Tasks", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
                     Text(
-                        "Organize permanent sections & add tasks inline",
+                        text = "Organize sections & add tasks inline",
                         style = MaterialTheme.typography.bodySmall,
-                        color = InkSecondary
+                        color = tokens.inkSecondary
                     )
                 }
                 Spacer(Modifier.width(8.dp))
@@ -212,7 +209,7 @@ fun TasksScreen(
             }
         }
 
-        // Inline Section Creator Bar (no popup)
+        // Inline Section Creator Bar
         item {
             AnimatedVisibility(
                 visible = showSectionCreator,
@@ -247,9 +244,9 @@ fun TasksScreen(
                             keyboardActions = KeyboardActions(onDone = { submitNewSection() }),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                                unfocusedBorderColor = BorderHairline,
-                                focusedTextColor = InkPrimary,
-                                unfocusedTextColor = InkPrimary
+                                unfocusedBorderColor = tokens.borderSubtle,
+                                focusedTextColor = tokens.inkPrimary,
+                                unfocusedTextColor = tokens.inkPrimary
                             ),
                             modifier = Modifier
                                 .weight(1f)
@@ -272,7 +269,7 @@ fun TasksScreen(
             }
         }
 
-        // Compact Progress & Filter Strip
+        // Compact Progress Strip
         item {
             ObsidianCard(elevated = true, contentPadding = PaddingValues(12.dp)) {
                 Row(
@@ -281,11 +278,11 @@ fun TasksScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Task Progress", style = MaterialTheme.typography.titleSmall, color = InkPrimary)
+                        Text("Task Progress", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                         Text(
                             text = if (filteredTasks.isEmpty()) "No tasks yet" else "$doneCount of ${filteredTasks.size} completed",
                             style = MaterialTheme.typography.bodySmall,
-                            color = InkSecondary
+                            color = tokens.inkSecondary
                         )
                     }
                     Text(
@@ -321,7 +318,7 @@ fun TasksScreen(
                 EmptyStateCard(
                     icon = Icons.Filled.FolderOpen,
                     title = "No sections yet",
-                    subtitle = "Create permanent subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
+                    subtitle = "Create subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
                     actionLabel = "Create First Section",
                     onAction = { showSectionCreator = true },
                     modifier = Modifier.testTag("tasks_empty_state")
@@ -376,12 +373,15 @@ fun TasksScreen(
         item { Spacer(Modifier.height(24.dp)) }
     }
 
-    // Optional edit task dialog (only when tapping edit pencil on an existing task)
     editingTask?.let { task ->
         TaskEditorDialog(
             existing = task,
             todayEpochDay = today,
             onDismiss = { editingTask = null },
+            onLogDistraction = { mins ->
+                onLogTaskDistraction(task, mins)
+                editingTask = null
+            },
             onConfirm = { title, desc, priority, category, deadlineOffset, recurrence ->
                 onSaveTask(
                     task.id,
@@ -402,8 +402,8 @@ fun TasksScreen(
         var updatedName by remember(section.id) { mutableStateOf(section.name) }
         AlertDialog(
             onDismissRequest = { renamingSection = null },
-            containerColor = ObsidianBase,
-            title = { Text("Rename Section", style = MaterialTheme.typography.titleLarge) },
+            containerColor = tokens.surfaceBase,
+            title = { Text("Rename Section", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary) },
             text = {
                 OutlinedTextField(
                     value = updatedName,
@@ -432,9 +432,9 @@ fun TasksScreen(
     deletingSectionConfirm?.let { (section, taskCount) ->
         AlertDialog(
             onDismissRequest = { deletingSectionConfirm = null },
-            containerColor = ObsidianBase,
-            title = { Text("Delete \"${section.name}\"?") },
-            text = { Text("This removes the section and its $taskCount task${if (taskCount == 1) "" else "s"}.") },
+            containerColor = tokens.surfaceBase,
+            title = { Text("Delete \"${section.name}\"?", color = tokens.inkPrimary) },
+            text = { Text("This removes the section and its $taskCount task${if (taskCount == 1) "" else "s"}.", color = tokens.inkSecondary) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -465,6 +465,7 @@ private fun TaskSectionCard(
     onDeleteSection: (() -> Unit)?,
     sectionTag: String
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var inlineDraft by remember { mutableStateOf("") }
     val inlineFocusRequester = remember { FocusRequester() }
 
@@ -486,10 +487,9 @@ private fun TaskSectionCard(
 
     ObsidianCard(
         modifier = Modifier.testTag(sectionTag),
-        borderColor = if (isInlineAdding) MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f) else BorderHairline,
+        borderColor = if (isInlineAdding) MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f) else tokens.borderSubtle,
         contentPadding = PaddingValues(12.dp)
     ) {
-        // Section Header
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -504,7 +504,7 @@ private fun TaskSectionCard(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                color = InkPrimary,
+                color = tokens.inkPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -518,7 +518,7 @@ private fun TaskSectionCard(
                     Icon(
                         Icons.Filled.Edit,
                         contentDescription = "Rename section",
-                        tint = InkSecondary,
+                        tint = tokens.inkSecondary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -551,13 +551,12 @@ private fun TaskSectionCard(
 
         Spacer(Modifier.height(8.dp))
 
-        // Fast Inline Task Entry inside this section (zero popup window)
         if (!isInlineAdding) {
             Surface(
                 onClick = onStartInlineAdd,
-                shape = RoundedCornerShape(10.dp),
-                color = CharcoalElevated.copy(alpha = 0.65f),
-                border = BorderStroke(1.dp, BorderHairline),
+                shape = RoundedCornerShape(tokens.smallRadius),
+                color = tokens.surfaceElevated.copy(alpha = 0.72f),
+                border = BorderStroke(1.dp, tokens.borderSubtle),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
@@ -601,9 +600,9 @@ private fun TaskSectionCard(
                     keyboardActions = KeyboardActions(onDone = { submitInline() }),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                        unfocusedBorderColor = BorderHairline,
-                        focusedTextColor = InkPrimary,
-                        unfocusedTextColor = InkPrimary
+                        unfocusedBorderColor = tokens.borderSubtle,
+                        focusedTextColor = tokens.inkPrimary,
+                        unfocusedTextColor = tokens.inkPrimary
                     ),
                     modifier = Modifier
                         .weight(1f)
@@ -625,7 +624,7 @@ private fun TaskSectionCard(
                     onClick = onCloseInlineAdd,
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Filled.Close, contentDescription = "Close inline entry", tint = InkMuted)
+                    Icon(Icons.Filled.Close, contentDescription = "Close inline entry", tint = tokens.inkMuted)
                 }
             }
         }
@@ -639,8 +638,9 @@ private fun SectionTaskRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     val rowBg by animateColorAsState(
-        targetValue = if (task.isCompleted) EmeraldSuccess.copy(alpha = 0.08f) else CharcoalElevated,
+        targetValue = if (task.isCompleted) EmeraldSuccess.copy(alpha = 0.09f) else tokens.surfaceElevated,
         animationSpec = tween(220),
         label = "sec_task_bg"
     )
@@ -661,7 +661,7 @@ private fun SectionTaskRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(tokens.smallRadius))
             .background(rowBg)
             .clickable(onClick = onToggle)
             .padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)
@@ -685,16 +685,21 @@ private fun SectionTaskRow(
             Text(
                 text = task.title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (task.isCompleted) InkMuted else InkPrimary,
+                color = if (task.isCompleted) tokens.inkMuted else tokens.inkPrimary,
                 textDecoration = if (task.isCompleted) TextDecoration.LineThrough else null,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            if (task.description.isNotBlank()) {
+            if (task.description.isNotBlank() || task.distractionMinutes > 0 || task.focusMinutesSpent > 0) {
+                val meta = buildList {
+                    if (task.description.isNotBlank()) add(task.description)
+                    if (task.focusMinutesSpent > 0) add("${task.focusMinutesSpent}m focused")
+                    if (task.distractionMinutes > 0) add("${task.distractionMinutes}m distracted")
+                }.joinToString(" · ")
                 Text(
-                    text = task.description,
+                    text = meta,
                     style = MaterialTheme.typography.labelSmall,
-                    color = InkSecondary,
+                    color = if (task.distractionMinutes > 0) RoseAlert else tokens.inkSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -704,12 +709,12 @@ private fun SectionTaskRow(
         Text(
             text = if (task.xpAwarded) "Claimed" else "+${task.xpReward}XP",
             style = MaterialTheme.typography.labelSmall,
-            color = if (task.xpAwarded) InkMuted else EmeraldSuccess,
+            color = if (task.xpAwarded) tokens.inkMuted else EmeraldSuccess,
             maxLines = 1,
             softWrap = false
         )
         IconButton(onClick = onEdit) {
-            Icon(Icons.Filled.Edit, contentDescription = "Edit task", tint = InkSecondary, modifier = Modifier.size(16.dp))
+            Icon(Icons.Filled.Edit, contentDescription = "Edit task", tint = tokens.inkSecondary, modifier = Modifier.size(16.dp))
         }
         IconButton(onClick = onDelete) {
             Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete task", tint = RoseAlert, modifier = Modifier.size(16.dp))
@@ -722,8 +727,10 @@ private fun TaskEditorDialog(
     existing: TaskEntity,
     todayEpochDay: Long,
     onDismiss: () -> Unit,
+    onLogDistraction: (Int) -> Unit,
     onConfirm: (String, String, TaskPriority, TaskCategory, Int, RecurrencePattern) -> Unit
 ) {
+    val tokens = LifeOsThemeTokensProvider.current
     var title by remember { mutableStateOf(existing.title) }
     var description by remember { mutableStateOf(existing.description) }
     var priority by remember { mutableStateOf(existing.priority) }
@@ -735,9 +742,9 @@ private fun TaskEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = ObsidianBase,
+        containerColor = tokens.surfaceBase,
         title = {
-            Text("Edit Task", style = MaterialTheme.typography.titleLarge)
+            Text("Edit Task", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -755,7 +762,7 @@ private fun TaskEditorDialog(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Text("Priority", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Priority", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -764,11 +771,11 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = priority == p,
                             onClick = { priority = p },
-                            label = { Text("${p.label} (+${p.xpValue}XP)", maxLines = 1) }
+                            label = { Text("${p.label} (+${p.xpValue}XP)", maxLines = 1, softWrap = false) }
                         )
                     }
                 }
-                Text("Category", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Category", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -777,11 +784,11 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = category == c,
                             onClick = { category = c },
-                            label = { Text(c.label, maxLines = 1) }
+                            label = { Text(c.label, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
-                Text("Deadline", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Deadline", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -790,11 +797,11 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = dayOffset == off,
                             onClick = { dayOffset = off },
-                            label = { Text(lbl, maxLines = 1) }
+                            label = { Text(lbl, maxLines = 1, softWrap = false) }
                         )
                     }
                 }
-                Text("Repeat", style = MaterialTheme.typography.labelMedium, color = InkSecondary)
+                Text("Repeat", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -803,7 +810,30 @@ private fun TaskEditorDialog(
                         FilterChip(
                             selected = recurrence == rec,
                             onClick = { recurrence = rec },
-                            label = { Text(rec.label, maxLines = 1) }
+                            label = { Text(rec.label, maxLines = 1, softWrap = false) }
+                        )
+                    }
+                }
+                // Log Distraction quick actions for this task
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { onLogDistraction(10) },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = RoseAlert, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("+10m Distracted", style = MaterialTheme.typography.labelMedium, color = RoseAlert, maxLines = 1, softWrap = false)
+                    }
+                    if (existing.distractionMinutes > 0) {
+                        Text(
+                            text = "${existing.distractionMinutes}m total",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tokens.inkSecondary
                         )
                     }
                 }
