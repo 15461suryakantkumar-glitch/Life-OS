@@ -33,7 +33,7 @@ enum class DashboardWidgetType(val title: String, val subtitle: String) {
     STUDY_TIMER("Focus Timer", "Deep-work timer countdown"),
     PRODUCTIVITY_SCORE("Productivity Score", "Live daily execution score"),
     XP_TRACKER("XP & Level", "Level progress and next milestone"),
-    DIGITAL_PET("Companion", "Mood, energy, and daily status"),
+    DIGITAL_PET("KUTTA Sanctuary", "Mood, energy & study check-in"),
     QUICK_NOTES("Quick Notes", "Instant scratchpad saved locally"),
     DAILY_STATS("Daily Summary", "Tasks completed, focus, and screen time")
 }
@@ -214,3 +214,24 @@ data class AiMessageEntity(
     val actionBadge: String? = null,
     val timestampMillis: Long = System.currentTimeMillis()
 )
+
+@Entity(tableName = "cycle_logs")
+data class CycleLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val startEpochDay: Long,
+    val endEpochDay: Long? = null,
+    val flowLevel: String = "Medium",
+    val symptomsCsv: String = "",
+    val notes: String = "",
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "daily_check_ins")
+data class DailyCheckInEntity(
+    @PrimaryKey val epochDay: Long,
+    val moodScore: Int = 4, // 1 = Very Low .. 5 = Great
+    val energyScore: Int = 3, // 1..5
+    val note: String = "",
+    val timestampMillis: Long = System.currentTimeMillis()
+)
+

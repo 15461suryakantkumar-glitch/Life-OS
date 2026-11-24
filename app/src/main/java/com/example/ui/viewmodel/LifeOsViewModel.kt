@@ -16,7 +16,8 @@ import com.example.data.local.CalendarEventEntity
 import com.example.data.local.ChallengeEntity
 import com.example.data.local.CompanionMood
 import com.example.data.local.CompanionMoodResolver
-import com.example.data.local.CompanionSpecies
+import com.example.data.local.CycleLogEntity
+import com.example.data.local.DailyCheckInEntity
 import com.example.data.local.DailyProgressLogEntity
 import com.example.data.local.FriendEntity
 import com.example.data.local.HabitEntity
@@ -37,8 +38,13 @@ import com.example.data.local.WidgetConfigEntity
 import com.example.data.social.FriendSyncCodec
 import com.example.data.social.FriendSyncManager
 import com.example.data.social.NearbyFriendPeer
+import com.example.kutta.KuttaEvent
+import com.example.kutta.KuttaEventHandler
+import com.example.kutta.KuttaVisualState
 import com.example.notifications.TaskReminderScheduler
 import com.example.ui.theme.LifeOsThemeMode
+import com.example.util.CycleCareAnalyzer
+import com.example.util.CycleCareSummary
 import com.example.util.DailyAnalysisReport
 import com.example.util.DateTimeUtils
 import com.example.util.ProductivityAnalyzer
@@ -53,6 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.Calendar
 
 data class AchievementBadge(
     val id: String,
@@ -93,6 +100,9 @@ data class LifeOsUiState(
     val challenges: List<ChallengeEntity> = emptyList(),
     val friends: List<FriendEntity> = emptyList(),
     val aiMessages: List<AiMessageEntity> = emptyList(),
+    val cycleLogs: List<CycleLogEntity> = emptyList(),
+    val dailyCheckIns: List<DailyCheckInEntity> = emptyList(),
+    val kuttaEventOverride: KuttaVisualState? = null,
     val studyTimer: StudyTimerState = StudyTimerState(),
     val isAiLoading: Boolean = false,
     val aiErrorMessage: String? = null,
@@ -129,6 +139,17 @@ data class LifeOsUiState(
     val completedChallengesCount: Int
         get() = challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
 
+    val todayCheckIn: DailyCheckInEntity?
+        get() = dailyCheckIns.firstOrNull { it.epochDay == todayEpochDay }
+
+    val cycleSummary: CycleCareSummary
+        get() = CycleCareAnalyzer.summarize(
+            logs = cycleLogs,
+            configuredCycleLength = prefs.averageCycleLengthDays,
+            configuredPeriodLength = prefs.averagePeriodLengthDays,
+            todayEpochDay = todayEpochDay
+        )
+
     val productivityScore: Int
         get() = ProductivityCalculator.computeScore(
             totalTasks = tasks.size,
@@ -151,6 +172,23 @@ data class LifeOsUiState(
             distractingMinutesToday = distractingMinutesToday,
             dailyScreenLimitMinutes = prefs.dailyScreenLimitMinutes
         )
+
+    val kuttaState: KuttaVisualState
+        get() {
+            kuttaEventOverride?.let { return it }
+            val baselineEmotion = KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = studyTimer.isRunning,
+                pendingTasks = tasks.filter { !it.isCompleted },
+                distractingMinutesToday = distractingMinutesToday,
+                dailyScreenLimitMinutes = prefs.dailyScreenLimitMinutes,
+                recentPositiveScore = petReactionBanner != null || prefs.petHappiness >= 90,
+                lastCheckInMoodScore = todayCheckIn?.moodScore
+            )
+            return KuttaEventHandler.stateForBaseline(
+                emotion = baselineEmotion,
+                dialogueIndex = (todayEpochDay + prefs.dailyStreak + completedTasksCount).toInt()
+            )
+        }
 
     val dailyAnalysis: DailyAnalysisReport
         get() = ProductivityAnalyzer.analyzeDaily(
@@ -186,8 +224,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val levelUpBannerState = MutableStateFlow<Int?>(null)
     private val snackbarState = MutableStateFlow<String?>(null)
     private val usagePermissionTick = MutableStateFlow(0)
+    private val kuttaEventState = MutableStateFlow<KuttaVisualState?>(null)
 
     private var timerJob: Job? = null
+    private var kuttaEventJob: Job? = null
+    private var hasTriggeredMorningToday = false
+    private var hasTriggeredCycleApproachToday = false
 
     private data class CoreFlows(
         val prefs: UserPreferencesState,
@@ -204,7 +246,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val dailyProgress: List<DailyProgressLogEntity>,
         val challenges: List<ChallengeEntity>,
         val friends: List<FriendEntity>,
-        val aiMessages: List<AiMessageEntity>
+        val aiMessages: List<AiMessageEntity>,
+        val cycleLogs: List<CycleLogEntity>,
+        val dailyCheckIns: List<DailyCheckInEntity>
     )
 
     private data class TransientFlows(
@@ -213,7 +257,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val aiError: String?,
         val petReaction: String?,
         val levelUpBanner: Int?,
-        val snackbar: String?
+        val snackbar: String?,
+        val kuttaOverride: KuttaVisualState?
     )
 
     private data class SocialNetworkFlows(
@@ -247,21 +292,39 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         usage to dailyProgress
     }
 
+    private val wellnessAndAiFlow = combine(
+        db.aiMessageDao().observeMessages(),
+        db.cycleLogDao().observeAllLogs(),
+        db.dailyCheckInDao().observeAllCheckIns()
+    ) { aiMessages, cycleLogs, checkIns ->
+        Triple(aiMessages, cycleLogs, checkIns)
+    }
+
     private val secondaryFlow = combine(
         db.quickNoteDao().observeNote(),
         usageAndProgressFlow,
         db.challengeDao().observeAllChallenges(),
         db.friendDao().observeAllFriends(),
-        db.aiMessageDao().observeMessages()
-    ) { note, usagePair, challenges, friends, aiMessages ->
-        SecondaryFlows(note, usagePair.first, usagePair.second, challenges, friends, aiMessages)
+        wellnessAndAiFlow
+    ) { note, usagePair, challenges, friends, triple ->
+        SecondaryFlows(
+            note = note,
+            usage = usagePair.first,
+            dailyProgress = usagePair.second,
+            challenges = challenges,
+            friends = friends,
+            aiMessages = triple.first,
+            cycleLogs = triple.second,
+            dailyCheckIns = triple.third
+        )
     }
 
     private val feedbackBannersFlow = combine(
         petReactionState,
-        levelUpBannerState
-    ) { petReact, lvlBanner ->
-        petReact to lvlBanner
+        levelUpBannerState,
+        kuttaEventState
+    ) { petReact, lvlBanner, kuttaOverride ->
+        Triple(petReact, lvlBanner, kuttaOverride)
     }
 
     private val transientFlow = combine(
@@ -271,7 +334,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         feedbackBannersFlow,
         snackbarState
     ) { timer, loading, err, banners, snack ->
-        TransientFlows(timer, loading, err, banners.first, banners.second, snack)
+        TransientFlows(timer, loading, err, banners.first, banners.second, snack, banners.third)
     }
 
     private val socialNetworkFlow = combine(
@@ -309,6 +372,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             challenges = sec.challenges,
             friends = sec.friends,
             aiMessages = sec.aiMessages,
+            cycleLogs = sec.cycleLogs,
+            dailyCheckIns = sec.dailyCheckIns,
+            kuttaEventOverride = trans.kuttaOverride,
             studyTimer = trans.timer,
             isAiLoading = trans.aiLoading,
             aiErrorMessage = trans.aiError,
@@ -341,6 +407,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 notificationsEnabled = p.notificationsEnabled,
                 taskRemindersEnabled = p.taskRemindersEnabled
             )
+            onAppForegrounded()
         }
     }
 
@@ -348,6 +415,36 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         super.onCleared()
         friendSyncManager.stopNearbyPeerSync()
         soundManager.release()
+    }
+
+    private fun emitKuttaEvent(event: KuttaEvent) {
+        val nextVisual = KuttaEventHandler.stateForEvent(event)
+        kuttaEventState.value = nextVisual
+        kuttaEventJob?.cancel()
+        if (nextVisual.isTransientOverride) {
+            kuttaEventJob = viewModelScope.launch {
+                delay(KuttaEventHandler.durationMillisFor(event))
+                kuttaEventState.value = null
+            }
+        }
+    }
+
+    fun onAppForegrounded() {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val current = uiState.value
+        when {
+            hour in 5..11 && !hasTriggeredMorningToday -> {
+                hasTriggeredMorningToday = true
+                emitKuttaEvent(KuttaEvent.AppOpenedMorning)
+            }
+            hour >= 22 || hour < 5 -> {
+                emitKuttaEvent(KuttaEvent.NightRest)
+            }
+            current.prefs.cycleCareEnabled && current.cycleSummary.isPeriodApproaching && !hasTriggeredCycleApproachToday -> {
+                hasTriggeredCycleApproachToday = true
+                emitKuttaEvent(KuttaEvent.CyclePeriodApproaching(current.cycleSummary.daysUntilNextPeriod))
+            }
+        }
     }
 
     private fun syncHomeWidgets() {
@@ -394,12 +491,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         snackbarState.value = message
     }
 
-    // --- ONBOARDING & COMPANION MATCH ---
+    // --- ONBOARDING ---
     fun completeOnboarding(
         name: String,
         identityOrEmail: String,
-        petName: String,
-        companionSpecies: CompanionSpecies,
         focusGoalMinutes: Int,
         themeMode: LifeOsThemeMode
     ) {
@@ -408,8 +503,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             prefsRepo.completeOnboardingSignIn(
                 name = name,
                 identityOrEmail = identityOrEmail,
-                petName = petName,
-                companionSpecies = companionSpecies,
                 focusGoal = focusGoalMinutes,
                 themeMode = themeMode
             )
@@ -419,17 +512,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 notificationsEnabled = true,
                 taskRemindersEnabled = true
             )
-            snackbarState.value = "Welcome to Life OS, ${name.trim()}!"
-            syncHomeWidgets()
-        }
-    }
-
-    fun reappointCompanion(species: CompanionSpecies, customName: String?) {
-        viewModelScope.launch {
-            prefsRepo.appointCompanionFromQuiz(species, customName)
-            val resolvedName = customName?.trim()?.takeIf { it.isNotBlank() } ?: species.defaultName
-            petReactionState.value = "$resolvedName (${species.displayTitle}) is now your companion!"
-            snackbarState.value = "Companion updated to $resolvedName"
+            emitKuttaEvent(KuttaEvent.AppOpenedMorning)
+            snackbarState.value = "Welcome, ${name.trim()}! KUTTA is ready!"
             syncHomeWidgets()
         }
     }
@@ -472,6 +556,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             }
             expectedNewStreak > prevStreak -> {
                 soundManager.playStreakActivate(sfxEnabled)
+                if (expectedNewStreak >= 2) {
+                    emitKuttaEvent(KuttaEvent.StreakMaintained(expectedNewStreak))
+                }
             }
             isFocusCompletion -> {
                 soundManager.playFocusComplete(sfxEnabled)
@@ -502,13 +589,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     energyDelta = 3,
                     isTaskCompletion = true
                 )
-                petReactionState.value = "${uiState.value.prefs.petName} is cheering! +${task.xpReward} XP from \"${task.title}\""
+                emitKuttaEvent(KuttaEvent.TaskCompleted(task.title))
+                petReactionState.value = "Waah Malkin! +${task.xpReward} XP earned from \"${task.title}\"!"
                 snackbarState.value = "+${task.xpReward} XP earned"
                 updateChallengeProgress("Daily Momentum", 1)
                 updateChallengeProgress("Weekly Velocity", task.xpReward)
                 evaluateBadges()
             } else if (nowCompleted) {
                 soundManager.playTaskComplete(uiState.value.prefs.soundEffectsEnabled)
+                emitKuttaEvent(KuttaEvent.TaskCompleted(task.title))
                 snackbarState.value = "Task completed"
             }
 
@@ -792,6 +881,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             studyTimerState.value = current.copy(isRunning = false)
         } else {
             studyTimerState.value = current.copy(isRunning = true)
+            emitKuttaEvent(KuttaEvent.FocusStarted)
             timerJob?.cancel()
             timerJob = viewModelScope.launch {
                 while (studyTimerState.value.remainingSeconds > 0 && studyTimerState.value.isRunning) {
@@ -849,10 +939,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             energyDelta = -4,
             isFocusCompletion = true
         )
+        emitKuttaEvent(KuttaEvent.FocusCompleted(minutes))
         updateChallengeProgress("Deep Focus Sprint", minutes)
         updateChallengeProgress("Weekly Velocity", xp)
         evaluateBadges()
-        petReactionState.value = "Focus session saved (${minutes}m)! ${uiState.value.prefs.petName} gained +$xp XP"
+        petReactionState.value = "OYYYY Malkin! ${minutes}m focus done · +$xp XP!"
         snackbarState.value = "Saved ${minutes}m focus · +$xp XP"
         val current = studyTimerState.value
         studyTimerState.value = StudyTimerState(
@@ -972,30 +1063,152 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- DIGITAL COMPANION & CHALLENGES ---
+    // --- KUTTA INTERACTIONS, WATER, CHECK-IN & CYCLE CARE ---
+    fun triggerKuttaTap() {
+        emitKuttaEvent(KuttaEvent.PetTapped)
+    }
+
     fun interactWithPet(action: String) {
         viewModelScope.launch {
-            val currentPrefs = uiState.value.prefs
             when (action) {
                 "TAP" -> {
-                    val mood = uiState.value.companionMood
-                    petReactionState.value = "${currentPrefs.petName} feels ${mood.label.lowercase()} — ${mood.nudgeHint}"
+                    emitKuttaEvent(KuttaEvent.PetTapped)
                     return@launch
                 }
                 "FEED" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 4, energyDelta = 12)
-                    petReactionState.value = "${currentPrefs.petName} enjoyed a snack (+12% Energy)"
+                    emitKuttaEvent(KuttaEvent.PetTapped)
+                    petReactionState.value = "KUTTA ne snack khaya, Malkin! (+12% Energy · 0 XP)"
                 }
                 "PLAY" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 10, energyDelta = -4)
-                    petReactionState.value = "${currentPrefs.petName} cheered up (+10% Mood)"
+                    emitKuttaEvent(KuttaEvent.PetTapped)
+                    petReactionState.value = "KUTTA super happy hai, Malkin! (+10% Mood · 0 XP)"
                 }
                 "REST" -> {
                     prefsRepo.adjustPetMoodAndEnergy(happinessDelta = 2, energyDelta = 18)
-                    petReactionState.value = "${currentPrefs.petName} took a cozy rest (+18% Energy)"
+                    emitKuttaEvent(KuttaEvent.NightRest)
+                    petReactionState.value = "KUTTA thoda rest kar raha hai, Malkin (+18% Energy)"
                 }
             }
             syncHomeWidgets()
+        }
+    }
+
+    fun logWaterIntake(deltaMl: Int = 250) {
+        viewModelScope.launch {
+            val updated = prefsRepo.logWaterMl(deltaMl)
+            val goal = uiState.value.prefs.dailyWaterGoalMl
+            emitKuttaEvent(KuttaEvent.WaterLogged(updated, goal))
+            snackbarState.value = "+${deltaMl}ml logged · $updated / ${goal}ml"
+            syncHomeWidgets()
+        }
+    }
+
+    fun triggerWaterReminder() {
+        emitKuttaEvent(KuttaEvent.WaterReminder)
+        snackbarState.value = "KUTTA: Malkin, paani pee lo!"
+    }
+
+    fun updateWaterSettings(goalMl: Int, remindersEnabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateWaterSettings(goalMl, remindersEnabled)
+            snackbarState.value = "Water target updated"
+            syncHomeWidgets()
+        }
+    }
+
+    fun submitDailyCheckIn(moodScore: Int, energyScore: Int, note: String) {
+        viewModelScope.launch {
+            val today = DateTimeUtils.todayEpochDay()
+            db.dailyCheckInDao().upsert(
+                DailyCheckInEntity(
+                    epochDay = today,
+                    moodScore = moodScore.coerceIn(1, 5),
+                    energyScore = energyScore.coerceIn(1, 5),
+                    note = note.trim()
+                )
+            )
+            emitKuttaEvent(KuttaEvent.CheckInLogged(moodScore))
+            snackbarState.value = "Daily check-in saved"
+        }
+    }
+
+    fun logCyclePeriodStart(
+        epochDay: Long = DateTimeUtils.todayEpochDay(),
+        flowLevel: String = "Medium",
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            db.cycleLogDao().insertLog(
+                CycleLogEntity(
+                    startEpochDay = epochDay,
+                    flowLevel = flowLevel,
+                    notes = notes.trim()
+                )
+            )
+            emitKuttaEvent(KuttaEvent.CyclePeriodStarted)
+            snackbarState.value = "Cycle start saved privately on device"
+        }
+    }
+
+    fun logCyclePeriodEnd(epochDay: Long = DateTimeUtils.todayEpochDay()) {
+        viewModelScope.launch {
+            val latest = db.cycleLogDao().getAllLogsOnce().firstOrNull()
+            if (latest == null) {
+                snackbarState.value = "Log a period start date first"
+                return@launch
+            }
+            db.cycleLogDao().updateLog(latest.copy(endEpochDay = maxOf(epochDay, latest.startEpochDay)))
+            emitKuttaEvent(KuttaEvent.CyclePeriodEnded)
+            snackbarState.value = "Cycle end date saved"
+        }
+    }
+
+    fun toggleCycleSymptom(symptom: String) {
+        viewModelScope.launch {
+            val today = DateTimeUtils.todayEpochDay()
+            val latest = db.cycleLogDao().getAllLogsOnce().firstOrNull()
+            if (latest == null) {
+                db.cycleLogDao().insertLog(
+                    CycleLogEntity(
+                        startEpochDay = today,
+                        symptomsCsv = symptom
+                    )
+                )
+            } else {
+                val existing = latest.symptomsCsv
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() }
+                    .toMutableSet()
+                if (!existing.add(symptom)) {
+                    existing.remove(symptom)
+                }
+                db.cycleLogDao().updateLog(latest.copy(symptomsCsv = existing.joinToString(",")))
+            }
+            emitKuttaEvent(KuttaEvent.CycleSymptomsLogged)
+        }
+    }
+
+    fun deleteCycleLog(log: CycleLogEntity) {
+        viewModelScope.launch {
+            db.cycleLogDao().deleteLog(log)
+            snackbarState.value = "Cycle entry removed"
+        }
+    }
+
+    fun updateCycleSettings(enabled: Boolean, cycleLengthDays: Int, periodLengthDays: Int) {
+        viewModelScope.launch {
+            prefsRepo.updateCycleSettings(enabled, cycleLengthDays, periodLengthDays)
+            snackbarState.value = "Cycle Care preferences saved"
+        }
+    }
+
+    fun updateReducedMotion(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateReducedMotion(enabled)
+            snackbarState.value = if (enabled) "Reduced Motion enabled" else "Full animations enabled"
         }
     }
 
@@ -1312,14 +1525,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun updatePetName(name: String) {
-        viewModelScope.launch {
-            prefsRepo.updatePetName(name)
-            snackbarState.value = "Companion renamed"
-            syncHomeWidgets()
-        }
-    }
-
     fun updateThemeMode(mode: LifeOsThemeMode) {
         viewModelScope.launch {
             prefsRepo.updateThemeMode(mode)
@@ -1393,6 +1598,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.challengeDao().clearAll()
             db.friendDao().clearAll()
             db.aiMessageDao().clearAll()
+            db.cycleLogDao().clearAll()
+            db.dailyCheckInDao().clearAll()
             db.quickNoteDao().saveNote(QuickNoteEntity(id = 1, content = ""))
             prefsRepo.resetDefaults()
             LifeOsSeeder.seedInitialDataIfNeeded(db)

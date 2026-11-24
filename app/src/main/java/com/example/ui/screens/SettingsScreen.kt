@@ -22,14 +22,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
-import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,16 +54,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.data.local.CompanionSpecies
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.WidgetConfigEntity
 import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.ObsidianCard
-import com.example.ui.components.RetakePersonalityQuizDialog
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
@@ -76,15 +77,16 @@ import com.example.ui.viewmodel.LifeOsUiState
 fun SettingsScreen(
     state: LifeOsUiState,
     onOpenProfile: () -> Unit,
-    onReappointCompanion: (CompanionSpecies, String?) -> Unit,
     onUpdateProfile: (String, String, Int, Int, UserAvatarPreset) -> Unit,
-    onUpdatePetName: (String) -> Unit,
     onUpdateThemeMode: (LifeOsThemeMode) -> Unit,
     onUpdatePrivacy: (Boolean, Boolean, Boolean, Boolean) -> Unit,
     onUpdateNotifications: (Boolean, Boolean, Boolean, Boolean, Int, Int) -> Unit,
     onRequestNotificationPermission: () -> Unit,
     onUpdateSoundEffects: (Boolean) -> Unit = {},
     onTestSoundEffect: () -> Unit = {},
+    onUpdateWaterSettings: (Int, Boolean) -> Unit = { _, _ -> },
+    onUpdateCycleSettings: (Boolean, Int, Int) -> Unit = { _, _, _ -> },
+    onUpdateReducedMotion: (Boolean) -> Unit = {},
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onSignOut: () -> Unit,
@@ -94,13 +96,11 @@ fun SettingsScreen(
     val prefs = state.prefs
     var name by remember(prefs.userName) { mutableStateOf(prefs.userName) }
     var handle by remember(prefs.userHandle) { mutableStateOf(prefs.userHandle) }
-    var petName by remember(prefs.petName) { mutableStateOf(prefs.petName) }
     var focusGoal by remember(prefs.dailyFocusGoalMinutes) { mutableStateOf(prefs.dailyFocusGoalMinutes.toString()) }
     var screenLimit by remember(prefs.dailyScreenLimitMinutes) { mutableStateOf(prefs.dailyScreenLimitMinutes.toString()) }
 
     var showWidgetSheet by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
-    var showRetakeQuiz by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier
@@ -155,18 +155,14 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Companion: ${prefs.petName} (${prefs.companionSpecies.displayTitle})",
+                        text = "Permanent Companion: KUTTA (${prefs.petStage.title})",
                         style = MaterialTheme.typography.bodySmall,
                         color = tokens.inkSecondary,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    TextButton(onClick = { showRetakeQuiz = true }) {
-                        Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Retake Match", maxLines = 1, softWrap = false)
-                    }
+                    StatusPill(text = "Lv.${prefs.level}", color = MaterialTheme.colorScheme.secondary)
                 }
             }
         }
@@ -294,23 +290,95 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.fillMaxWidth().testTag("save_profile_btn")
                 ) { Text("Save Details", maxLines = 1, softWrap = false) }
+            }
+        }
 
-                Spacer(Modifier.height(10.dp))
+        // Hydration & Private Cycle Care Settings
+        item {
+            ObsidianCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Water & Private Cycle Care", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Daily Water Goal (${prefs.dailyWaterGoalMl} ml)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tokens.inkSecondary
+                )
+                Spacer(Modifier.height(4.dp))
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = petName,
-                        onValueChange = { petName = it },
-                        label = { Text("Companion Name") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedButton(onClick = { onUpdatePetName(petName) }) {
-                        Text("Rename", maxLines = 1, softWrap = false)
+                    listOf(1500, 2000, 2500, 3000).forEach { goal ->
+                        FilterChip(
+                            selected = prefs.dailyWaterGoalMl == goal,
+                            onClick = { onUpdateWaterSettings(goal, prefs.waterRemindersEnabled) },
+                            label = { Text("${goal}ml", maxLines = 1, softWrap = false) }
+                        )
                     }
                 }
+                ToggleRow(
+                    label = "KUTTA Water Nudges",
+                    checked = prefs.waterRemindersEnabled,
+                    onCheckedChange = { onUpdateWaterSettings(prefs.dailyWaterGoalMl, it) }
+                )
+
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = Color(0xFFF472B6), modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Cycle Care (100% On-Device)", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                }
+                ToggleRow(
+                    label = "Show Cycle Care in Wellness OS & Home",
+                    checked = prefs.cycleCareEnabled,
+                    onCheckedChange = { onUpdateCycleSettings(it, prefs.averageCycleLengthDays, prefs.averagePeriodLengthDays) }
+                )
+                if (prefs.cycleCareEnabled) {
+                    Text(
+                        text = "Average Cycle Length: ${prefs.averageCycleLengthDays} days",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.inkSecondary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(25, 26, 28, 30, 32, 35).forEach { len ->
+                            FilterChip(
+                                selected = prefs.averageCycleLengthDays == len,
+                                onClick = { onUpdateCycleSettings(true, len, prefs.averagePeriodLengthDays) },
+                                label = { Text("${len}d", maxLines = 1, softWrap = false) }
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = "Cycle Care data never syncs with friends and never appears on home-screen widgets.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.inkMuted
+                )
+            }
+        }
+
+        // Accessibility & Motion
+        item {
+            ObsidianCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Accessibility & Motion", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                }
+                Spacer(Modifier.height(6.dp))
+                ToggleRow(
+                    label = "Reduced Motion (simplify KUTTA animations & particles)",
+                    checked = prefs.reducedMotionEnabled,
+                    onCheckedChange = onUpdateReducedMotion
+                )
             }
         }
 
@@ -616,16 +684,6 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showRetakeQuiz) {
-        RetakePersonalityQuizDialog(
-            onDismiss = { showRetakeQuiz = false },
-            onConfirmCompanion = { newSpecies, newName ->
-                onReappointCompanion(newSpecies, newName)
-                showRetakeQuiz = false
             }
         )
     }

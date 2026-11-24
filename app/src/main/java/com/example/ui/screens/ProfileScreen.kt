@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -59,15 +58,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.data.local.CompanionSpecies
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.UserPreferencesRepository
+import com.example.kutta.KuttaMascot
 import com.example.ui.components.AnimatedStreakPill
-import com.example.ui.components.DigitalPetCanvas
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
-import com.example.ui.components.RetakePersonalityQuizDialog
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
@@ -86,7 +83,6 @@ fun ProfileScreen(
     onBack: () -> Unit,
     onUpdateProfile: (String, String, Int, Int, UserAvatarPreset) -> Unit,
     onSelectAvatar: (UserAvatarPreset) -> Unit,
-    onReappointCompanion: (CompanionSpecies, String?) -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
@@ -100,7 +96,6 @@ fun ProfileScreen(
     var focusGoal by remember(prefs.dailyFocusGoalMinutes) { mutableStateOf(prefs.dailyFocusGoalMinutes.toString()) }
     var screenLimit by remember(prefs.dailyScreenLimitMinutes) { mutableStateOf(prefs.dailyScreenLimitMinutes.toString()) }
     var analyzerTab by remember { mutableIntStateOf(0) } // 0 = Daily, 1 = Weekly
-    var showRetakeQuiz by remember { mutableStateOf(false) }
 
     val friendId = remember(prefs.friendCode, prefs.userHandle, prefs.userName) {
         prefs.friendCode.ifBlank {
@@ -182,7 +177,7 @@ fun ProfileScreen(
                 Spacer(Modifier.width(4.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Profile & Analytics", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
-                    Text("Identity, companion match, insights & charts", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                    Text("Identity, KUTTA bond, insights & charts", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                 }
                 AnimatedStreakPill(streakDays = prefs.dailyStreak)
             }
@@ -294,47 +289,30 @@ fun ProfileScreen(
             }
         }
 
-        // Appointed Companion Card + Retake Match (shows ONLY appointed companion)
+        // Permanent KUTTA Companion Card
         item {
             ObsidianCard(elevated = true) {
                 SectionHeader(
-                    title = "Your Companion",
-                    subtitle = "${prefs.companionSpecies.displayTitle} · ${prefs.companionSpecies.archetypeTag}",
-                    trailing = {
-                        OutlinedButton(
-                            onClick = { showRetakeQuiz = true },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(34.dp).testTag("retake_quiz_btn")
-                        ) {
-                            Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(15.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Retake Match", maxLines = 1, softWrap = false)
-                        }
-                    }
+                    title = "Your Permanent Companion",
+                    subtitle = "KUTTA · ${prefs.petStage.title}"
                 )
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    DigitalPetCanvas(
-                        petName = prefs.petName,
-                        stage = prefs.petStage,
-                        happiness = prefs.petHappiness,
-                        energy = prefs.petEnergy,
-                        accessory = prefs.equippedAccessory,
-                        species = prefs.companionSpecies,
-                        mood = state.companionMood,
+                    KuttaMascot(
+                        visualState = state.kuttaState,
                         size = 86.dp
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(prefs.petName, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                            StatusPill(text = state.companionMood.label, color = MaterialTheme.colorScheme.secondary)
+                            Text("KUTTA", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary, fontWeight = FontWeight.Bold)
+                            StatusPill(text = state.kuttaState.emotion.label, color = MaterialTheme.colorScheme.secondary)
                         }
                         Spacer(Modifier.height(4.dp))
-                        Text(state.companionMood.nudgeHint, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        Text(state.kuttaState.dialogue, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                     }
                 }
             }
@@ -617,15 +595,5 @@ fun ProfileScreen(
         }
 
         item { Spacer(Modifier.height(24.dp)) }
-    }
-
-    if (showRetakeQuiz) {
-        RetakePersonalityQuizDialog(
-            onDismiss = { showRetakeQuiz = false },
-            onConfirmCompanion = { species, customName ->
-                onReappointCompanion(species, customName)
-                showRetakeQuiz = false
-            }
-        )
     }
 }

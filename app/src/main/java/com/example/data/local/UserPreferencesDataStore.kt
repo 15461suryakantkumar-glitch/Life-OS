@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.kutta.KuttaEmotion
+import com.example.kutta.KuttaEventHandler
 import com.example.ui.theme.LifeOsThemeMode
 import com.example.util.DateTimeUtils
 import kotlinx.coroutines.flow.Flow
@@ -16,66 +18,30 @@ import kotlin.math.absoluteValue
 
 private val Context.lifeOsDataStore by preferencesDataStore(name = "life_os_prefs")
 
+const val KUTTA_NAME = "KUTTA"
+
 enum class PetAccessory(val label: String, val requiredLevel: Int, val bonusLabel: String) {
-    NONE("No Accessory", 1, "Natural look"),
-    HOLO_VISOR("Sun Shades", 2, "+Focus Style"),
-    CYBER_SCARF("Cozy Scarf", 3, "+Warmth"),
-    ASTRAL_CROWN("Star Crown", 5, "+Milestone Glow"),
-    ORBITAL_HALO("Leaf Sprout", 7, "+Mastery Charm")
+    NONE("No Accessory", 1, "Signature Burgundy Hoodie"),
+    HOLO_VISOR("Study Glasses", 2, "+Focus Vibe"),
+    CYBER_SCARF("Cozy Muffler", 3, "+Warmth"),
+    ASTRAL_CROWN("Star Crown", 5, "+Champion Glow"),
+    ORBITAL_HALO("Lucky Clover", 7, "+Mastery Charm")
 }
 
 enum class PetGrowthStage(val title: String, val minLevel: Int, val description: String) {
-    SPARK("Little Spark", 1, "Just joined your desk and learning your daily rhythm."),
-    PRISM("Cozy Sprout", 3, "Bright-eyed and energized by your steady habits."),
-    SENTINEL("Steady Explorer", 5, "Confident and upbeat from consistent daily progress."),
-    ASTRAL("Starry Guardian", 7, "Calm, focused, and proud of your long streaks."),
-    SOVEREIGN("Golden Luminary", 10, "Your highest companion bond earned through lasting consistency.")
-}
-
-enum class CompanionSpecies(
-    val displayTitle: String,
-    val defaultName: String,
-    val archetypeTag: String,
-    val personalityBio: String
-) {
-    MOCHI_BEAR(
-        displayTitle = "Mochi Bear",
-        defaultName = "Mochi",
-        archetypeTag = "Calm & Steady",
-        personalityBio = "Warm, grounding, and patient. Built for steady daily plans and calm progress."
-    ),
-    PEBBLE_FOX(
-        displayTitle = "Pebble Fox",
-        defaultName = "Pebble",
-        archetypeTag = "Quick & Curious",
-        personalityBio = "Playful, sharp, and creative. Thrives on fast focus sprints and fresh ideas."
-    ),
-    BOBA_OTTER(
-        displayTitle = "Boba Otter",
-        defaultName = "Boba",
-        archetypeTag = "Balanced & Social",
-        personalityBio = "Cheerful, resilient, and encouraging. Loves streaks, habits, and shared wins."
-    ),
-    PIP_OWL(
-        displayTitle = "Pip Owl",
-        defaultName = "Pip",
-        archetypeTag = "Deep & Thoughtful",
-        personalityBio = "Reflective, analytical, and composed. Ideal for late-evening study and deep work."
-    );
-
-    companion object {
-        fun fromStored(raw: String?): CompanionSpecies {
-            return entries.firstOrNull { it.name == raw } ?: MOCHI_BEAR
-        }
-    }
+    SPARK("Playful Pup", 1, "KUTTA just joined your desk and is cheering you on, Malkin!"),
+    PRISM("Study Buddy", 3, "KUTTA matches your study sprints and daily hydration rhythm."),
+    SENTINEL("Loyal Guardian", 5, "Steady, caring, and proud of your growing daily streaks."),
+    ASTRAL("Star Teammate", 7, "Always right by your side through every challenge and milestone."),
+    SOVEREIGN("Forever Companion", 10, "Your highest bond with KUTTA earned through lasting consistency.")
 }
 
 enum class CompanionMood(val label: String, val nudgeHint: String) {
-    JOYFUL("Joyful", "Proud of your recent progress!"),
-    FOCUSED("Focused", "Locked into deep focus with you."),
-    CHILL("Chill", "Relaxed and ready when you are."),
-    SLEEPY("Sleepy", "Quiet hours — time to wind down gently."),
-    WORRIED("Gentle Nudge", "A task or screen budget needs a quick check.")
+    JOYFUL("Happy", "Areyyy Malkin! Aaj toh mood ekdum mast hai!"),
+    FOCUSED("Focused", "Shhh Malkin, ab full focus mode on!"),
+    CHILL("Happy", "Hey Malkin! KUTTA yahin hai aapke saath."),
+    SLEEPY("Sleepy", "Bas Malkin, thoda aaram kar lo..."),
+    WORRIED("Worried", "Koi baat nahi Malkin, KUTTA hai na saath.")
 }
 
 object CompanionMoodResolver {
@@ -90,51 +56,23 @@ object CompanionMoodResolver {
         nowMillis: Long = System.currentTimeMillis(),
         hourOfDay: Int = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     ): CompanionMood {
-        if (isTimerRunning) return CompanionMood.FOCUSED
-        if (hasRecentPositiveAction || petHappiness >= 88) return CompanionMood.JOYFUL
-
-        val twoHoursMillis = 2L * 60L * 60L * 1000L
-        val hasStalePendingTask = pendingTasks.any { (nowMillis - it.createdAtMillis) >= twoHoursMillis }
-        val highDistraction = distractingMinutesToday > (dailyScreenLimitMinutes / 2).coerceAtLeast(45)
-        if (hasStalePendingTask || highDistraction) return CompanionMood.WORRIED
-
-        val isQuietNight = hourOfDay >= 22 || hourOfDay < 6
-        if (isQuietNight || petEnergy < 35) return CompanionMood.SLEEPY
-
-        return CompanionMood.CHILL
-    }
-}
-
-object PersonalityQuizEvaluator {
-    /**
-     * Maps 3 quick personality answers (each 0..3) to one appointed CompanionSpecies.
-     */
-    fun appointCompanion(q1: Int, q2: Int, q3: Int): CompanionSpecies {
-        val scores = mutableMapOf(
-            CompanionSpecies.MOCHI_BEAR to 0,
-            CompanionSpecies.PEBBLE_FOX to 0,
-            CompanionSpecies.BOBA_OTTER to 0,
-            CompanionSpecies.PIP_OWL to 0
+        val emotion = KuttaEventHandler.resolveBaselineEmotion(
+            isTimerRunning = isTimerRunning,
+            pendingTasks = pendingTasks,
+            distractingMinutesToday = distractingMinutesToday,
+            dailyScreenLimitMinutes = dailyScreenLimitMinutes,
+            recentPositiveScore = hasRecentPositiveAction || petHappiness >= 90,
+            lastCheckInMoodScore = null,
+            nowMillis = nowMillis,
+            hourOfDay = hourOfDay
         )
-        when (q1) {
-            0 -> scores[CompanionSpecies.MOCHI_BEAR] = scores.getValue(CompanionSpecies.MOCHI_BEAR) + 2
-            1 -> scores[CompanionSpecies.PEBBLE_FOX] = scores.getValue(CompanionSpecies.PEBBLE_FOX) + 2
-            2 -> scores[CompanionSpecies.PIP_OWL] = scores.getValue(CompanionSpecies.PIP_OWL) + 2
-            else -> scores[CompanionSpecies.BOBA_OTTER] = scores.getValue(CompanionSpecies.BOBA_OTTER) + 2
+        return when (emotion) {
+            KuttaEmotion.FOCUSED -> CompanionMood.FOCUSED
+            KuttaEmotion.PROUD -> CompanionMood.JOYFUL
+            KuttaEmotion.WORRIED -> CompanionMood.WORRIED
+            KuttaEmotion.SLEEPY -> CompanionMood.SLEEPY
+            KuttaEmotion.HAPPY -> CompanionMood.JOYFUL
         }
-        when (q2) {
-            0 -> scores[CompanionSpecies.MOCHI_BEAR] = scores.getValue(CompanionSpecies.MOCHI_BEAR) + 2
-            1 -> scores[CompanionSpecies.PIP_OWL] = scores.getValue(CompanionSpecies.PIP_OWL) + 2
-            2 -> scores[CompanionSpecies.PEBBLE_FOX] = scores.getValue(CompanionSpecies.PEBBLE_FOX) + 2
-            else -> scores[CompanionSpecies.BOBA_OTTER] = scores.getValue(CompanionSpecies.BOBA_OTTER) + 2
-        }
-        when (q3) {
-            0 -> scores[CompanionSpecies.MOCHI_BEAR] = scores.getValue(CompanionSpecies.MOCHI_BEAR) + 2
-            1 -> scores[CompanionSpecies.PEBBLE_FOX] = scores.getValue(CompanionSpecies.PEBBLE_FOX) + 2
-            2 -> scores[CompanionSpecies.BOBA_OTTER] = scores.getValue(CompanionSpecies.BOBA_OTTER) + 2
-            else -> scores[CompanionSpecies.PIP_OWL] = scores.getValue(CompanionSpecies.PIP_OWL) + 2
-        }
-        return scores.maxByOrNull { it.value }?.key ?: CompanionSpecies.MOCHI_BEAR
     }
 }
 
@@ -163,17 +101,22 @@ data class UserPreferencesState(
     val dailyFocusGoalMinutes: Int = 120,
     val dailyScreenLimitMinutes: Int = 180,
     val focusMinutesLoggedToday: Int = 0,
+    val waterIntakeMlToday: Int = 0,
+    val dailyWaterGoalMl: Int = 2000,
+    val waterRemindersEnabled: Boolean = true,
+    val cycleCareEnabled: Boolean = true,
+    val averageCycleLengthDays: Int = 28,
+    val averagePeriodLengthDays: Int = 5,
+    val reducedMotionEnabled: Boolean = false,
     val themeMode: LifeOsThemeMode = LifeOsThemeMode.MIDNIGHT_AURORA,
     val totalXp: Int = 0,
     val dailyStreak: Int = 0,
     val weeklyStreak: Int = 0,
     val lastActiveEpochDay: Long = -1L,
     val loginEpochDays: Set<Long> = emptySet(),
-    val companionSpecies: CompanionSpecies = CompanionSpecies.MOCHI_BEAR,
-    val personalityQuizCompleted: Boolean = false,
-    val petName: String = "Mochi",
-    val petHappiness: Int = 65,
-    val petEnergy: Int = 75,
+    val petName: String = KUTTA_NAME,
+    val petHappiness: Int = 75,
+    val petEnergy: Int = 80,
     val equippedAccessory: PetAccessory = PetAccessory.NONE,
     val unlockedBadges: Set<String> = emptySet(),
     val shareXpWithFriends: Boolean = true,
@@ -216,15 +159,20 @@ class UserPreferencesRepository(private val context: Context) {
         val SCREEN_LIMIT = intPreferencesKey("screen_limit_mins")
         val FOCUS_TODAY = intPreferencesKey("focus_logged_today")
         val FOCUS_TODAY_DAY = longPreferencesKey("focus_today_epoch_day")
+        val WATER_TODAY_ML = intPreferencesKey("water_today_ml")
+        val WATER_TODAY_DAY = longPreferencesKey("water_today_epoch_day")
+        val WATER_GOAL_ML = intPreferencesKey("water_goal_ml")
+        val WATER_REMINDERS = booleanPreferencesKey("water_reminders_enabled")
+        val CYCLE_CARE_ENABLED = booleanPreferencesKey("cycle_care_enabled")
+        val CYCLE_LENGTH_DAYS = intPreferencesKey("average_cycle_length_days")
+        val PERIOD_LENGTH_DAYS = intPreferencesKey("average_period_length_days")
+        val REDUCED_MOTION = booleanPreferencesKey("reduced_motion_enabled")
         val THEME_MODE = stringPreferencesKey("accent_preset")
         val TOTAL_XP = intPreferencesKey("total_xp")
         val DAILY_STREAK = intPreferencesKey("daily_streak")
         val WEEKLY_STREAK = intPreferencesKey("weekly_streak")
         val LAST_ACTIVE_DAY = longPreferencesKey("last_active_day")
         val LOGIN_DAYS = stringPreferencesKey("login_epoch_days")
-        val COMPANION_SPECIES = stringPreferencesKey("companion_species")
-        val QUIZ_COMPLETED = booleanPreferencesKey("personality_quiz_completed")
-        val PET_NAME = stringPreferencesKey("pet_name")
         val PET_HAPPINESS = intPreferencesKey("pet_happiness")
         val PET_ENERGY = intPreferencesKey("pet_energy")
         val PET_ACCESSORY = stringPreferencesKey("pet_accessory")
@@ -247,7 +195,6 @@ class UserPreferencesRepository(private val context: Context) {
         val accessory = PetAccessory.entries.firstOrNull {
             it.name == prefs[Keys.PET_ACCESSORY]
         } ?: PetAccessory.NONE
-        val species = CompanionSpecies.fromStored(prefs[Keys.COMPANION_SPECIES])
         val avatar = UserAvatarPreset.fromStored(prefs[Keys.AVATAR_PRESET])
 
         val badgesRaw = prefs[Keys.UNLOCKED_BADGES] ?: ""
@@ -264,6 +211,8 @@ class UserPreferencesRepository(private val context: Context) {
         val today = DateTimeUtils.todayEpochDay()
         val storedFocusDay = prefs[Keys.FOCUS_TODAY_DAY] ?: today
         val focusToday = if (storedFocusDay == today) (prefs[Keys.FOCUS_TODAY] ?: 0) else 0
+        val storedWaterDay = prefs[Keys.WATER_TODAY_DAY] ?: today
+        val waterToday = if (storedWaterDay == today) (prefs[Keys.WATER_TODAY_ML] ?: 0) else 0
 
         UserPreferencesState(
             isSignedIn = prefs[Keys.IS_SIGNED_IN] ?: false,
@@ -275,17 +224,22 @@ class UserPreferencesRepository(private val context: Context) {
             dailyFocusGoalMinutes = prefs[Keys.FOCUS_GOAL] ?: 120,
             dailyScreenLimitMinutes = prefs[Keys.SCREEN_LIMIT] ?: 180,
             focusMinutesLoggedToday = focusToday,
+            waterIntakeMlToday = waterToday,
+            dailyWaterGoalMl = prefs[Keys.WATER_GOAL_ML] ?: 2000,
+            waterRemindersEnabled = prefs[Keys.WATER_REMINDERS] ?: true,
+            cycleCareEnabled = prefs[Keys.CYCLE_CARE_ENABLED] ?: true,
+            averageCycleLengthDays = prefs[Keys.CYCLE_LENGTH_DAYS] ?: 28,
+            averagePeriodLengthDays = prefs[Keys.PERIOD_LENGTH_DAYS] ?: 5,
+            reducedMotionEnabled = prefs[Keys.REDUCED_MOTION] ?: false,
             themeMode = theme,
             totalXp = prefs[Keys.TOTAL_XP] ?: 0,
             dailyStreak = prefs[Keys.DAILY_STREAK] ?: 0,
             weeklyStreak = prefs[Keys.WEEKLY_STREAK] ?: 0,
             lastActiveEpochDay = prefs[Keys.LAST_ACTIVE_DAY] ?: -1L,
             loginEpochDays = loginDays,
-            companionSpecies = species,
-            personalityQuizCompleted = prefs[Keys.QUIZ_COMPLETED] ?: false,
-            petName = prefs[Keys.PET_NAME] ?: species.defaultName,
-            petHappiness = prefs[Keys.PET_HAPPINESS] ?: 65,
-            petEnergy = prefs[Keys.PET_ENERGY] ?: 75,
+            petName = KUTTA_NAME,
+            petHappiness = prefs[Keys.PET_HAPPINESS] ?: 75,
+            petEnergy = prefs[Keys.PET_ENERGY] ?: 80,
             equippedAccessory = accessory,
             unlockedBadges = badges,
             shareXpWithFriends = prefs[Keys.SHARE_XP] ?: true,
@@ -321,8 +275,8 @@ class UserPreferencesRepository(private val context: Context) {
             val currentXp = prefs[Keys.TOTAL_XP] ?: 0
             prefs[Keys.TOTAL_XP] = (currentXp + xpDelta).coerceAtLeast(0)
 
-            val currentHap = prefs[Keys.PET_HAPPINESS] ?: 65
-            val currentEnergy = prefs[Keys.PET_ENERGY] ?: 75
+            val currentHap = prefs[Keys.PET_HAPPINESS] ?: 75
+            val currentEnergy = prefs[Keys.PET_ENERGY] ?: 80
             prefs[Keys.PET_HAPPINESS] = (currentHap + happinessDelta).coerceIn(10, 100)
             prefs[Keys.PET_ENERGY] = (currentEnergy + energyDelta).coerceIn(10, 100)
 
@@ -341,8 +295,8 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun adjustPetMoodAndEnergy(happinessDelta: Int, energyDelta: Int) {
         context.lifeOsDataStore.edit { prefs ->
-            val currentHap = prefs[Keys.PET_HAPPINESS] ?: 65
-            val currentEnergy = prefs[Keys.PET_ENERGY] ?: 75
+            val currentHap = prefs[Keys.PET_HAPPINESS] ?: 75
+            val currentEnergy = prefs[Keys.PET_ENERGY] ?: 80
             prefs[Keys.PET_HAPPINESS] = (currentHap + happinessDelta).coerceIn(10, 100)
             prefs[Keys.PET_ENERGY] = (currentEnergy + energyDelta).coerceIn(10, 100)
         }
@@ -358,6 +312,40 @@ class UserPreferencesRepository(private val context: Context) {
         }
     }
 
+    suspend fun logWaterMl(deltaMl: Int): Int {
+        val today = DateTimeUtils.todayEpochDay()
+        var updatedTotal = 0
+        context.lifeOsDataStore.edit { prefs ->
+            val storedDay = prefs[Keys.WATER_TODAY_DAY] ?: today
+            val current = if (storedDay == today) (prefs[Keys.WATER_TODAY_ML] ?: 0) else 0
+            updatedTotal = (current + deltaMl).coerceIn(0, 6000)
+            prefs[Keys.WATER_TODAY_DAY] = today
+            prefs[Keys.WATER_TODAY_ML] = updatedTotal
+        }
+        return updatedTotal
+    }
+
+    suspend fun updateWaterSettings(goalMl: Int, remindersEnabled: Boolean) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.WATER_GOAL_ML] = goalMl.coerceIn(750, 5000)
+            prefs[Keys.WATER_REMINDERS] = remindersEnabled
+        }
+    }
+
+    suspend fun updateCycleSettings(enabled: Boolean, cycleLengthDays: Int, periodLengthDays: Int) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.CYCLE_CARE_ENABLED] = enabled
+            prefs[Keys.CYCLE_LENGTH_DAYS] = cycleLengthDays.coerceIn(21, 45)
+            prefs[Keys.PERIOD_LENGTH_DAYS] = periodLengthDays.coerceIn(2, 10)
+        }
+    }
+
+    suspend fun updateReducedMotion(enabled: Boolean) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.REDUCED_MOTION] = enabled
+        }
+    }
+
     suspend fun unlockBadge(badgeId: String) {
         context.lifeOsDataStore.edit { prefs ->
             val existing = (prefs[Keys.UNLOCKED_BADGES] ?: "")
@@ -370,13 +358,11 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun completeOnboardingSignIn(
         name: String,
         identityOrEmail: String,
-        petName: String,
-        companionSpecies: CompanionSpecies,
         focusGoal: Int,
         themeMode: LifeOsThemeMode
     ) {
         val today = DateTimeUtils.todayEpochDay()
-        val cleanName = name.trim().ifEmpty { "Explorer" }
+        val cleanName = name.trim().ifEmpty { "Malkin" }
         val cleanIdentity = identityOrEmail.trim()
         val derivedEmail = if (cleanIdentity.contains("@") && cleanIdentity.contains(".")) cleanIdentity else ""
         val derivedHandle = when {
@@ -398,11 +384,10 @@ class UserPreferencesRepository(private val context: Context) {
                 val slug = cleanName.lowercase()
                     .replace(Regex("[^a-z0-9]"), "")
                     .take(14)
-                    .ifEmpty { "explorer" }
+                    .ifEmpty { "malkin" }
                 "@$slug"
             }
         }
-        val cleanPet = petName.trim().ifEmpty { companionSpecies.defaultName }
 
         context.lifeOsDataStore.edit { prefs ->
             val existingCode = prefs[Keys.FRIEND_CODE]?.takeIf { it.isNotBlank() }
@@ -416,21 +401,9 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.USER_HANDLE] = derivedHandle
             prefs[Keys.USER_EMAIL] = derivedEmail
             prefs[Keys.FRIEND_CODE] = existingCode
-            prefs[Keys.COMPANION_SPECIES] = companionSpecies.name
-            prefs[Keys.QUIZ_COMPLETED] = true
-            prefs[Keys.PET_NAME] = cleanPet
             prefs[Keys.FOCUS_GOAL] = focusGoal.coerceIn(15, 600)
             prefs[Keys.THEME_MODE] = themeMode.name
             prefs[Keys.LOGIN_DAYS] = loginDays.sorted().joinToString(",")
-        }
-    }
-
-    suspend fun appointCompanionFromQuiz(species: CompanionSpecies, customName: String?) {
-        val cleanName = customName?.trim()?.takeIf { it.isNotBlank() } ?: species.defaultName
-        context.lifeOsDataStore.edit { prefs ->
-            prefs[Keys.COMPANION_SPECIES] = species.name
-            prefs[Keys.PET_NAME] = cleanName
-            prefs[Keys.QUIZ_COMPLETED] = true
         }
     }
 
@@ -448,8 +421,8 @@ class UserPreferencesRepository(private val context: Context) {
         avatarPreset: UserAvatarPreset? = null
     ) {
         context.lifeOsDataStore.edit { prefs ->
-            val cleanName = name.trim().ifEmpty { "Explorer" }
-            val cleanHandle = handle.trim().ifEmpty { "@explorer" }.let {
+            val cleanName = name.trim().ifEmpty { "Malkin" }
+            val cleanHandle = handle.trim().ifEmpty { "@malkin" }.let {
                 if (it.startsWith("@")) it else "@$it"
             }
             prefs[Keys.USER_NAME] = cleanName
@@ -468,13 +441,6 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateAvatarPreset(avatarPreset: UserAvatarPreset) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.AVATAR_PRESET] = avatarPreset.name
-        }
-    }
-
-    suspend fun updatePetName(name: String) {
-        context.lifeOsDataStore.edit { prefs ->
-            val fallback = CompanionSpecies.fromStored(prefs[Keys.COMPANION_SPECIES]).defaultName
-            prefs[Keys.PET_NAME] = name.trim().ifEmpty { fallback }
         }
     }
 

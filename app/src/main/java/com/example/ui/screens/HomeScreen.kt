@@ -32,10 +32,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DashboardCustomize
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -70,9 +72,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
+import com.example.data.local.DashboardWidgetType
 import com.example.data.local.HabitEntity
 import com.example.data.local.TaskEntity
 import com.example.data.local.WidgetConfigEntity
+import com.example.kutta.KuttaDashboardCard
 import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DashboardWidgetCard
 import com.example.ui.components.GlanceWidgetPinningSection
@@ -99,6 +103,8 @@ fun HomeScreen(
     onFinishTimerEarly: () -> Unit,
     onUpdateNote: (String) -> Unit,
     onInteractPet: (String) -> Unit,
+    onTapKutta: () -> Unit = { onInteractPet("TAP") },
+    onLogWaterQuick: (Int) -> Unit = {},
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onNavigateToSection: (String) -> Unit,
@@ -119,7 +125,9 @@ fun HomeScreen(
     }
 
     val visibleWidgets = remember(state.widgets) {
-        state.widgets.filter { it.isVisible }.sortedBy { it.sortOrder }
+        state.widgets
+            .filter { it.isVisible && it.widgetTypeName != DashboardWidgetType.DIGITAL_PET.name }
+            .sortedBy { it.sortOrder }
     }
 
     LazyColumn(
@@ -332,6 +340,92 @@ fun HomeScreen(
             }
         }
 
+        // Prominent KUTTA Companion Hero Card
+        item {
+            KuttaDashboardCard(
+                visualState = state.kuttaState,
+                level = state.prefs.level,
+                xpIntoCurrentLevel = state.prefs.xpIntoCurrentLevel,
+                xpPerLevel = state.prefs.xpPerLevel,
+                onTapKutta = onTapKutta,
+                onOpenSanctuary = { onNavigateToSection("growth") }
+            )
+        }
+
+        // Compact Water & Private Cycle Quick Strip
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = { onLogWaterQuick(250) },
+                    modifier = Modifier.weight(1f).testTag("home_quick_water_btn"),
+                    shape = RoundedCornerShape(tokens.cardRadius * 0.85f),
+                    color = tokens.surfaceCard,
+                    shadowElevation = tokens.cardElevation,
+                    border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Icon(
+                                Icons.Filled.WaterDrop,
+                                contentDescription = "Log water",
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Column {
+                                Text(
+                                    text = "Water",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = tokens.inkPrimary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = "${state.prefs.waterIntakeMlToday}/${state.prefs.dailyWaterGoalMl} ml",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.inkSecondary,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Text(
+                            text = "+250ml",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+                }
+
+                if (state.prefs.cycleCareEnabled) {
+                    val cycleSub = if (state.cycleSummary.hasLogs) {
+                        if (state.cycleSummary.isCurrentlyOnPeriod) "Gentle Mode" else "Day ${state.cycleSummary.currentCycleDay}"
+                    } else {
+                        "Private Log"
+                    }
+                    QuickModuleChip(
+                        label = "Cycle Care",
+                        sub = cycleSub,
+                        icon = Icons.Filled.Favorite,
+                        accent = Color(0xFFF472B6),
+                        onClick = { onNavigateToSection("wellness") },
+                        modifier = Modifier.weight(0.85f)
+                    )
+                }
+            }
+        }
+
         // Quick Module Dock (zero clipping on narrow 360dp screens)
         item {
             Row(
@@ -347,8 +441,8 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                 )
                 QuickModuleChip(
-                    label = "Pet",
-                    sub = state.prefs.petName,
+                    label = "KUTTA",
+                    sub = state.kuttaState.emotion.label,
                     icon = Icons.Filled.Pets,
                     accent = MaterialTheme.colorScheme.primary,
                     onClick = { onNavigateToSection("growth") },

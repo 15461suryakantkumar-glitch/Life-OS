@@ -85,6 +85,11 @@ import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
 import com.example.data.local.TaskSectionEntity
+import com.example.kutta.KuttaDialogueBubble
+import com.example.kutta.KuttaEmotion
+import com.example.kutta.KuttaEvent
+import com.example.kutta.KuttaEventHandler
+import com.example.kutta.KuttaMascot
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
@@ -106,7 +111,8 @@ fun TasksScreen(
     onAddSection: (String) -> Unit,
     onRenameSection: (TaskSectionEntity, String) -> Unit,
     onDeleteSection: (TaskSectionEntity) -> Unit,
-    onQuickAddTaskInSection: (Long, String) -> Unit
+    onQuickAddTaskInSection: (Long, String) -> Unit,
+    onTapKutta: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
@@ -269,6 +275,40 @@ fun TasksScreen(
             }
         }
 
+        // Compact KUTTA Study Companion Strip
+        item {
+            val studyVisual = remember(state.kuttaState, state.tasks) {
+                if (state.kuttaState.isTransientOverride) {
+                    state.kuttaState
+                } else if (state.pendingTasksCount > 0) {
+                    KuttaEventHandler.stateForBaseline(
+                        emotion = KuttaEmotion.FOCUSED,
+                        dialogueIndex = state.completedTasksCount
+                    )
+                } else {
+                    state.kuttaState
+                }
+            }
+            ObsidianCard(elevated = true, contentPadding = PaddingValues(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    KuttaMascot(
+                        visualState = studyVisual,
+                        size = 64.dp,
+                        onTap = onTapKutta
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    KuttaDialogueBubble(
+                        message = studyVisual.dialogue,
+                        emotion = studyVisual.emotion,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
         // Compact Progress Strip
         item {
             ObsidianCard(elevated = true, contentPadding = PaddingValues(12.dp)) {
@@ -318,7 +358,7 @@ fun TasksScreen(
                 EmptyStateCard(
                     icon = Icons.Filled.FolderOpen,
                     title = "No sections yet",
-                    subtitle = "Create subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
+                    subtitle = "Chalo Malkin! Create subject or project sections (like Physics, Chemistry, Bio, or Tests) and type tasks right inside each card.",
                     actionLabel = "Create First Section",
                     onAction = { showSectionCreator = true },
                     modifier = Modifier.testTag("tasks_empty_state")

@@ -19,9 +19,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyProgressLogEntity::class,
         ChallengeEntity::class,
         FriendEntity::class,
-        AiMessageEntity::class
+        AiMessageEntity::class,
+        CycleLogEntity::class,
+        DailyCheckInEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -36,6 +38,8 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun challengeDao(): ChallengeDao
     abstract fun friendDao(): FriendDao
     abstract fun aiMessageDao(): AiMessageDao
+    abstract fun cycleLogDao(): CycleLogDao
+    abstract fun dailyCheckInDao(): DailyCheckInDao
 
     companion object {
         @Volatile
@@ -74,6 +78,17 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cycle_logs` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startEpochDay` INTEGER NOT NULL, `endEpochDay` INTEGER, `flowLevel` TEXT NOT NULL DEFAULT 'Medium', `symptomsCsv` TEXT NOT NULL DEFAULT '', `notes` TEXT NOT NULL DEFAULT '', `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `daily_check_ins` (`epochDay` INTEGER NOT NULL, `moodScore` INTEGER NOT NULL DEFAULT 4, `energyScore` INTEGER NOT NULL DEFAULT 3, `note` TEXT NOT NULL DEFAULT '', `timestampMillis` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`epochDay`))"
+                )
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -81,7 +96,7 @@ abstract class LifeOsDatabase : RoomDatabase() {
                     LifeOsDatabase::class.java,
                     "life_os_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
@@ -99,11 +114,10 @@ object LifeOsSeeder {
     suspend fun seedInitialDataIfNeeded(db: LifeOsDatabase) {
         if (db.widgetConfigDao().getWidgetsOnce().isNotEmpty()) return
 
-        // Keep Home focused and non-redundant (Hero already displays Level/XP/Streak)
+        // Home already shows the dedicated prominent KUTTA card, so keep default cards concise & non-duplicate
         val initialVisibleTypes = setOf(
             DashboardWidgetType.TASKS,
-            DashboardWidgetType.STUDY_TIMER,
-            DashboardWidgetType.DIGITAL_PET
+            DashboardWidgetType.STUDY_TIMER
         )
         val orderedTypes = listOf(
             DashboardWidgetType.TASKS,

@@ -70,6 +70,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -90,6 +91,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.kutta.LocalReducedMotion
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GrowthScreen
@@ -156,11 +158,12 @@ fun LifeOsApp(
         }
     }
 
-    // Re-sync Android UsageStats automatically when returning from Settings
+    // Re-sync Android UsageStats & trigger KUTTA morning/night greeting when resuming
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshUsageStatsStatusAndSync(showToast = false)
+                viewModel.onAppForegrounded()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -228,6 +231,7 @@ fun LifeOsApp(
         }
     }
 
+    CompositionLocalProvider(LocalReducedMotion provides state.prefs.reducedMotionEnabled) {
     LifeOsTheme(themeMode = state.prefs.themeMode) {
         val tokens = LifeOsThemeTokensProvider.current
         val gateStage = when {
@@ -249,13 +253,11 @@ fun LifeOsApp(
                     OnboardingScreen(
                         existingPrefs = state.prefs,
                         onPreviewThemeMode = viewModel::updateThemeMode,
-                        onCompleteSignIn = { name, identity, petName, species, focusGoal, mode ->
+                        onCompleteSignIn = { name, identity, focusGoal, mode ->
                             currentSection = LifeOsSection.HOME
                             viewModel.completeOnboarding(
                                 name = name,
                                 identityOrEmail = identity,
-                                petName = petName,
-                                companionSpecies = species,
                                 focusGoalMinutes = focusGoal,
                                 themeMode = mode
                             )
@@ -402,6 +404,8 @@ fun LifeOsApp(
                                                 onFinishTimerEarly = viewModel::finishStudySessionEarly,
                                                 onUpdateNote = viewModel::updateQuickNote,
                                                 onInteractPet = viewModel::interactWithPet,
+                                                onTapKutta = viewModel::triggerKuttaTap,
+                                                onLogWaterQuick = viewModel::logWaterIntake,
                                                 onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                                 onMoveWidget = viewModel::moveWidget,
                                                 onNavigateToSection = navigateToRoute,
@@ -423,7 +427,8 @@ fun LifeOsApp(
                                                 onAddSection = viewModel::addTaskSection,
                                                 onRenameSection = viewModel::renameTaskSection,
                                                 onDeleteSection = viewModel::deleteTaskSection,
-                                                onQuickAddTaskInSection = viewModel::addInlineTask
+                                                onQuickAddTaskInSection = viewModel::addInlineTask,
+                                                onTapKutta = viewModel::triggerKuttaTap
                                             )
                                             LifeOsSection.CALENDAR -> CalendarScreen(
                                                 state = state,
@@ -437,13 +442,19 @@ fun LifeOsApp(
                                                 onBuildUsageAccessIntent = viewModel::buildUsageAccessIntent,
                                                 onRefreshUsageStats = {
                                                     viewModel.refreshUsageStatsStatusAndSync(showToast = true)
-                                                }
+                                                },
+                                                onLogWater = viewModel::logWaterIntake,
+                                                onTriggerWaterReminder = viewModel::triggerWaterReminder,
+                                                onSubmitCheckIn = viewModel::submitDailyCheckIn,
+                                                onLogCycleStart = viewModel::logCyclePeriodStart,
+                                                onLogCycleEnd = viewModel::logCyclePeriodEnd,
+                                                onToggleCycleSymptom = viewModel::toggleCycleSymptom,
+                                                onDeleteCycleLog = viewModel::deleteCycleLog
                                             )
                                             LifeOsSection.GROWTH -> GrowthScreen(
                                                 state = state,
                                                 onInteractPet = viewModel::interactWithPet,
                                                 onEquipAccessory = viewModel::equipPetAccessory,
-                                                onReappointCompanion = viewModel::reappointCompanion,
                                                 onClaimChallenge = viewModel::claimChallenge,
                                                 onToggleHabit = viewModel::toggleHabitToday,
                                                 onAddHabit = viewModel::addHabit
@@ -472,21 +483,21 @@ fun LifeOsApp(
                                                 onBack = { currentSection = LifeOsSection.HOME },
                                                 onUpdateProfile = viewModel::updateProfile,
                                                 onSelectAvatar = viewModel::updateAvatarPreset,
-                                                onReappointCompanion = viewModel::reappointCompanion,
                                                 onShowMessage = viewModel::showMessage
                                             )
                                             LifeOsSection.SETTINGS -> SettingsScreen(
                                                 state = state,
                                                 onOpenProfile = { currentSection = LifeOsSection.PROFILE },
-                                                onReappointCompanion = viewModel::reappointCompanion,
                                                 onUpdateProfile = viewModel::updateProfile,
-                                                onUpdatePetName = viewModel::updatePetName,
                                                 onUpdateThemeMode = viewModel::updateThemeMode,
                                                 onUpdatePrivacy = viewModel::updatePrivacy,
                                                 onUpdateNotifications = viewModel::updateNotifications,
                                                 onRequestNotificationPermission = ::requestNotificationPermissionIfNeeded,
                                                 onUpdateSoundEffects = viewModel::updateSoundEffects,
                                                 onTestSoundEffect = viewModel::previewSoundEffect,
+                                                onUpdateWaterSettings = viewModel::updateWaterSettings,
+                                                onUpdateCycleSettings = viewModel::updateCycleSettings,
+                                                onUpdateReducedMotion = viewModel::updateReducedMotion,
                                                 onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                                 onMoveWidget = viewModel::moveWidget,
                                                 onSignOut = viewModel::signOutLocalSession,
@@ -512,14 +523,14 @@ fun LifeOsApp(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text("Life OS Workspace", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
-                                    Text("Jump to analytics, companion, social & preferences", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    Text("Jump to analytics, KUTTA, wellness & preferences", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                     Spacer(Modifier.height(4.dp))
                                     val modules = listOf(
                                         LifeOsSection.PROFILE to "Avatar, graphs, Friend ID & Daily/Weekly analyzer",
-                                        LifeOsSection.WELLNESS to "Screen time, Usage Access & per-task distraction",
-                                        LifeOsSection.GROWTH to "${state.prefs.petName} (${state.prefs.companionSpecies.displayTitle}), habits & badges",
+                                        LifeOsSection.WELLNESS to "Water tracker, Daily Check-In, private Cycle Care & screen time",
+                                        LifeOsSection.GROWTH to "KUTTA, habits & badges",
                                         LifeOsSection.FRIENDS to "Leaderboard, invites & Wi-Fi sync",
-                                        LifeOsSection.SETTINGS to "4 themes, 2h task reminders, widgets & audio"
+                                        LifeOsSection.SETTINGS to "4 themes, water, cycle privacy, 2h reminders & reduced motion"
                                     )
                                     modules.forEach { (section, subtitle) ->
                                         val active = currentSection == section
@@ -561,5 +572,6 @@ fun LifeOsApp(
                 }
             }
         }
+    }
     }
 }

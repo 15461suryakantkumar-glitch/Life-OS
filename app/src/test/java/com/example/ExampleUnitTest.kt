@@ -8,9 +8,9 @@ import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
 import com.example.data.local.CompanionMood
 import com.example.data.local.CompanionMoodResolver
-import com.example.data.local.CompanionSpecies
+import com.example.data.local.CycleLogEntity
 import com.example.data.local.DailyProgressLogEntity
-import com.example.data.local.PersonalityQuizEvaluator
+import com.example.data.local.KUTTA_NAME
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
@@ -18,10 +18,17 @@ import com.example.data.local.TaskSectionEntity
 import com.example.data.local.TaskSectionMapper
 import com.example.data.local.UserPreferencesState
 import com.example.data.social.FriendSyncCodec
+import com.example.kutta.KuttaDialogue
+import com.example.kutta.KuttaEmotion
+import com.example.kutta.KuttaEvent
+import com.example.kutta.KuttaEventHandler
+import com.example.kutta.KuttaPose
 import com.example.notifications.TaskReminderScheduler
 import com.example.ui.theme.LifeOsThemeMode
+import com.example.util.CycleCareAnalyzer
 import com.example.util.ProductivityAnalyzer
 import com.example.util.ProductivityCalculator
+import java.util.Base64
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -206,11 +213,14 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun personalityQuiz_appointsDeterministicCompanionSpecies() {
-        assertEquals(CompanionSpecies.MOCHI_BEAR, PersonalityQuizEvaluator.appointCompanion(0, 0, 0))
-        assertEquals(CompanionSpecies.PEBBLE_FOX, PersonalityQuizEvaluator.appointCompanion(1, 2, 1))
-        assertEquals(CompanionSpecies.PIP_OWL, PersonalityQuizEvaluator.appointCompanion(2, 1, 3))
-        assertEquals(CompanionSpecies.BOBA_OTTER, PersonalityQuizEvaluator.appointCompanion(3, 3, 2))
+    fun kuttaIdentity_isPermanentSingleCompanionAndBaselineStartsFresh() {
+        val defaults = UserPreferencesState()
+        assertEquals("KUTTA", KUTTA_NAME)
+        assertEquals("KUTTA", defaults.petName)
+        assertEquals(0, defaults.totalXp)
+        assertEquals(1, defaults.level)
+        assertEquals(0, defaults.waterIntakeMlToday)
+        assertEquals(2000, defaults.dailyWaterGoalMl)
     }
 
     @Test
@@ -269,7 +279,7 @@ class ExampleUnitTest {
         )
 
         assertEquals(
-            CompanionMood.CHILL,
+            CompanionMood.JOYFUL,
             CompanionMoodResolver.resolve(
                 isTimerRunning = false,
                 petHappiness = 75,
@@ -282,6 +292,214 @@ class ExampleUnitTest {
                 hourOfDay = 14
             )
         )
+    }
+
+    @Test
+    fun kuttaEventHandler_resolvesFiveEmotionsAndEventTransitions() {
+        val now = 1_700_000_000_000L
+        val staleTask = TaskEntity(
+            title = "Revise Organic Chemistry",
+            deadlineEpochDay = 20_000L,
+            createdAtMillis = now - (3L * 3600L * 1000L)
+        )
+
+        assertEquals(
+            KuttaEmotion.FOCUSED,
+            KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = true,
+                pendingTasks = listOf(staleTask),
+                distractingMinutesToday = 90,
+                dailyScreenLimitMinutes = 180,
+                recentPositiveScore = false,
+                lastCheckInMoodScore = null,
+                nowMillis = now,
+                hourOfDay = 14
+            )
+        )
+        assertEquals(
+            KuttaEmotion.SLEEPY,
+            KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = false,
+                pendingTasks = emptyList(),
+                distractingMinutesToday = 0,
+                dailyScreenLimitMinutes = 180,
+                recentPositiveScore = false,
+                lastCheckInMoodScore = null,
+                nowMillis = now,
+                hourOfDay = 23
+            )
+        )
+        assertEquals(
+            KuttaEmotion.PROUD,
+            KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = false,
+                pendingTasks = emptyList(),
+                distractingMinutesToday = 0,
+                dailyScreenLimitMinutes = 180,
+                recentPositiveScore = true,
+                lastCheckInMoodScore = null,
+                nowMillis = now,
+                hourOfDay = 15
+            )
+        )
+        assertEquals(
+            KuttaEmotion.WORRIED,
+            KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = false,
+                pendingTasks = listOf(staleTask),
+                distractingMinutesToday = 10,
+                dailyScreenLimitMinutes = 180,
+                recentPositiveScore = false,
+                lastCheckInMoodScore = null,
+                nowMillis = now,
+                hourOfDay = 15
+            )
+        )
+        assertEquals(
+            KuttaEmotion.HAPPY,
+            KuttaEventHandler.resolveBaselineEmotion(
+                isTimerRunning = false,
+                pendingTasks = emptyList(),
+                distractingMinutesToday = 10,
+                dailyScreenLimitMinutes = 180,
+                recentPositiveScore = false,
+                lastCheckInMoodScore = 4,
+                nowMillis = now,
+                hourOfDay = 15
+            )
+        )
+
+        val morning = KuttaEventHandler.stateForEvent(KuttaEvent.AppOpenedMorning)
+        assertEquals(KuttaPose.MORNING, morning.pose)
+
+        val focusDone = KuttaEventHandler.stateForEvent(KuttaEvent.FocusCompleted(25))
+        assertEquals(KuttaEmotion.PROUD, focusDone.emotion)
+        assertEquals(KuttaPose.CELEBRATING, focusDone.pose)
+
+        val waterRem = KuttaEventHandler.stateForEvent(KuttaEvent.WaterReminder)
+        assertTrue(waterRem.isWaterHighlight)
+        assertEquals(KuttaPose.MORNING, waterRem.pose)
+
+        val periodStart = KuttaEventHandler.stateForEvent(KuttaEvent.CyclePeriodStarted)
+        assertEquals(KuttaEmotion.SLEEPY, periodStart.emotion)
+        assertEquals(KuttaPose.SLEEPING, periodStart.pose)
+        assertTrue(periodStart.showHearts)
+
+        val periodEnd = KuttaEventHandler.stateForEvent(KuttaEvent.CyclePeriodEnded)
+        assertEquals(KuttaEmotion.PROUD, periodEnd.emotion)
+        assertEquals(KuttaPose.PROUD, periodEnd.pose)
+    }
+
+    @Test
+    fun kuttaDialogue_usesHinglishWithMalkinOrKuttaAndRotatesWithoutImmediateRepeats() {
+        KuttaDialogue.resetRotationForTest()
+        KuttaEmotion.entries.forEach { emotion ->
+            val line = KuttaDialogue.forEmotion(emotion)
+            assertTrue("Expected Malkin or KUTTA in: $line", line.contains("Malkin") || line.contains("KUTTA"))
+        }
+
+        val events = listOf(
+            KuttaEvent.AppOpenedMorning,
+            KuttaEvent.NightRest,
+            KuttaEvent.TaskCompleted("Test"),
+            KuttaEvent.FocusStarted,
+            KuttaEvent.FocusCompleted(25),
+            KuttaEvent.WaterReminder,
+            KuttaEvent.WaterLogged(500, 2000),
+            KuttaEvent.StreakMaintained(3),
+            KuttaEvent.PetTapped,
+            KuttaEvent.CyclePeriodStarted,
+            KuttaEvent.CyclePeriodEnded,
+            KuttaEvent.CycleSymptomsLogged
+        )
+        events.forEach { ev ->
+            val line = KuttaDialogue.forEvent(ev)
+            assertTrue("Expected Malkin or KUTTA in: $line", line.contains("Malkin") || line.contains("KUTTA"))
+        }
+
+        // Rotation avoids immediate repetition for multi-line buckets
+        KuttaDialogue.resetRotationForTest()
+        val first = KuttaDialogue.forEvent(KuttaEvent.PetTapped)
+        val second = KuttaDialogue.forEvent(KuttaEvent.PetTapped)
+        assertTrue(first != second)
+    }
+
+    @Test
+    fun cycleCareAnalyzer_computesCycleDayPredictionsAndApproachingStatus() {
+        val empty = CycleCareAnalyzer.summarize(
+            logs = emptyList(),
+            configuredCycleLength = 28,
+            configuredPeriodLength = 5,
+            todayEpochDay = 20_000L
+        )
+        assertFalse(empty.hasLogs)
+        assertFalse(empty.isCurrentlyOnPeriod)
+        assertEquals(0, empty.currentCycleDay)
+
+        val activeLogs = listOf(
+            CycleLogEntity(
+                id = 1L,
+                startEpochDay = 19_972L,
+                endEpochDay = 19_976L,
+                flowLevel = "Medium",
+                symptomsCsv = "Cramps"
+            ),
+            CycleLogEntity(
+                id = 2L,
+                startEpochDay = 20_000L,
+                endEpochDay = null,
+                flowLevel = "Heavy",
+                symptomsCsv = "Cramps, Fatigue"
+            )
+        )
+        val activeSummary = CycleCareAnalyzer.summarize(
+            logs = activeLogs,
+            configuredCycleLength = 30,
+            configuredPeriodLength = 5,
+            todayEpochDay = 20_001L
+        )
+        assertTrue(activeSummary.hasLogs)
+        assertTrue(activeSummary.isCurrentlyOnPeriod)
+        assertEquals(2L, activeSummary.activePeriodLogId)
+        assertEquals(2, activeSummary.currentCycleDay)
+        assertEquals(28, activeSummary.averageCycleLengthDays)
+        assertEquals(listOf("Cramps", "Fatigue"), activeSummary.latestSymptoms)
+
+        val approaching = CycleCareAnalyzer.summarize(
+            logs = listOf(
+                CycleLogEntity(
+                    id = 3L,
+                    startEpochDay = 20_000L,
+                    endEpochDay = 20_004L
+                )
+            ),
+            configuredCycleLength = 28,
+            configuredPeriodLength = 5,
+            todayEpochDay = 20_026L
+        )
+        assertFalse(approaching.isCurrentlyOnPeriod)
+        assertEquals(27, approaching.currentCycleDay)
+        assertEquals(2, approaching.daysUntilNextPeriod)
+        assertTrue(approaching.isPeriodApproaching)
+    }
+
+    @Test
+    fun friendSyncPayload_strictlyExcludesPrivateCycleCareData() {
+        val prefs = UserPreferencesState(
+            userName = "Malkin",
+            userHandle = "@malkin.os",
+            friendCode = "LIFE-MALK-1234",
+            cycleCareEnabled = true,
+            averageCycleLengthDays = 29,
+            averagePeriodLengthDays = 5
+        )
+        val token = FriendSyncCodec.buildShareToken(prefs, challengesCompleted = 1, challengesTotal = 4)
+        val encoded = token.removePrefix("LIFEOS1:")
+        val json = String(Base64.getUrlDecoder().decode(encoded), Charsets.UTF_8).lowercase()
+        assertFalse(json.contains("cycle"))
+        assertFalse(json.contains("period"))
+        assertFalse(json.contains("symptom"))
+        assertFalse(json.contains("flow"))
     }
 
     @Test

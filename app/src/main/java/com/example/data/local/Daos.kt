@@ -196,3 +196,40 @@ interface AiMessageDao {
     @Query("DELETE FROM ai_messages")
     suspend fun clearAll()
 }
+
+@Dao
+interface CycleLogDao {
+    @Query("SELECT * FROM cycle_logs ORDER BY startEpochDay DESC, id DESC")
+    fun observeAllLogs(): Flow<List<CycleLogEntity>>
+
+    @Query("SELECT * FROM cycle_logs ORDER BY startEpochDay DESC, id DESC")
+    suspend fun getAllLogsOnce(): List<CycleLogEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertLog(log: CycleLogEntity): Long
+
+    @Update
+    suspend fun updateLog(log: CycleLogEntity)
+
+    @Delete
+    suspend fun deleteLog(log: CycleLogEntity)
+
+    @Query("DELETE FROM cycle_logs")
+    suspend fun clearAll()
+}
+
+@Dao
+interface DailyCheckInDao {
+    @Query("SELECT * FROM daily_check_ins ORDER BY epochDay DESC")
+    fun observeAllCheckIns(): Flow<List<DailyCheckInEntity>>
+
+    @Query("SELECT * FROM daily_check_ins WHERE epochDay = :epochDay LIMIT 1")
+    suspend fun getForDay(epochDay: Long): DailyCheckInEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entry: DailyCheckInEntity)
+
+    @Query("DELETE FROM daily_check_ins")
+    suspend fun clearAll()
+}
+

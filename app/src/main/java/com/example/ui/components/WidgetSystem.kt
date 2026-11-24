@@ -88,6 +88,7 @@ import com.example.data.local.DashboardWidgetType
 import com.example.data.local.HabitEntity
 import com.example.data.local.TaskEntity
 import com.example.data.local.WidgetConfigEntity
+import com.example.kutta.KuttaMascot
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.LifeOsThemeTokensProvider
@@ -671,7 +672,7 @@ private fun DigitalPetWidget(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val prefs = state.prefs
-    val mood = state.companionMood
+    val kutta = state.kuttaState
     val animatedHappiness by animateIntAsState(
         targetValue = prefs.petHappiness,
         animationSpec = tween(350),
@@ -692,35 +693,37 @@ private fun DigitalPetWidget(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            DigitalPetCanvas(
-                petName = prefs.petName,
-                stage = prefs.petStage,
-                happiness = prefs.petHappiness,
-                energy = prefs.petEnergy,
-                accessory = prefs.equippedAccessory,
-                species = prefs.companionSpecies,
-                mood = mood,
-                size = 76.dp,
+            KuttaMascot(
+                visualState = kutta,
+                size = 82.dp,
                 onTap = { onInteractPet("TAP") }
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = prefs.petName,
+                        text = "KUTTA",
                         style = MaterialTheme.typography.titleMedium,
                         color = tokens.inkPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.width(6.dp))
-                    StatusPill(text = mood.label, color = MaterialTheme.colorScheme.primary)
+                    StatusPill(text = kutta.emotion.label, color = MaterialTheme.colorScheme.primary)
                 }
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    text = "Mood $animatedHappiness% · Energy $animatedEnergy%",
+                    text = kutta.dialogue,
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "Mood $animatedHappiness% · Energy $animatedEnergy%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.inkMuted,
                     maxLines = 1
                 )
                 Spacer(Modifier.height(7.dp))
@@ -741,7 +744,7 @@ private fun DigitalPetWidget(
                     ) {
                         Icon(Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Cheer", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                        Text("Pat", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                     }
                 }
             }
@@ -911,8 +914,8 @@ fun GlanceWidgetPinningSection(
             ),
             GlancePinTarget(
                 key = "pet",
-                title = "${petName.ifBlank { "Companion" }} Widget",
-                description = "Live companion mood & energy",
+                title = "KUTTA Widget",
+                description = "Live KUTTA mood & water tracker",
                 icon = Icons.Filled.Pets,
                 accent = Color(0xFF06B6D4),
                 receiverClass = DigitalPetWidgetReceiver::class.java

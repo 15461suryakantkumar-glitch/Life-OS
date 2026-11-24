@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -34,7 +35,6 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,20 +56,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.local.ChallengeEntity
-import com.example.data.local.CompanionSpecies
 import com.example.data.local.HabitEntity
 import com.example.data.local.PetAccessory
 import com.example.data.local.PetGrowthStage
 import com.example.data.local.TaskCategory
+import com.example.kutta.KuttaDialogueBubble
+import com.example.kutta.KuttaEmotion
+import com.example.kutta.KuttaEventHandler
+import com.example.kutta.KuttaMascot
 import com.example.ui.components.AnimatedStreakPill
-import com.example.ui.components.DigitalPetCanvas
 import com.example.ui.components.EmptyStateCard
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
-import com.example.ui.components.RetakePersonalityQuizDialog
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.theme.AmberWarning
@@ -82,16 +85,23 @@ fun GrowthScreen(
     state: LifeOsUiState,
     onInteractPet: (String) -> Unit,
     onEquipAccessory: (PetAccessory) -> Unit,
-    onReappointCompanion: (CompanionSpecies, String?) -> Unit,
     onClaimChallenge: (ChallengeEntity) -> Unit,
     onToggleHabit: (HabitEntity) -> Unit,
     onAddHabit: (String, TaskCategory, Int) -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val prefs = state.prefs
-    val mood = state.companionMood
     var showAddHabitDialog by remember { mutableStateOf(false) }
-    var showRetakeQuiz by remember { mutableStateOf(false) }
+    var previewEmotion by remember { mutableStateOf<KuttaEmotion?>(null) }
+
+    val displayedKutta = remember(state.kuttaState, previewEmotion) {
+        val emo = previewEmotion
+        if (emo != null) {
+            KuttaEventHandler.stateForBaseline(emo, dialogueIndex = 0)
+        } else {
+            state.kuttaState
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -102,11 +112,11 @@ fun GrowthScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text("Growth & Companion", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-            Text("XP progression, habits, badges & your personal companion", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+            Text("KUTTA & Growth", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+            Text("Your permanent companion KUTTA, habits, streaks & milestones", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
         }
 
-        // Appointed Companion Sanctuary (displays ONLY the user's matched companion)
+        // Permanent KUTTA Sanctuary
         item {
             GradientGlowCard(modifier = Modifier.testTag("pet_sanctuary_card")) {
                 Row(
@@ -115,15 +125,15 @@ fun GrowthScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(prefs.petName, style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
+                        Text("KUTTA", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "${prefs.companionSpecies.displayTitle} · ${prefs.petStage.title}",
+                            text = "${prefs.petStage.title} · Always Together",
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        StatusPill(text = mood.label, color = MaterialTheme.colorScheme.secondary)
+                        StatusPill(text = displayedKutta.emotion.label, color = MaterialTheme.colorScheme.secondary)
                         StatusPill(text = "Lv.${prefs.level}", color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -134,30 +144,46 @@ fun GrowthScreen(
                     modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    DigitalPetCanvas(
-                        petName = prefs.petName,
-                        stage = prefs.petStage,
-                        happiness = prefs.petHappiness,
-                        energy = prefs.petEnergy,
-                        accessory = prefs.equippedAccessory,
-                        species = prefs.companionSpecies,
-                        mood = mood,
-                        size = 160.dp,
-                        onTap = { onInteractPet("TAP") }
+                    KuttaMascot(
+                        visualState = displayedKutta,
+                        size = 168.dp,
+                        onTap = {
+                            previewEmotion = null
+                            onInteractPet("TAP")
+                        }
                     )
                 }
 
-                Text(
-                    text = mood.nudgeHint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = tokens.inkPrimary
+                Spacer(Modifier.height(6.dp))
+                KuttaDialogueBubble(
+                    message = displayedKutta.dialogue,
+                    emotion = displayedKutta.emotion,
+                    modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = prefs.petStage.description,
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary
                 )
+
+                // Interactive 5 Emotions Preview Strip
+                Spacer(Modifier.height(10.dp))
+                Text("KUTTA's 5 Emotions (Tap to preview)", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    KuttaEmotion.entries.forEach { emo ->
+                        val active = (previewEmotion ?: state.kuttaState.emotion) == emo
+                        FilterChip(
+                            selected = active,
+                            onClick = { previewEmotion = if (previewEmotion == emo) null else emo },
+                            label = { Text(emo.label, maxLines = 1, softWrap = false) }
+                        )
+                    }
+                }
 
                 AnimatedVisibility(
                     visible = state.petReactionBanner != null,
@@ -209,7 +235,10 @@ fun GrowthScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { onInteractPet("FEED") },
+                        onClick = {
+                            previewEmotion = null
+                            onInteractPet("FEED")
+                        },
                         contentPadding = PaddingValues(horizontal = 8.dp),
                         modifier = Modifier.weight(1f).testTag("pet_feed_btn")
                     ) {
@@ -218,7 +247,10 @@ fun GrowthScreen(
                         Text("Snack", maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
-                        onClick = { onInteractPet("PLAY") },
+                        onClick = {
+                            previewEmotion = null
+                            onInteractPet("PLAY")
+                        },
                         contentPadding = PaddingValues(horizontal = 8.dp),
                         modifier = Modifier.weight(1f).testTag("pet_play_btn")
                     ) {
@@ -227,7 +259,10 @@ fun GrowthScreen(
                         Text("Play", maxLines = 1, softWrap = false)
                     }
                     OutlinedButton(
-                        onClick = { onInteractPet("REST") },
+                        onClick = {
+                            previewEmotion = null
+                            onInteractPet("REST")
+                        },
                         contentPadding = PaddingValues(horizontal = 8.dp),
                         modifier = Modifier.weight(1f).testTag("pet_rest_btn")
                     ) {
@@ -235,16 +270,6 @@ fun GrowthScreen(
                         Spacer(Modifier.width(4.dp))
                         Text("Rest", maxLines = 1, softWrap = false)
                     }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                TextButton(
-                    onClick = { showRetakeQuiz = true },
-                    modifier = Modifier.align(Alignment.End).testTag("growth_retake_quiz_btn")
-                ) {
-                    Icon(Icons.Filled.Psychology, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Retake Personality Match", maxLines = 1, softWrap = false)
                 }
             }
         }
@@ -512,16 +537,6 @@ fun GrowthScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddHabitDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
-
-    if (showRetakeQuiz) {
-        RetakePersonalityQuizDialog(
-            onDismiss = { showRetakeQuiz = false },
-            onConfirmCompanion = { species, customName ->
-                onReappointCompanion(species, customName)
-                showRetakeQuiz = false
             }
         )
     }

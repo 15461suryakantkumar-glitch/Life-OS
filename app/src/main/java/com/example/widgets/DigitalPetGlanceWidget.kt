@@ -55,12 +55,10 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
         val prefs = withContext(Dispatchers.IO) {
             UserPreferencesRepository(context).preferencesFlow.first()
         }
-        val petBitmap = renderDigitalPetWidgetBitmap(
-            stage = prefs.petStage,
+        val petBitmap = decodeKuttaWidgetBitmap(
+            context = context,
             happiness = prefs.petHappiness,
-            energy = prefs.petEnergy,
-            accessory = prefs.equippedAccessory,
-            species = prefs.companionSpecies
+            energy = prefs.petEnergy
         )
 
         provideContent {
@@ -84,8 +82,8 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
                 .padding(12.dp)
         ) {
             GlanceWidgetHeader(
-                title = prefs.petName,
-                badgeText = "Lv.${prefs.level} · ${prefs.companionSpecies.displayTitle}",
+                title = "KUTTA",
+                badgeText = "Lv.${prefs.level} · ${prefs.petStage.title}",
                 headerAction = openLifeOsRouteAction("growth")
             )
 
@@ -103,7 +101,7 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
             ) {
                 Image(
                     provider = ImageProvider(petBitmap),
-                    contentDescription = "${prefs.petName} companion",
+                    contentDescription = "KUTTA companion",
                     modifier = GlanceModifier.size(if (isWide) 68.dp else 54.dp)
                 )
                 Spacer(GlanceModifier.width(10.dp))
@@ -134,7 +132,7 @@ class DigitalPetGlanceWidget : GlanceAppWidget() {
                     if (isTall) {
                         Spacer(GlanceModifier.height(4.dp))
                         Text(
-                            text = "Accessory: ${prefs.equippedAccessory.label}",
+                            text = "Water: ${prefs.waterIntakeMlToday}/${prefs.dailyWaterGoalMl} ml",
                             style = TextStyle(color = LifeOsGlanceColors.InkSecondary, fontSize = 10.sp),
                             maxLines = 1
                         )
