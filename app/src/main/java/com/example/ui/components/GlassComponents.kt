@@ -86,19 +86,31 @@ fun ObsidianCard(
     onClick: (() -> Unit)? = null,
     borderColor: Color? = null,
     elevated: Boolean = false,
-    contentPadding: PaddingValues = PaddingValues(13.dp),
+    contentPadding: PaddingValues = PaddingValues(16.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val resolvedBorder = borderColor ?: tokens.borderSubtle
     val shape = RoundedCornerShape(tokens.cardRadius)
-    val bgBrush = Brush.linearGradient(
-        colors = if (elevated) {
-            listOf(tokens.surfaceElevated, tokens.surfaceCard)
-        } else {
-            listOf(tokens.surfaceCard, tokens.surfaceBase)
-        }
-    )
+    val surfaceColor = when {
+        !tokens.isDark && elevated -> tokens.surfaceElevated
+        !tokens.isDark -> tokens.surfaceCard
+        elevated -> tokens.surfaceElevated
+        else -> tokens.surfaceCard
+    }
+    val bgBrush = if (tokens.isDark) {
+        Brush.linearGradient(
+            colors = listOf(surfaceColor, tokens.surfaceBase)
+        )
+    } else {
+        Brush.linearGradient(
+            colors = if (elevated) {
+                listOf(tokens.surfaceElevated, tokens.surfaceCard)
+            } else {
+                listOf(tokens.surfaceCard, tokens.surfaceCard)
+            }
+        )
+    }
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -121,24 +133,32 @@ fun ObsidianCard(
 fun GradientGlowCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    contentPadding: PaddingValues = PaddingValues(14.dp),
+    contentPadding: PaddingValues = PaddingValues(18.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
-    val primary = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
     val shape = RoundedCornerShape(tokens.heroRadius)
-    val bgBrush = Brush.linearGradient(
-        colors = listOf(
-            primary.copy(alpha = if (tokens.isDark) 0.22f else 0.12f),
-            tokens.surfaceElevated,
-            secondary.copy(alpha = if (tokens.isDark) 0.14f else 0.08f)
+    val bgBrush = if (tokens.isDark) {
+        Brush.linearGradient(
+            colors = listOf(
+                tokens.primary.copy(alpha = 0.22f),
+                tokens.surfaceElevated,
+                tokens.peach.copy(alpha = 0.14f)
+            )
         )
-    )
+    } else {
+        Brush.linearGradient(
+            colors = listOf(
+                tokens.surfaceHighlight.copy(alpha = 0.72f),
+                tokens.surfaceCard,
+                tokens.peach.copy(alpha = 0.34f)
+            )
+        )
+    }
     val borderBrush = Brush.linearGradient(
         colors = listOf(
-            primary.copy(alpha = if (tokens.isDark) 0.55f else 0.42f),
-            secondary.copy(alpha = if (tokens.isDark) 0.45f else 0.35f)
+            tokens.primary.copy(alpha = if (tokens.isDark) 0.55f else 0.36f),
+            tokens.peach.copy(alpha = if (tokens.isDark) 0.45f else 0.60f)
         )
     )
     Surface(
@@ -206,12 +226,13 @@ fun NeonProgressBar(
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = tween(durationMillis = 450),
-        label = "neon_progress"
+        label = "editorial_progress"
     )
     val gradient = Brush.horizontalGradient(
         colors = listOf(
-            MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.secondary
+            tokens.deepPrimary,
+            tokens.primary,
+            tokens.peach
         )
     )
     Box(
@@ -219,7 +240,7 @@ fun NeonProgressBar(
             .fillMaxWidth()
             .height(heightDp.dp)
             .clip(CircleShape)
-            .background(tokens.borderSubtle.copy(alpha = 0.7f))
+            .background(tokens.surfaceHighlight.copy(alpha = if (tokens.isDark) 0.55f else 0.9f))
     ) {
         Box(
             modifier = Modifier

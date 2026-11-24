@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Botanical leaf & bloom silhouette with subtle F-shaped negative space -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M54,22 C71,22 83,31 82,51 C81,70 68,85 51,86 C35,86 25,74 26,53 C27,34 38,22 54,22 Z M42,35 C42,33.3 43.3,32 45,32 L68.5,32 C70.5,32 71.5,34.4 70.2,36.2 C69.1,37.8 67.3,38.5 65,38.5 L50.5,38.5 L50.5,48.5 L63.5,48.5 C65.5,48.5 66.5,50.8 65.2,52.5 C64.2,53.9 62.6,54.8 60.5,54.8 L50.5,54.8 L50.5,73 C50.5,75.2 48.8,76.8 46.2,76.8 C43.8,76.8 42,75.2 42,73 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="80"
+                android:endY="84"
+                android:startX="28"
+                android:startY="24"
+                android:type="linear">
+                <item
+                    android:color="#FF9274D8"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FF7054B5"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Soft Peach botanical petal highlight cupping the upper-right leaf tip -->
+    <path
+        android:fillAlpha="0.92"
+        android:pathData="M60.5,22.8 C72.5,24.2 81.8,31.2 82.0,44.2 C76.0,36.5 68.5,28.8 60.5,22.8 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="82"
+                android:endY="44"
+                android:startX="61"
+                android:startY="23"
+                android:type="linear">
+                <item
+                    android:color="#FFF4C9B6"
+                    android:offset="0.0" />
+                <item
+                    android:color="#FFDDA9BC"
+                    android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Delicate inner botanical vein curve -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M56,79 C65,75 72,66 74,56"
+        android:strokeAlpha="0.38"
+        android:strokeColor="#FFF3EEFC"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.2" />
+</vector>

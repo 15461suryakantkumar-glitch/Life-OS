@@ -329,4 +329,80 @@ interface TogetherOutboxDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface SubjectDao {
+    @Query("SELECT * FROM study_subjects ORDER BY createdAtMillis ASC, id ASC")
+    fun observeAll(): Flow<List<SubjectEntity>>
 
+    @Query("SELECT * FROM study_subjects ORDER BY createdAtMillis ASC, id ASC")
+    suspend fun getAllOnce(): List<SubjectEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(subject: SubjectEntity): Long
+
+    @Delete
+    suspend fun delete(subject: SubjectEntity)
+
+    @Query("DELETE FROM study_subjects")
+    suspend fun clearAll()
+}
+
+@Dao
+interface StudyChapterDao {
+    @Query("SELECT * FROM study_chapters ORDER BY sortOrder ASC, createdAtMillis ASC, id ASC")
+    fun observeAll(): Flow<List<StudyChapterEntity>>
+
+    @Query("SELECT * FROM study_chapters ORDER BY sortOrder ASC, createdAtMillis ASC, id ASC")
+    suspend fun getAllOnce(): List<StudyChapterEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(chapter: StudyChapterEntity): Long
+
+    @Update
+    suspend fun update(chapter: StudyChapterEntity)
+
+    @Delete
+    suspend fun delete(chapter: StudyChapterEntity)
+
+    @Query("DELETE FROM study_chapters WHERE subjectId = :subjectId")
+    suspend fun deleteBySubjectId(subjectId: Long)
+
+    @Query("DELETE FROM study_chapters")
+    suspend fun clearAll()
+}
+
+@Dao
+interface StudySessionDao {
+    @Query("SELECT * FROM study_sessions ORDER BY endedAtMillis DESC, id DESC")
+    fun observeAll(): Flow<List<StudySessionEntity>>
+
+    @Query("SELECT * FROM study_sessions ORDER BY endedAtMillis DESC, id DESC")
+    suspend fun getAllOnce(): List<StudySessionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(session: StudySessionEntity): Long
+
+    @Delete
+    suspend fun delete(session: StudySessionEntity)
+
+    @Query("DELETE FROM study_sessions")
+    suspend fun clearAll()
+}
+
+@Dao
+interface StudyResourceDao {
+    @Query("SELECT * FROM study_resources ORDER BY updatedAtMillis DESC, id DESC")
+    fun observeAll(): Flow<List<StudyResourceEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(resource: StudyResourceEntity): Long
+
+    @Delete
+    suspend fun delete(resource: StudyResourceEntity)
+
+    @Query("DELETE FROM study_resources WHERE subjectId = :subjectId")
+    suspend fun deleteBySubjectId(subjectId: Long)
+
+    @Query("DELETE FROM study_resources")
+    suspend fun clearAll()
+}

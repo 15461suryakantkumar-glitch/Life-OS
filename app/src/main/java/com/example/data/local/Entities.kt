@@ -302,3 +302,81 @@ data class TogetherOutboxEntity(
     val createdAtMillis: Long = System.currentTimeMillis()
 )
 
+enum class StudyChapterStatus(val label: String) {
+    PENDING("Pending"),
+    IN_PROGRESS("In Progress"),
+    COMPLETED("Completed")
+}
+
+enum class StudySessionMode(val label: String) {
+    POMODORO("Pomodoro"),
+    CUSTOM("Custom Focus")
+}
+
+enum class StudyResourceType(val label: String) {
+    NOTE("Note"),
+    SUMMARY("Summary"),
+    LINK("Reference Link")
+}
+
+@Entity(tableName = "study_subjects")
+data class SubjectEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val colorHex: String = "#9274D8",
+    val iconName: String = "MenuBook",
+    val targetMinutesPerDay: Int = 60,
+    val weeklyGoalMinutes: Int = 300,
+    val createdAtMillis: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "study_chapters")
+data class StudyChapterEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subjectId: Long,
+    val title: String,
+    val notes: String = "",
+    val status: String = StudyChapterStatus.PENDING.name,
+    val estimatedMinutes: Int = 45,
+    val sortOrder: Int = 0,
+    val completedAtMillis: Long? = null,
+    val createdAtMillis: Long = System.currentTimeMillis()
+) {
+    val chapterStatus: StudyChapterStatus
+        get() = StudyChapterStatus.entries.firstOrNull { it.name == status } ?: StudyChapterStatus.PENDING
+
+    val isCompleted: Boolean
+        get() = chapterStatus == StudyChapterStatus.COMPLETED
+}
+
+@Entity(tableName = "study_sessions")
+data class StudySessionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subjectId: Long? = null,
+    val chapterId: Long? = null,
+    val plannedMinutes: Int = 25,
+    val actualMinutes: Int = 25,
+    val breakMinutes: Int = 5,
+    val sessionMode: String = StudySessionMode.POMODORO.name,
+    val completed: Boolean = true,
+    val startedAtMillis: Long = System.currentTimeMillis(),
+    val endedAtMillis: Long = System.currentTimeMillis(),
+    val dateEpochDay: Long
+) {
+    val mode: StudySessionMode
+        get() = StudySessionMode.entries.firstOrNull { it.name == sessionMode } ?: StudySessionMode.POMODORO
+}
+
+@Entity(tableName = "study_resources")
+data class StudyResourceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subjectId: Long,
+    val chapterId: Long? = null,
+    val title: String,
+    val content: String,
+    val resourceType: String = StudyResourceType.NOTE.name,
+    val updatedAtMillis: Long = System.currentTimeMillis()
+) {
+    val type: StudyResourceType
+        get() = StudyResourceType.entries.firstOrNull { it.name == resourceType } ?: StudyResourceType.NOTE
+}

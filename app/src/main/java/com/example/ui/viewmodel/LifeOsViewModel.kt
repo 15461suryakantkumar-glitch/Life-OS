@@ -28,6 +28,13 @@ import com.example.data.local.NotificationHistoryEntity
 import com.example.data.local.PetAccessory
 import com.example.data.local.QuickNoteEntity
 import com.example.data.local.RecurrencePattern
+import com.example.data.local.StudyChapterEntity
+import com.example.data.local.StudyChapterStatus
+import com.example.data.local.StudyResourceEntity
+import com.example.data.local.StudyResourceType
+import com.example.data.local.StudySessionEntity
+import com.example.data.local.StudySessionMode
+import com.example.data.local.SubjectEntity
 import com.example.data.local.SuruMemoryEntity
 import com.example.data.local.SuruStudyPlanEntity
 import com.example.data.local.TaskCategory
@@ -126,9 +133,15 @@ object BadgeCatalog {
 
 data class StudyTimerState(
     val selectedMinutes: Int = 25,
+    val breakMinutes: Int = 5,
     val remainingSeconds: Int = 25 * 60,
     val isRunning: Boolean = false,
-    val linkedTaskId: Long? = null
+    val isBreakPhase: Boolean = false,
+    val sessionMode: StudySessionMode = StudySessionMode.POMODORO,
+    val pomodoroCyclesCompleted: Int = 0,
+    val linkedTaskId: Long? = null,
+    val activeSubjectId: Long? = null,
+    val activeChapterId: Long? = null
 )
 
 data class AuthUiState(
@@ -197,8 +210,25 @@ data class LifeOsUiState(
     val appPermissions: List<AppPermissionInfo> = emptyList(),
     val authUiState: AuthUiState = AuthUiState(),
     val togetherState: TogetherState = TogetherState(),
-    val activeChatFriendId: String? = null
+    val activeChatFriendId: String? = null,
+    val studySubjects: List<SubjectEntity> = emptyList(),
+    val studyChapters: List<StudyChapterEntity> = emptyList(),
+    val studySessions: List<StudySessionEntity> = emptyList(),
+    val studyResources: List<StudyResourceEntity> = emptyList()
 ) {
+    fun progressForSubject(subjectId: Long): Float {
+        val chapters = studyChapters.filter { it.subjectId == subjectId }
+        if (chapters.isEmpty()) return 0f
+        val done = chapters.count { it.isCompleted }
+        return done.toFloat() / chapters.size.toFloat()
+    }
+
+    val totalStudySessionMinutesToday: Int
+        get() = studySessions.filter { it.dateEpochDay == todayEpochDay }.sumOf { it.actualMinutes }
+
+    val completedChaptersCount: Int
+        get() = studyChapters.count { it.isCompleted }
+
     val unreadNotificationsCount: Int
         get() = notificationHistory.count { !it.isRead }
 
@@ -449,6 +479,40 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         listOf(aiMessages, cycleLogs, checkIns, memories, plans)
     }
 
+    private val studyDataFlow = combine(
+        db.subjectDao().observeAll(),
+        db.studyChapterDao().observeAll(),
+        db.studySessionDao().observeAll(),
+        db.studyResourceDao().observeAll()
+    ) { subjects, chapters, sessions, resources ->
+        listOf(subjects, chapters, sessions, resources)
+    }
+
+    private data class StudyBundle(
+        val subjects: List<SubjectEntity>,
+        val chapters: List<StudyChapterEntity>,
+        val sessions: List<StudySessionEntity>,
+        val resources: List<StudyResourceEntity>
+    )
+
+    private val notificationsAiStudyFlow = combine(
+        db.notificationHistoryDao().observeAll(),
+        db.aiProviderUsageDao().observeAll(),
+        studyDataFlow
+    ) { notifHist, aiUsage, studyPacked ->
+        @Suppress("UNCHECKED_CAST")
+        Triple(
+            notifHist,
+            aiUsage,
+            StudyBundle(
+                subjects = studyPacked[0] as List<SubjectEntity>,
+                chapters = studyPacked[1] as List<StudyChapterEntity>,
+                sessions = studyPacked[2] as List<StudySessionEntity>,
+                resources = studyPacked[3] as List<StudyResourceEntity>
+            )
+        )
+    }
+
     @Suppress("UNCHECKED_CAST")
     private val secondaryFlow = combine(
         db.quickNoteDao().observeNote(),
@@ -543,19 +607,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         listOf(tState, authUi, chatFriendId, wRange, wReport)
     }
 
-    private val historyAndAiLogsFlow = combine(
-        db.notificationHistoryDao().observeAll(),
-        db.aiProviderUsageDao().observeAll()
-    ) { notifHist, aiUsage ->
-        notifHist to aiUsage
-    }
-
-    @Suppress("UNCHECKED_CAST")
     private val socialNetworkFlow = combine(
         networkBasicFlow,
         togetherExtrasFlow,
-        historyAndAiLogsFlow
-    ) { netBasic, tExtras, histAi ->
+        notificationsAiStudyFlow
+    ) { netBasic, tExtras, histAiStudy ->
+        @Suppress("UNCHECKED_CAST")
         SocialNetworkFlows(
             isOnline = netBasic[0] as Boolean,
             isPeerRadarActive = netBasic[1] as Boolean,
@@ -567,9 +624,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             activeChatFriendId = tExtras[2] as String?,
             wellbeingRange = tExtras[3] as WellbeingRange,
             wellbeingReport = tExtras[4] as UsageTelemetryReport,
-            notificationHistory = histAi.first,
-            aiUsageLogs = histAi.second
-        )
+            notificationHistory = histAiStudy.first,
+            aiUsageLogs = histAiStudy.second
+        ) to histAiStudy.third
     }
 
     val uiState: StateFlow<LifeOsUiState> = combine(
@@ -578,7 +635,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         transientFlow,
         socialNetworkFlow,
         suruFlow
-    ) { core, sec, trans, social, suru ->
+    ) { core, sec, trans, socialPair, suru ->
+        val social = socialPair.first
+        val studyBundle = socialPair.second
         val completedChal = sec.challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
         val totalChal = sec.challenges.size.coerceAtLeast(1)
         friendSyncManager.updateOutgoingToken(
@@ -652,7 +711,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             appPermissions = social.permissions,
             authUiState = social.authUiState,
             togetherState = social.togetherState,
-            activeChatFriendId = social.activeChatFriendId
+            activeChatFriendId = social.activeChatFriendId,
+            studySubjects = studyBundle.subjects,
+            studyChapters = studyBundle.chapters,
+            studySessions = studyBundle.sessions,
+            studyResources = studyBundle.resources
         )
     }.stateIn(
         scope = viewModelScope,
@@ -1393,20 +1456,207 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- STUDY TIMER ---
+    // --- STUDY SUBJECTS, CHAPTERS, RESOURCES & POMODORO/CUSTOM TIMER ---
+    fun saveSubject(
+        existingId: Long? = null,
+        name: String,
+        colorHex: String = "#9274D8",
+        iconName: String = "MenuBook",
+        targetMinutesPerDay: Int = 60,
+        weeklyGoalMinutes: Int = 300
+    ) {
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val existing = existingId?.let { id -> uiState.value.studySubjects.firstOrNull { it.id == id } }
+            val entity = existing?.copy(
+                name = clean,
+                colorHex = colorHex,
+                iconName = iconName,
+                targetMinutesPerDay = targetMinutesPerDay.coerceIn(15, 480),
+                weeklyGoalMinutes = weeklyGoalMinutes.coerceIn(30, 3000)
+            ) ?: SubjectEntity(
+                name = clean,
+                colorHex = colorHex,
+                iconName = iconName,
+                targetMinutesPerDay = targetMinutesPerDay.coerceIn(15, 480),
+                weeklyGoalMinutes = weeklyGoalMinutes.coerceIn(30, 3000)
+            )
+            db.subjectDao().upsert(entity)
+            soundManager.playCue(LifeOsSoundCue.TASK_CREATE, uiState.value.prefs)
+            snackbarState.value = if (existing == null) "Subject \"$clean\" created" else "Updated \"$clean\""
+        }
+    }
+
+    fun deleteSubject(subject: SubjectEntity) {
+        viewModelScope.launch {
+            db.studyChapterDao().deleteBySubjectId(subject.id)
+            db.studyResourceDao().deleteBySubjectId(subject.id)
+            db.subjectDao().delete(subject)
+            if (studyTimerState.value.activeSubjectId == subject.id) {
+                studyTimerState.value = studyTimerState.value.copy(activeSubjectId = null, activeChapterId = null)
+            }
+            snackbarState.value = "Subject \"${subject.name}\" removed"
+        }
+    }
+
+    fun saveStudyChapter(
+        existingId: Long? = null,
+        subjectId: Long,
+        title: String,
+        notes: String = "",
+        estimatedMinutes: Int = 45,
+        status: StudyChapterStatus = StudyChapterStatus.PENDING
+    ) {
+        val clean = title.trim()
+        if (clean.isBlank() || subjectId <= 0L) return
+        viewModelScope.launch {
+            val existing = existingId?.let { id -> uiState.value.studyChapters.firstOrNull { it.id == id } }
+            val nextOrder = existing?.sortOrder ?: (uiState.value.studyChapters.count { it.subjectId == subjectId })
+            val entity = existing?.copy(
+                title = clean,
+                notes = notes.trim(),
+                estimatedMinutes = estimatedMinutes.coerceIn(10, 360),
+                status = status.name,
+                completedAtMillis = if (status == StudyChapterStatus.COMPLETED) existing.completedAtMillis ?: System.currentTimeMillis() else null
+            ) ?: StudyChapterEntity(
+                subjectId = subjectId,
+                title = clean,
+                notes = notes.trim(),
+                estimatedMinutes = estimatedMinutes.coerceIn(10, 360),
+                status = status.name,
+                sortOrder = nextOrder,
+                completedAtMillis = if (status == StudyChapterStatus.COMPLETED) System.currentTimeMillis() else null
+            )
+            db.studyChapterDao().upsert(entity)
+            soundManager.playCue(LifeOsSoundCue.TASK_CREATE, uiState.value.prefs)
+            snackbarState.value = if (existing == null) "Chapter \"$clean\" added" else "Chapter updated"
+        }
+    }
+
+    fun toggleChapterCompleted(chapter: StudyChapterEntity) {
+        viewModelScope.launch {
+            val nowCompleted = !chapter.isCompleted
+            val nextStatus = if (nowCompleted) StudyChapterStatus.COMPLETED else StudyChapterStatus.IN_PROGRESS
+            db.studyChapterDao().update(
+                chapter.copy(
+                    status = nextStatus.name,
+                    completedAtMillis = if (nowCompleted) System.currentTimeMillis() else null
+                )
+            )
+            if (nowCompleted) {
+                applyXpAndPlaySound(
+                    xpDelta = 40,
+                    happinessDelta = 8,
+                    energyDelta = 2,
+                    isTaskCompletion = true
+                )
+                soundManager.playCue(LifeOsSoundCue.CHAPTER_DONE, uiState.value.prefs)
+                emitKuttaEvent(KuttaEvent.TaskCompleted(chapter.title))
+                petReactionState.value = "Chapter complete, Malkin! +40 XP for \"${chapter.title}\""
+                snackbarState.value = "Completed \"${chapter.title}\" · +40 XP"
+                evaluateBadges()
+            } else {
+                soundManager.playCue(LifeOsSoundCue.UI_TOGGLE, uiState.value.prefs)
+                snackbarState.value = "Marked \"${chapter.title}\" in progress"
+            }
+        }
+    }
+
+    fun deleteStudyChapter(chapter: StudyChapterEntity) {
+        viewModelScope.launch {
+            db.studyChapterDao().delete(chapter)
+            if (studyTimerState.value.activeChapterId == chapter.id) {
+                studyTimerState.value = studyTimerState.value.copy(activeChapterId = null)
+            }
+            snackbarState.value = "Chapter removed"
+        }
+    }
+
+    fun saveStudyResource(
+        existingId: Long? = null,
+        subjectId: Long,
+        chapterId: Long? = null,
+        title: String,
+        content: String,
+        resourceType: StudyResourceType = StudyResourceType.NOTE
+    ) {
+        val cleanTitle = title.trim()
+        val cleanContent = content.trim()
+        if (cleanTitle.isBlank() && cleanContent.isBlank()) return
+        viewModelScope.launch {
+            val entity = StudyResourceEntity(
+                id = existingId ?: 0L,
+                subjectId = subjectId,
+                chapterId = chapterId,
+                title = cleanTitle.ifBlank { "Study Note" },
+                content = cleanContent,
+                resourceType = resourceType.name,
+                updatedAtMillis = System.currentTimeMillis()
+            )
+            db.studyResourceDao().upsert(entity)
+            soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
+            snackbarState.value = "Saved study note"
+        }
+    }
+
+    fun deleteStudyResource(resource: StudyResourceEntity) {
+        viewModelScope.launch {
+            db.studyResourceDao().delete(resource)
+            snackbarState.value = "Study note deleted"
+        }
+    }
+
     fun selectTimerDuration(minutes: Int) {
+        configureStudyTimer(
+            workMinutes = minutes,
+            breakMinutes = studyTimerState.value.breakMinutes,
+            mode = if (minutes == 25 || minutes == 50) StudySessionMode.POMODORO else StudySessionMode.CUSTOM
+        )
+    }
+
+    fun configureStudyTimer(
+        workMinutes: Int,
+        breakMinutes: Int = 5,
+        mode: StudySessionMode = StudySessionMode.POMODORO
+    ) {
         timerJob?.cancel()
         val current = studyTimerState.value
-        studyTimerState.value = StudyTimerState(
-            selectedMinutes = minutes,
-            remainingSeconds = minutes * 60,
+        val safeWork = workMinutes.coerceIn(5, 180)
+        val safeBreak = breakMinutes.coerceIn(1, 30)
+        studyTimerState.value = current.copy(
+            selectedMinutes = safeWork,
+            breakMinutes = safeBreak,
+            remainingSeconds = safeWork * 60,
             isRunning = false,
-            linkedTaskId = current.linkedTaskId
+            isBreakPhase = false,
+            sessionMode = mode
         )
     }
 
     fun selectFocusLinkedTask(taskId: Long?) {
         studyTimerState.value = studyTimerState.value.copy(linkedTaskId = taskId)
+    }
+
+    fun selectFocusSubjectAndChapter(subjectId: Long?, chapterId: Long?) {
+        studyTimerState.value = studyTimerState.value.copy(
+            activeSubjectId = subjectId,
+            activeChapterId = chapterId
+        )
+    }
+
+    fun toggleStudyBreakPhase(startBreak: Boolean) {
+        timerJob?.cancel()
+        val current = studyTimerState.value
+        val targetMins = if (startBreak) current.breakMinutes else current.selectedMinutes
+        studyTimerState.value = current.copy(
+            isBreakPhase = startBreak,
+            remainingSeconds = targetMins * 60,
+            isRunning = false
+        )
+        if (startBreak) {
+            soundManager.playCue(LifeOsSoundCue.STUDY_BREAK, uiState.value.prefs)
+        }
     }
 
     fun toggleStudyTimer() {
@@ -1416,7 +1666,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             studyTimerState.value = current.copy(isRunning = false)
         } else {
             studyTimerState.value = current.copy(isRunning = true)
-            emitKuttaEvent(KuttaEvent.FocusStarted)
+            if (!current.isBreakPhase) {
+                emitKuttaEvent(KuttaEvent.FocusStarted)
+            }
             timerJob?.cancel()
             timerJob = viewModelScope.launch {
                 while (studyTimerState.value.remainingSeconds > 0 && studyTimerState.value.isRunning) {
@@ -1426,7 +1678,22 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     val nextSec = (latest.remainingSeconds - 1).coerceAtLeast(0)
                     studyTimerState.value = latest.copy(remainingSeconds = nextSec)
                     if (nextSec == 0) {
-                        completeStudySession(latest.selectedMinutes, latest.linkedTaskId)
+                        if (latest.isBreakPhase) {
+                            soundManager.playCue(LifeOsSoundCue.STUDY_BREAK, uiState.value.prefs)
+                            studyTimerState.value = latest.copy(
+                                isBreakPhase = false,
+                                isRunning = false,
+                                remainingSeconds = latest.selectedMinutes * 60
+                            )
+                            snackbarState.value = "Break finished — ready for your next focus sprint!"
+                        } else {
+                            completeStudySession(
+                                minutes = latest.selectedMinutes,
+                                linkedTaskId = latest.linkedTaskId,
+                                subjectId = latest.activeSubjectId,
+                                chapterId = latest.activeChapterId
+                            )
+                        }
                         break
                     }
                 }
@@ -1437,16 +1704,19 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     fun resetStudyTimer() {
         timerJob?.cancel()
         val current = studyTimerState.value
-        studyTimerState.value = StudyTimerState(
-            selectedMinutes = current.selectedMinutes,
-            remainingSeconds = current.selectedMinutes * 60,
-            isRunning = false,
-            linkedTaskId = current.linkedTaskId
+        val targetMins = if (current.isBreakPhase) current.breakMinutes else current.selectedMinutes
+        studyTimerState.value = current.copy(
+            remainingSeconds = targetMins * 60,
+            isRunning = false
         )
     }
 
     fun finishStudySessionEarly() {
         val state = studyTimerState.value
+        if (state.isBreakPhase) {
+            toggleStudyBreakPhase(false)
+            return
+        }
         val elapsedMins = ((state.selectedMinutes * 60) - state.remainingSeconds) / 60
         if (elapsedMins < 1) {
             snackbarState.value = "Run the timer for at least 1 minute to save focus"
@@ -1454,14 +1724,52 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
         timerJob?.cancel()
         viewModelScope.launch {
-            completeStudySession(elapsedMins, state.linkedTaskId)
+            completeStudySession(
+                minutes = elapsedMins,
+                linkedTaskId = state.linkedTaskId,
+                subjectId = state.activeSubjectId,
+                chapterId = state.activeChapterId
+            )
         }
     }
 
-    private suspend fun completeStudySession(minutes: Int, linkedTaskId: Long?) {
+    fun logManualStudySession(subjectId: Long?, chapterId: Long?, minutes: Int) {
+        val safeMins = minutes.coerceIn(5, 360)
+        viewModelScope.launch {
+            completeStudySession(
+                minutes = safeMins,
+                linkedTaskId = null,
+                subjectId = subjectId,
+                chapterId = chapterId
+            )
+        }
+    }
+
+    private suspend fun completeStudySession(
+        minutes: Int,
+        linkedTaskId: Long?,
+        subjectId: Long? = null,
+        chapterId: Long? = null
+    ) {
         val xp = (minutes * 2).coerceIn(10, 120)
+        val now = System.currentTimeMillis()
+        val timerSnapshot = studyTimerState.value
         prefsRepo.addFocusMinutes(minutes)
         recordDailyProgressDelta(focusDelta = minutes)
+        db.studySessionDao().insert(
+            StudySessionEntity(
+                subjectId = subjectId,
+                chapterId = chapterId,
+                plannedMinutes = timerSnapshot.selectedMinutes,
+                actualMinutes = minutes,
+                breakMinutes = timerSnapshot.breakMinutes,
+                sessionMode = timerSnapshot.sessionMode.name,
+                completed = true,
+                startedAtMillis = now - (minutes * 60_000L),
+                endedAtMillis = now,
+                dateEpochDay = DateTimeUtils.todayEpochDay()
+            )
+        )
         if (linkedTaskId != null) {
             val task = db.taskDao().getAllTasksOnce().firstOrNull { it.id == linkedTaskId }
             if (task != null) {
@@ -1481,11 +1789,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         petReactionState.value = "OYYYY Malkin! ${minutes}m focus done · +$xp XP!"
         snackbarState.value = "Saved ${minutes}m focus · +$xp XP"
         val current = studyTimerState.value
-        studyTimerState.value = StudyTimerState(
-            selectedMinutes = current.selectedMinutes,
+        studyTimerState.value = current.copy(
             remainingSeconds = current.selectedMinutes * 60,
             isRunning = false,
-            linkedTaskId = current.linkedTaskId
+            isBreakPhase = false,
+            pomodoroCyclesCompleted = current.pomodoroCyclesCompleted + 1
         )
         syncHomeWidgets()
     }
@@ -3009,6 +3317,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         previewSoundCategory(cue.category)
     }
 
+    fun updateSplashAudioLogo(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateSplashAudioLogo(enabled)
+            snackbarState.value = if (enabled) "Opening chime enabled" else "Opening chime muted"
+        }
+    }
+
+    fun playAppOpenLogoCue() {
+        soundManager.playCue(LifeOsSoundCue.APP_OPEN_LOGO, uiState.value.prefs, bypassSpeechGuard = true)
+    }
+
     fun resetAllLocalData() {
         viewModelScope.launch {
             friendSyncManager.stopNearbyPeerSync()
@@ -3025,6 +3344,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.dailyCheckInDao().clearAll()
             db.suruMemoryDao().clearAll()
             db.suruStudyPlanDao().clearAll()
+            db.subjectDao().clearAll()
+            db.studyChapterDao().clearAll()
+            db.studySessionDao().clearAll()
+            db.studyResourceDao().clearAll()
             db.quickNoteDao().saveNote(QuickNoteEntity(id = 1, content = ""))
             prefsRepo.resetDefaults()
             LifeOsSeeder.seedInitialDataIfNeeded(db)

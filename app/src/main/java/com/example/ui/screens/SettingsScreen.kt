@@ -114,6 +114,8 @@ fun SettingsScreen(
     onUpdateWaterSettings: (Int, Boolean) -> Unit = { _, _ -> },
     onUpdateCycleSettings: (Boolean, Int, Int) -> Unit = { _, _, _ -> },
     onUpdateReducedMotion: (Boolean) -> Unit = {},
+    onUpdateSplashAudioLogo: (Boolean) -> Unit = {},
+    onReplayOpeningSequence: () -> Unit = {},
     onUpdateSuruVoiceSettings: (Boolean, Float, SuruVoiceLanguage) -> Unit = { _, _, _ -> },
     onUpdateSuruBriefingSettings: (Boolean, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
     onUpdateSuruPersonalization: (Boolean) -> Unit = {},
@@ -183,7 +185,7 @@ fun SettingsScreen(
             item {
                 FeeloraSubpageHeader(
                     title = "Settings",
-                    subtitle = "3 Themes, 10 Soundscape Channels, Notifications & Privacy",
+                    subtitle = "Light / Dark / System, Opening Chime, Soundscape & Privacy",
                     onBack = onBack
                 )
             }
@@ -269,7 +271,12 @@ fun SettingsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text(mode.displayName, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
-                                        StatusPill(text = if (mode.isDark) "Dark" else "Light", color = mode.previewPrimary)
+                                        val modeTag = when (mode) {
+                                            LifeOsThemeMode.LIGHT -> "Light"
+                                            LifeOsThemeMode.DARK -> "Dark"
+                                            LifeOsThemeMode.SYSTEM -> "Auto"
+                                        }
+                                        StatusPill(text = modeTag, color = mode.previewPrimary)
                                     }
                                     Text(mode.subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                 }
@@ -300,6 +307,14 @@ fun SettingsScreen(
                         title = "Master Sound Effects",
                         checked = prefs.soundEffectsEnabled,
                         onCheckedChange = onUpdateSoundEffects
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FeeloraToggleRow(
+                        title = "Opening Chime / Audio Logo",
+                        subtitle = "Soft harmonic chime when FEELORA opens",
+                        checked = prefs.splashAudioLogoEnabled,
+                        onCheckedChange = onUpdateSplashAudioLogo,
+                        testTag = "settings_splash_audio_toggle"
                     )
                     Spacer(Modifier.height(6.dp))
                     FeeloraToggleRow(
@@ -582,6 +597,15 @@ fun SettingsScreen(
                         Text("Motion & Widgets", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                     }
                     ToggleRow("Reduced Motion", prefs.reducedMotionEnabled, onUpdateReducedMotion)
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = onReplayOpeningSequence,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_replay_opening_btn")
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Replay Opening Sequence")
+                    }
                     Spacer(Modifier.height(6.dp))
                     OutlinedButton(onClick = { showWidgetSheet = true }, modifier = Modifier.fillMaxWidth()) {
                         Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))

@@ -88,6 +88,7 @@ fun ProfileScreen(
     myShareToken: String,
     myInviteLink: String,
     onBack: () -> Unit,
+    onOpenCommandCenter: () -> Unit = {},
     onUpdateProfile: (
         name: String,
         handle: String,
@@ -306,7 +307,7 @@ fun ProfileScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    Text("Avatar Preset (Default: BUNNI)", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                    Text("Avatar & Portrait", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
                     Spacer(Modifier.height(6.dp))
                     Row(
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -336,6 +337,48 @@ fun ProfileScreen(
                                     maxLines = 1
                                 )
                             }
+                        }
+                    }
+                }
+            }
+
+            // Personal Command Center Entry Card (only inside Profile)
+            item {
+                ObsidianCard(
+                    onClick = onOpenCommandCenter,
+                    elevated = true,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    modifier = Modifier.testTag("profile_command_center_card")
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            StatusPill(
+                                text = "PERSONAL COMMAND CENTER",
+                                color = MaterialTheme.colorScheme.primary,
+                                icon = Icons.Filled.AutoAwesome
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = "Deadlines, study progress, streaks & badges",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = tokens.inkPrimary
+                            )
+                            Text(
+                                text = "Open unified status with quick 3-line corner menu.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(
+                            onClick = onOpenCommandCenter,
+                            modifier = Modifier.heightIn(min = 48.dp).testTag("profile_open_command_center_btn")
+                        ) {
+                            Text("Open", maxLines = 1, softWrap = false)
                         }
                     }
                 }

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pets
@@ -54,6 +55,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Pets
@@ -114,6 +116,8 @@ import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
 import com.example.ui.screens.CalendarScreen
+import com.example.ui.screens.CommandCenterScreen
+import com.example.ui.screens.FeeloraSplashOverlay
 import com.example.ui.screens.GrowthScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LifeAiScreen
@@ -123,6 +127,7 @@ import com.example.ui.screens.PermissionSetupScreen
 import com.example.ui.screens.PermissionsScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.StudyScreen
 import com.example.ui.screens.SuruAiSettingsSheet
 import com.example.ui.screens.TasksScreen
 import com.example.ui.screens.TogetherChatScreen
@@ -142,15 +147,17 @@ enum class LifeOsSection(
     val isPrimaryTab: Boolean = false
 ) {
     HOME("home", "Home", Icons.Filled.Home, Icons.Outlined.Home, isPrimaryTab = true),
+    STUDY("study", "Study", Icons.Filled.MenuBook, Icons.Outlined.MenuBook, isPrimaryTab = true),
     TASKS("tasks", "Tasks", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircle, isPrimaryTab = true),
     CALENDAR("calendar", "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth, isPrimaryTab = true),
     LIFE_AI("life_ai", "SURU", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome, isPrimaryTab = true),
-    WELLNESS("wellness", "Wellness", Icons.Filled.HealthAndSafety, Icons.Outlined.HealthAndSafety, isPrimaryTab = true),
-    TOGETHER("together", "Together", Icons.Filled.Groups, Icons.Outlined.Groups),
+    WELLNESS("wellness", "Wellness", Icons.Filled.HealthAndSafety, Icons.Outlined.HealthAndSafety),
+    TOGETHER("together", "Together One", Icons.Filled.Groups, Icons.Outlined.Groups),
     TOGETHER_CHAT("together_chat", "Chat", Icons.AutoMirrored.Filled.Chat, Icons.AutoMirrored.Outlined.Chat),
     GROWTH("growth", "KUTTA Corner", Icons.Filled.Pets, Icons.Outlined.Pets),
     NOTIFICATIONS("notifications", "Notifications", Icons.Filled.Notifications, Icons.Outlined.Notifications),
     PROFILE("profile", "Profile", Icons.Filled.Person, Icons.Outlined.Person),
+    COMMAND_CENTER("command_center", "Command Center", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
     PERMISSIONS("permissions", "Permissions", Icons.Filled.Shield, Icons.Outlined.Shield)
 }
@@ -167,6 +174,7 @@ fun LifeOsApp(
     var currentSection by remember { mutableStateOf(LifeOsSection.HOME) }
     var openCreateTaskImmediately by remember { mutableStateOf(false) }
     var showSuruAiSettingsSheet by remember { mutableStateOf(false) }
+    var showSplashSequence by remember { mutableStateOf(true) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -308,6 +316,7 @@ fun LifeOsApp(
                     viewModel.openTogetherChat(null)
                     currentSection = LifeOsSection.TOGETHER
                 }
+                LifeOsSection.COMMAND_CENTER -> currentSection = LifeOsSection.PROFILE
                 LifeOsSection.PERMISSIONS -> currentSection = LifeOsSection.SETTINGS
                 else -> currentSection = LifeOsSection.HOME
             }
@@ -444,6 +453,7 @@ fun LifeOsApp(
                                         if (isWideScreen && showNavigationChrome) {
                                             val railSections = listOf(
                                                 LifeOsSection.HOME,
+                                                LifeOsSection.STUDY,
                                                 LifeOsSection.TASKS,
                                                 LifeOsSection.CALENDAR,
                                                 LifeOsSection.LIFE_AI,
@@ -549,6 +559,27 @@ fun LifeOsApp(
                                                         onOpenDrawer = ::openDrawerMenu,
                                                         onOpenNotifications = { navigateToSection(LifeOsSection.NOTIFICATIONS) },
                                                         onShowMessage = viewModel::showMessage
+                                                    )
+                                                    LifeOsSection.STUDY -> StudyScreen(
+                                                        state = state,
+                                                        onSaveSubject = viewModel::saveSubject,
+                                                        onDeleteSubject = viewModel::deleteSubject,
+                                                        onSaveChapter = viewModel::saveStudyChapter,
+                                                        onToggleChapterCompleted = viewModel::toggleChapterCompleted,
+                                                        onDeleteChapter = viewModel::deleteStudyChapter,
+                                                        onSaveResource = viewModel::saveStudyResource,
+                                                        onDeleteResource = viewModel::deleteStudyResource,
+                                                        onConfigureTimer = viewModel::configureStudyTimer,
+                                                        onSelectFocusSubjectAndChapter = viewModel::selectFocusSubjectAndChapter,
+                                                        onToggleBreakPhase = viewModel::toggleStudyBreakPhase,
+                                                        onToggleTimer = viewModel::toggleStudyTimer,
+                                                        onResetTimer = viewModel::resetStudyTimer,
+                                                        onFinishTimerEarly = viewModel::finishStudySessionEarly,
+                                                        onUpdateStudyPlanStatus = viewModel::updateStudyPlanStatus,
+                                                        onOpenSuru = { navigateToSection(LifeOsSection.LIFE_AI) },
+                                                        onOpenDrawer = ::openDrawerMenu,
+                                                        onOpenNotifications = { navigateToSection(LifeOsSection.NOTIFICATIONS) },
+                                                        onOpenProfile = { navigateToSection(LifeOsSection.PROFILE) }
                                                     )
                                                     LifeOsSection.TASKS -> TasksScreen(
                                                         state = state,
@@ -730,6 +761,7 @@ fun LifeOsApp(
                                                         myShareToken = viewModel.buildMyShareToken(),
                                                         myInviteLink = viewModel.buildMyInviteLink(),
                                                         onBack = { currentSection = LifeOsSection.HOME },
+                                                        onOpenCommandCenter = { currentSection = LifeOsSection.COMMAND_CENTER },
                                                         onUpdateProfile = { name, handle, focusGoal, screenLimit, preset, bio, lang, photoUri ->
                                                             viewModel.updateProfile(
                                                                 name = name,
@@ -745,6 +777,12 @@ fun LifeOsApp(
                                                         onSelectAvatar = viewModel::updateAvatarPreset,
                                                         onSelectPhotoUri = viewModel::updateAvatarPhotoUri,
                                                         onShowMessage = viewModel::showMessage
+                                                    )
+                                                    LifeOsSection.COMMAND_CENTER -> CommandCenterScreen(
+                                                        state = state,
+                                                        onBackToProfile = { currentSection = LifeOsSection.PROFILE },
+                                                        onNavigateToSection = navigateToRoute,
+                                                        onToggleTask = viewModel::toggleTaskCompleted
                                                     )
                                                     LifeOsSection.SETTINGS -> SettingsScreen(
                                                         state = state,
@@ -770,6 +808,8 @@ fun LifeOsApp(
                                                         onUpdateWaterSettings = viewModel::updateWaterSettings,
                                                         onUpdateCycleSettings = viewModel::updateCycleSettings,
                                                         onUpdateReducedMotion = viewModel::updateReducedMotion,
+                                                        onUpdateSplashAudioLogo = viewModel::updateSplashAudioLogo,
+                                                        onReplayOpeningSequence = { showSplashSequence = true },
                                                         onUpdateSuruVoiceSettings = viewModel::updateSuruVoiceSettings,
                                                         onUpdateSuruBriefingSettings = viewModel::updateSuruBriefingSettings,
                                                         onUpdateSuruPersonalization = viewModel::updateSuruMemoryPersonalization,
@@ -845,6 +885,13 @@ fun LifeOsApp(
                             )
                         }
                     }
+                }
+                if (showSplashSequence && state.isPrefsLoaded) {
+                    FeeloraSplashOverlay(
+                        audioLogoEnabled = state.prefs.splashAudioLogoEnabled && state.prefs.soundEffectsEnabled,
+                        onPlayAudioLogo = viewModel::playAppOpenLogoCue,
+                        onFinished = { showSplashSequence = false }
+                    )
                 }
             }
         }
@@ -928,6 +975,7 @@ private fun FeeloraNavigationDrawerSheet(
             )
             listOf(
                 LifeOsSection.HOME,
+                LifeOsSection.STUDY,
                 LifeOsSection.TASKS,
                 LifeOsSection.CALENDAR,
                 LifeOsSection.LIFE_AI,

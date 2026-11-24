@@ -1,10 +1,10 @@
 package com.example.ui.theme
 
 import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -27,39 +27,46 @@ enum class LifeOsThemeMode(
     val previewSecondary: Color,
     val previewSurface: Color
 ) {
-    HYBRID_LAVENDER(
-        displayName = "Hybrid Lavender",
-        subtitle = "Default · Velvet plum, muted lavender & warm cream",
-        isDark = true,
-        previewPrimary = HybridLavenderPrimary,
-        previewSecondary = HybridLavenderSecondary,
-        previewSurface = HybridLavenderCard
-    ),
-    MIDNIGHT_AURORA(
-        displayName = "Midnight Aurora",
-        subtitle = "Dark · Deep midnight purple, violet & cyan glass",
-        isDark = true,
-        previewPrimary = AuroraPrimary,
-        previewSecondary = AuroraSecondary,
-        previewSurface = AuroraCard
-    ),
-    MATCHA_MIST(
-        displayName = "Matcha Mist",
-        subtitle = "Light · Botanical sage green & soft cream",
+    LIGHT(
+        displayName = "Lavender Editorial",
+        subtitle = "Warm cream, pure white cards & calm lavender",
         isDark = false,
-        previewPrimary = MatchaPrimary,
-        previewSecondary = MatchaSecondary,
-        previewSurface = MatchaCard
+        previewPrimary = PrimaryLavender,
+        previewSecondary = SoftPeach,
+        previewSurface = CreamBackground
+    ),
+    DARK(
+        displayName = "Velvet Plum",
+        subtitle = "Deep evening plum, luminous lavender & peach",
+        isDark = true,
+        previewPrimary = VelvetLavenderPrimary,
+        previewSecondary = VelvetSoftPeach,
+        previewSurface = VelvetPlumCard
+    ),
+    SYSTEM(
+        displayName = "System",
+        subtitle = "Follows your Android Light & Dark appearance",
+        isDark = false,
+        previewPrimary = DeepLavender,
+        previewSecondary = MutedRose,
+        previewSurface = SoftLavenderSurface
     );
+
+    fun resolvesToDark(systemDark: Boolean): Boolean = when (this) {
+        LIGHT -> false
+        DARK -> true
+        SYSTEM -> systemDark
+    }
 
     companion object {
         fun fromStored(raw: String?): LifeOsThemeMode {
-            if (raw.isNullOrBlank()) return HYBRID_LAVENDER
+            if (raw.isNullOrBlank()) return LIGHT
             entries.firstOrNull { it.name == raw }?.let { return it }
             return when (raw) {
-                "MIDNIGHT_AURORA", "VIOLET_CYAN", "CYBER_INDIGO", "AURORA_PULSE" -> MIDNIGHT_AURORA
-                "MATCHA_MIST", "ALABASTER_CLOUD", "WARM_LINEN" -> MATCHA_MIST
-                else -> HYBRID_LAVENDER
+                "DARK", "MIDNIGHT_AURORA", "VIOLET_CYAN", "CYBER_INDIGO", "AURORA_PULSE" -> DARK
+                "SYSTEM" -> SYSTEM
+                "LIGHT", "MATCHA_MIST", "ALABASTER_CLOUD", "WARM_LINEN", "HYBRID_LAVENDER" -> LIGHT
+                else -> LIGHT
             }
         }
     }
@@ -80,8 +87,11 @@ data class LifeOsThemeTokens(
     val inkSecondary: Color,
     val inkMuted: Color,
     val primary: Color,
+    val deepPrimary: Color,
     val secondary: Color,
     val tertiary: Color,
+    val peach: Color,
+    val rose: Color,
     val cardRadius: Dp,
     val heroRadius: Dp,
     val smallRadius: Dp,
@@ -91,82 +101,63 @@ data class LifeOsThemeTokens(
     val typographyLabel: String
 )
 
-private val HybridLavenderTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.HYBRID_LAVENDER,
-    isDark = true,
-    background = HybridLavenderBg,
-    surfaceBase = HybridLavenderBase,
-    surfaceCard = HybridLavenderCard,
-    surfaceElevated = HybridLavenderElevated,
-    surfaceHighlight = HybridLavenderHighlight,
-    borderSubtle = HybridLavenderBorder,
-    borderAccent = HybridLavenderBorderGlow,
-    inkPrimary = HybridLavenderInkPrimary,
-    inkSecondary = HybridLavenderInkSecondary,
-    inkMuted = HybridLavenderInkMuted,
-    primary = HybridLavenderPrimary,
-    secondary = HybridLavenderSecondary,
-    tertiary = HybridLavenderTertiary,
+private val LavenderLightTokens = LifeOsThemeTokens(
+    mode = LifeOsThemeMode.LIGHT,
+    isDark = false,
+    background = CreamBackground,
+    surfaceBase = CreamSurfaceBase,
+    surfaceCard = PureWhiteCard,
+    surfaceElevated = LightLavenderSurface,
+    surfaceHighlight = SoftLavenderSurface,
+    borderSubtle = EditorialBorderSubtle,
+    borderAccent = EditorialBorderAccent,
+    inkPrimary = EditorialInkPrimary,
+    inkSecondary = EditorialInkSecondary,
+    inkMuted = EditorialInkMuted,
+    primary = PrimaryLavender,
+    deepPrimary = DeepLavender,
+    secondary = DeepLavender,
+    tertiary = MutedRose,
+    peach = SoftPeach,
+    rose = MutedRose,
     cardRadius = 22.dp,
-    heroRadius = 26.dp,
+    heroRadius = 28.dp,
     smallRadius = 14.dp,
     pillRadius = 50.dp,
     cardBorderWidth = 1.dp,
     cardElevation = 0.dp,
-    typographyLabel = "Editorial Lavender"
+    typographyLabel = "Lavender Editorial"
 )
 
-private val MidnightAuroraTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.MIDNIGHT_AURORA,
+private val VelvetDarkTokens = LifeOsThemeTokens(
+    mode = LifeOsThemeMode.DARK,
     isDark = true,
-    background = AuroraVoid,
-    surfaceBase = AuroraBase,
-    surfaceCard = AuroraCard,
-    surfaceElevated = AuroraElevated,
-    surfaceHighlight = AuroraHighlight,
-    borderSubtle = AuroraBorder,
-    borderAccent = AuroraBorderGlow,
-    inkPrimary = AuroraInkPrimary,
-    inkSecondary = AuroraInkSecondary,
-    inkMuted = AuroraInkMuted,
-    primary = AuroraPrimary,
-    secondary = AuroraSecondary,
-    tertiary = AuroraTertiary,
-    cardRadius = 18.dp,
-    heroRadius = 22.dp,
-    smallRadius = 12.dp,
+    background = VelvetPlumBg,
+    surfaceBase = VelvetPlumBase,
+    surfaceCard = VelvetPlumCard,
+    surfaceElevated = VelvetPlumElevated,
+    surfaceHighlight = VelvetPlumHighlight,
+    borderSubtle = VelvetPlumBorderSubtle,
+    borderAccent = VelvetPlumBorderAccent,
+    inkPrimary = VelvetInkPrimary,
+    inkSecondary = VelvetInkSecondary,
+    inkMuted = VelvetInkMuted,
+    primary = VelvetLavenderPrimary,
+    deepPrimary = VelvetDeepLavender,
+    secondary = VelvetSoftPeach,
+    tertiary = VelvetMutedRose,
+    peach = VelvetSoftPeach,
+    rose = VelvetMutedRose,
+    cardRadius = 22.dp,
+    heroRadius = 28.dp,
+    smallRadius = 14.dp,
     pillRadius = 50.dp,
     cardBorderWidth = 1.dp,
     cardElevation = 0.dp,
-    typographyLabel = "Midnight Glass"
+    typographyLabel = "Velvet Plum"
 )
 
-private val MatchaMistTokens = LifeOsThemeTokens(
-    mode = LifeOsThemeMode.MATCHA_MIST,
-    isDark = false,
-    background = MatchaBg,
-    surfaceBase = MatchaBase,
-    surfaceCard = MatchaCard,
-    surfaceElevated = MatchaElevated,
-    surfaceHighlight = MatchaHighlight,
-    borderSubtle = MatchaBorder,
-    borderAccent = MatchaBorderGlow,
-    inkPrimary = MatchaInkPrimary,
-    inkSecondary = MatchaInkSecondary,
-    inkMuted = MatchaInkMuted,
-    primary = MatchaPrimary,
-    secondary = MatchaSecondary,
-    tertiary = MatchaTertiary,
-    cardRadius = 20.dp,
-    heroRadius = 24.dp,
-    smallRadius = 12.dp,
-    pillRadius = 50.dp,
-    cardBorderWidth = 1.dp,
-    cardElevation = 1.dp,
-    typographyLabel = "Botanical Studio"
-)
-
-val LocalLifeOsTokens = staticCompositionLocalOf { HybridLavenderTokens }
+val LocalLifeOsTokens = staticCompositionLocalOf { LavenderLightTokens }
 
 object LifeOsThemeTokensProvider {
     val current: LifeOsThemeTokens
@@ -175,25 +166,22 @@ object LifeOsThemeTokensProvider {
         get() = LocalLifeOsTokens.current
 }
 
-fun tokensForMode(mode: LifeOsThemeMode): LifeOsThemeTokens = when (mode) {
-    LifeOsThemeMode.HYBRID_LAVENDER -> HybridLavenderTokens
-    LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTokens
-    LifeOsThemeMode.MATCHA_MIST -> MatchaMistTokens
-}
-
-private fun typographyForMode(mode: LifeOsThemeMode): Typography = when (mode) {
-    LifeOsThemeMode.HYBRID_LAVENDER -> HybridLavenderTypography
-    LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTypography
-    LifeOsThemeMode.MATCHA_MIST -> MatchaMistTypography
+fun tokensForMode(
+    mode: LifeOsThemeMode,
+    systemDark: Boolean = false
+): LifeOsThemeTokens = if (mode.resolvesToDark(systemDark)) {
+    VelvetDarkTokens.copy(mode = mode)
+} else {
+    LavenderLightTokens.copy(mode = mode)
 }
 
 @Composable
 fun LifeOsTheme(
-    themeMode: LifeOsThemeMode = LifeOsThemeMode.HYBRID_LAVENDER,
+    themeMode: LifeOsThemeMode = LifeOsThemeMode.LIGHT,
     content: @Composable () -> Unit
 ) {
-    val tokens = tokensForMode(themeMode)
-    val typography = typographyForMode(themeMode)
+    val systemDark = isSystemInDarkTheme()
+    val tokens = tokensForMode(themeMode, systemDark)
     val shapes = Shapes(
         extraSmall = RoundedCornerShape(tokens.smallRadius * 0.7f),
         small = RoundedCornerShape(tokens.smallRadius),
@@ -203,18 +191,17 @@ fun LifeOsTheme(
     )
 
     val colorScheme = if (tokens.isDark) {
-        val isHybrid = themeMode == LifeOsThemeMode.HYBRID_LAVENDER
         darkColorScheme(
             primary = tokens.primary,
-            onPrimary = if (isHybrid) HybridLavenderBg else Color.White,
-            primaryContainer = if (isHybrid) HybridLavenderHighlight else tokens.primary.copy(alpha = 0.24f),
+            onPrimary = VelvetPlumBg,
+            primaryContainer = tokens.surfaceHighlight,
             onPrimaryContainer = tokens.inkPrimary,
             secondary = tokens.secondary,
-            onSecondary = tokens.background,
-            secondaryContainer = tokens.secondary.copy(alpha = 0.18f),
+            onSecondary = VelvetPlumBg,
+            secondaryContainer = tokens.peach.copy(alpha = 0.16f),
             onSecondaryContainer = tokens.inkPrimary,
             tertiary = tokens.tertiary,
-            onTertiary = tokens.background,
+            onTertiary = VelvetPlumBg,
             background = tokens.background,
             onBackground = tokens.inkPrimary,
             surface = tokens.surfaceBase,
@@ -233,29 +220,29 @@ fun LifeOsTheme(
         )
     } else {
         lightColorScheme(
-            primary = tokens.primary,
+            primary = PrimaryLavender,
             onPrimary = Color.White,
-            primaryContainer = tokens.surfaceElevated,
-            onPrimaryContainer = tokens.inkPrimary,
-            secondary = tokens.secondary,
+            primaryContainer = SoftLavenderSurface,
+            onPrimaryContainer = EditorialInkPrimary,
+            secondary = DeepLavender,
             onSecondary = Color.White,
-            secondaryContainer = tokens.secondary.copy(alpha = 0.14f),
-            onSecondaryContainer = tokens.inkPrimary,
-            tertiary = tokens.tertiary,
-            onTertiary = Color.White,
-            background = tokens.background,
-            onBackground = tokens.inkPrimary,
-            surface = tokens.surfaceBase,
-            onSurface = tokens.inkPrimary,
-            surfaceVariant = tokens.surfaceElevated,
-            onSurfaceVariant = tokens.inkSecondary,
-            surfaceContainerLowest = tokens.surfaceBase,
-            surfaceContainerLow = tokens.background,
-            surfaceContainer = tokens.surfaceCard,
-            surfaceContainerHigh = tokens.surfaceElevated,
-            surfaceContainerHighest = tokens.surfaceHighlight,
-            outline = tokens.borderSubtle,
-            outlineVariant = tokens.borderAccent,
+            secondaryContainer = SoftPeach.copy(alpha = 0.45f),
+            onSecondaryContainer = EditorialInkPrimary,
+            tertiary = MutedRose,
+            onTertiary = EditorialInkPrimary,
+            background = CreamBackground,
+            onBackground = EditorialInkPrimary,
+            surface = CreamSurfaceBase,
+            onSurface = EditorialInkPrimary,
+            surfaceVariant = LightLavenderSurface,
+            onSurfaceVariant = EditorialInkSecondary,
+            surfaceContainerLowest = CreamBackground,
+            surfaceContainerLow = CreamSurfaceBase,
+            surfaceContainer = PureWhiteCard,
+            surfaceContainerHigh = LightLavenderSurface,
+            surfaceContainerHighest = SoftLavenderSurface,
+            outline = EditorialBorderSubtle,
+            outlineVariant = EditorialBorderAccent,
             error = RoseAlert,
             onError = Color.White
         )
@@ -276,7 +263,7 @@ fun LifeOsTheme(
     CompositionLocalProvider(LocalLifeOsTokens provides tokens) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = typography,
+            typography = FeeloraTypography,
             shapes = shapes,
             content = content
         )

@@ -163,6 +163,35 @@ object SuruNluEngine {
             // Check critical missing info
             if (chapters.isEmpty()) {
                 val expectedCount = extractExpectedChapterCount(lower)
+                if (expectedCount != null && dailyMins != null && deadlineDays == null) {
+                    val generatedChapters = (1..expectedCount).map { idx ->
+                        if (subject != "Study") "$subject Chapter $idx" else "Chapter $idx"
+                    }
+                    val resolvedWindow = window ?: SuruTimeWindow.EVENING
+                    val parsedTime = extractTimeOfDay(lower)
+                    val draft = SuruStudyPlanner.buildStudyPlanDraft(
+                        subject = subject,
+                        chapters = generatedChapters,
+                        deadlineDays = 1,
+                        dailyAvailableMinutes = dailyMins,
+                        preferredWindow = resolvedWindow,
+                        startHour = parsedTime?.first ?: resolvedWindow.defaultHour,
+                        startMinute = parsedTime?.second ?: resolvedWindow.defaultMinute,
+                        existingEvents = events,
+                        todayEpochDay = todayEpochDay
+                    )
+                    return SuruStructuredAction(
+                        intent = SuruIntent.CREATE_STUDY_PLAN,
+                        reply = "Balanced your $expectedCount chapters across ${DateTimeUtils.formatMinutesCompact(dailyMins)} (Concept, Practice & Revision with breaks). Review & confirm below, or tell me specific chapter names to swap in!",
+                        subject = draft.subject,
+                        chapters = draft.chapters,
+                        studyPlanDraft = draft,
+                        requiresConfirmation = true,
+                        confirmationTitle = "Confirm ${draft.subject} Study Plan ($expectedCount Chapters)",
+                        confirmationMessage = draft.summaryNote,
+                        isOfflineEngine = true
+                    )
+                }
                 val promptQuestion = if (expectedCount != null) {
                     if (isHindiOrHinglish(lower)) {
                         "Sure! Kaunse $expectedCount chapters complete karne hain?"

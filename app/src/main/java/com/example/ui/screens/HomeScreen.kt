@@ -10,11 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,10 +34,13 @@ import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
@@ -65,19 +65,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.R
 import com.example.data.local.DashboardWidgetType
 import com.example.data.local.HabitEntity
 import com.example.data.local.TaskEntity
@@ -86,13 +81,19 @@ import com.example.kutta.KuttaDashboardCard
 import com.example.suru.SuruMascot
 import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DashboardWidgetCard
+import com.example.ui.components.FeeloraBrandMark
 import com.example.ui.components.FeeloraScreenBackdrop
 import com.example.ui.components.FeeloraTopHeader
 import com.example.ui.components.GlanceWidgetPinningSection
+import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.LevelUpBanner
+import com.example.ui.components.NeonProgressBar
+import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
 import com.example.ui.components.WidgetCustomizerList
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.EmeraldSuccess
+import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.DateTimeUtils
@@ -153,6 +154,18 @@ fun HomeScreen(
             .sortedBy { it.sortOrder }
     }
 
+    val nextEvent = remember(state.events, state.todayEpochDay) {
+        state.events
+            .filter { it.dateEpochDay >= state.todayEpochDay && !it.isCountdown }
+            .sortedWith(compareBy({ it.dateEpochDay }, { it.startMinuteOfDay }))
+            .firstOrNull()
+    }
+    val nextTask = remember(state.tasks) {
+        state.tasks
+            .filter { !it.isCompleted }
+            .sortedWith(compareByDescending<TaskEntity> { it.priority.ordinal }.thenBy { it.deadlineEpochDay })
+            .firstOrNull()
+    }
     val togetherCount = state.togetherState.friends.size + state.friends.size
 
     FeeloraScreenBackdrop(modifier = Modifier.fillMaxSize()) {
@@ -160,10 +173,10 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .testTag("home_screen"),
-            contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Unified FEELORA 2.0 Top Header (Hamburger Drawer + Notification Center + Profile)
+            // 1. Calm Lavender Editorial Header
             item {
                 FeeloraTopHeader(
                     title = "FEELORA",
@@ -193,120 +206,189 @@ fun HomeScreen(
                 )
             }
 
-            // Atmospheric FEELORA Hero Command Card
+            // 2. Editorial Greeting Hero
             item {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(tokens.heroRadius))
-                        .border(tokens.cardBorderWidth, tokens.borderAccent.copy(alpha = 0.45f), RoundedCornerShape(tokens.heroRadius))
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.img_feelora_hero_1795511874544),
-                        contentDescription = "FEELORA studio atmosphere",
-                        modifier = Modifier.matchParentSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(
-                                        tokens.surfaceBase.copy(alpha = if (tokens.isDark) 0.62f else 0.78f),
-                                        tokens.surfaceBase.copy(alpha = if (tokens.isDark) 0.90f else 0.94f)
-                                    )
-                                )
-                            )
-                    )
-
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Explorer" }}",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = tokens.inkPrimary,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (state.prefs.userHandle.isNotBlank()) {
+                GradientGlowCard(contentPadding = PaddingValues(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = state.prefs.userHandle,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.secondary
+                                text = "CALM CLARITY",
+                                style = FeeloraTypeHelpers.editorialEyebrow,
+                                color = tokens.deepPrimary
                             )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Explorer" }}",
+                                style = MaterialTheme.typography.headlineMedium,
+                                color = tokens.inkPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (state.prefs.userHandle.isNotBlank()) {
+                                Text(
+                                    text = state.prefs.userHandle,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(10.dp))
+                        FeeloraBrandMark(size = 44.dp, showGlow = false)
+                    }
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        StatusPill(
+                            text = "Lv.${state.prefs.level} · ${state.prefs.totalXp} XP",
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        AnimatedStreakPill(streakDays = state.prefs.dailyStreak)
+                        StatusPill(
+                            text = "${state.productivityScore}% Flow",
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilledTonalButton(
+                            onClick = { onNavigateToSection("study") },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("home_study_btn")
                         ) {
-                            StatusPill(
-                                text = "Lv.${state.prefs.level} · ${state.prefs.totalXp} XP",
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            AnimatedStreakPill(streakDays = state.prefs.dailyStreak)
-                            StatusPill(
-                                text = "${state.productivityScore}% Flow",
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+                            Icon(Icons.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Study", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
                         }
-
-                        Spacer(Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        FilledTonalButton(
+                            onClick = onQuickAddTaskClick,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("home_quick_task_btn")
                         ) {
-                            FilledTonalButton(
-                                onClick = onQuickAddTaskClick,
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.weight(1f).height(42.dp).testTag("home_quick_task_btn")
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Task", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                            }
-                            FilledTonalButton(
-                                onClick = { onNavigateToSection("life_ai") },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.weight(1f).height(42.dp).testTag("home_life_ai_btn")
-                            ) {
-                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    widgetsSheetTab = 0
-                                    showWidgetsSheet = true
-                                },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.weight(1f).height(42.dp).testTag("home_widgets_btn")
-                            ) {
-                                Icon(Icons.Filled.Widgets, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("Widgets", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                            }
+                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Task", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                widgetsSheetTab = 0
+                                showWidgetsSheet = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f).height(44.dp).testTag("home_widgets_btn")
+                        ) {
+                            Icon(Icons.Filled.Widgets, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Widgets", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
                         }
                     }
                 }
             }
 
-            // KUTTA Sanctuary Card
+            // 3. Daily Overview 4-Stat Strip
             item {
-                KuttaDashboardCard(
-                    visualState = state.kuttaState,
-                    level = state.prefs.level,
-                    xpIntoCurrentLevel = state.prefs.xpIntoCurrentLevel,
-                    xpPerLevel = state.prefs.xpPerLevel,
-                    onTapKutta = onTapKutta,
-                    onOpenSanctuary = { onNavigateToSection("growth") }
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    EditorialStatTile(
+                        label = "Open Tasks",
+                        value = "${state.pendingTasksCount}",
+                        accent = MaterialTheme.colorScheme.primary,
+                        onClick = { onNavigateToSection("tasks") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    EditorialStatTile(
+                        label = "Focus Today",
+                        value = DateTimeUtils.formatMinutesCompact(state.prefs.focusMinutesLoggedToday),
+                        accent = tokens.deepPrimary,
+                        onClick = { onNavigateToSection("study") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    EditorialStatTile(
+                        label = "Chapters",
+                        value = "${state.completedChaptersCount}/${state.studyChapters.size}",
+                        accent = EmeraldSuccess,
+                        onClick = { onNavigateToSection("study") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
-            // SURU Quick Voice & Planning Strip
+            // 4. Next Up + Quick Study Summary
+            item {
+                ObsidianCard(
+                    onClick = {
+                        if (nextEvent != null) onNavigateToSection("calendar") else onNavigateToSection("study")
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Next Up", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                        }
+                        if (state.studySubjects.isNotEmpty()) {
+                            Text(
+                                "${state.studySubjects.size} Study Subject(s)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = tokens.deepPrimary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    when {
+                        nextEvent != null -> {
+                            Text(nextEvent.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                            Text(
+                                "${DateTimeUtils.formatRelativeDeadline(nextEvent.dateEpochDay)} · ${DateTimeUtils.formatTimeOfDay(nextEvent.startMinuteOfDay)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                        nextTask != null -> {
+                            Text(nextTask.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                            Text(
+                                "${nextTask.priority.label} priority · ${DateTimeUtils.formatRelativeDeadline(nextTask.deadlineEpochDay)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                        else -> {
+                            Text(
+                                "Your schedule is calm and open. Tap to start a study sprint or plan with SURU.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                    }
+                    if (state.studySubjects.isNotEmpty()) {
+                        val leadSubj = state.studySubjects.first()
+                        Spacer(Modifier.height(10.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(leadSubj.name, style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                            Text("${(state.progressForSubject(leadSubj.id) * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = tokens.deepPrimary)
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        NeonProgressBar(progress = state.progressForSubject(leadSubj.id), heightDp = 6)
+                    }
+                }
+            }
+
+            // 5. SURU Voice & Planning Card
             item {
                 Surface(
                     onClick = { onNavigateToSection("life_ai") },
@@ -321,7 +403,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         SuruMascot(state = state.suruMascotState, size = 48.dp)
@@ -337,7 +419,7 @@ fun HomeScreen(
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 text = state.suruMorningBriefing.headline.ifBlank {
-                                    "Tap to plan study, backlog, or talk in English / Hinglish"
+                                    "Plan chapters, recover backlog, or speak naturally"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = tokens.inkSecondary,
@@ -357,7 +439,7 @@ fun HomeScreen(
                             },
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = tokens.background
+                                contentColor = Color.White
                             ),
                             modifier = Modifier.size(48.dp).testTag("home_suru_mic_btn")
                         ) {
@@ -367,7 +449,19 @@ fun HomeScreen(
                 }
             }
 
-            // Water & Private Cycle Care Strip
+            // 6. KUTTA Sanctuary Summary Card
+            item {
+                KuttaDashboardCard(
+                    visualState = state.kuttaState,
+                    level = state.prefs.level,
+                    xpIntoCurrentLevel = state.prefs.xpIntoCurrentLevel,
+                    xpPerLevel = state.prefs.xpPerLevel,
+                    onTapKutta = onTapKutta,
+                    onOpenSanctuary = { onNavigateToSection("growth") }
+                )
+            }
+
+            // 7. Calm Wellness, Hydration & Together One Row
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -382,7 +476,7 @@ fun HomeScreen(
                         border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -412,7 +506,7 @@ fun HomeScreen(
                             label = "Cycle Care",
                             sub = cycleSub,
                             icon = Icons.Filled.Favorite,
-                            accent = Color(0xFFF472B6),
+                            accent = Color(0xFFC8829C),
                             onClick = { onNavigateToSection("wellness") },
                             modifier = Modifier.weight(0.85f)
                         )
@@ -420,7 +514,6 @@ fun HomeScreen(
                 }
             }
 
-            // Quick Module Dock (Wellness, KUTTA Corner, Together)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -428,7 +521,7 @@ fun HomeScreen(
                 ) {
                     QuickModuleChip(
                         label = "Wellness",
-                        sub = if (state.hasUsageStatsPermission) DateTimeUtils.formatMinutesCompact(state.totalScreenMinutesToday) else "Setup",
+                        sub = if (state.hasUsageStatsPermission) DateTimeUtils.formatMinutesCompact(state.totalScreenMinutesToday) else "Balance",
                         icon = Icons.Filled.HealthAndSafety,
                         accent = MaterialTheme.colorScheme.secondary,
                         onClick = { onNavigateToSection("wellness") },
@@ -443,7 +536,7 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     )
                     QuickModuleChip(
-                        label = "Together",
+                        label = "Together One",
                         sub = if (state.unreadTogetherMessagesCount > 0) "${state.unreadTogetherMessagesCount} new" else "$togetherCount circle",
                         icon = Icons.Filled.Groups,
                         accent = AmberWarning,
@@ -483,28 +576,8 @@ fun HomeScreen(
                 }
             }
 
-            // Customizable Dashboard Cards
-            if (visibleWidgets.isEmpty()) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(tokens.cardRadius))
-                            .background(tokens.surfaceElevated)
-                            .padding(22.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("No cards active on Home.", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Spacer(Modifier.height(6.dp))
-                        TextButton(onClick = {
-                            widgetsSheetTab = 1
-                            showWidgetsSheet = true
-                        }) {
-                            Text("Customize Cards", maxLines = 1, softWrap = false)
-                        }
-                    }
-                }
-            } else {
+            // Customizable Dashboard Cards (User-chosen extras)
+            if (visibleWidgets.isNotEmpty()) {
                 items(visibleWidgets, key = { it.widgetTypeName }) { config ->
                     val type = config.type
                     if (type != null) {
@@ -524,20 +597,20 @@ fun HomeScreen(
                         )
                     }
                 }
+            }
 
-                item {
-                    OutlinedButton(
-                        onClick = {
-                            widgetsSheetTab = 1
-                            showWidgetsSheet = true
-                        },
-                        border = BorderStroke(1.dp, tokens.borderSubtle),
-                        modifier = Modifier.fillMaxWidth().height(44.dp)
-                    ) {
-                        Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Customize Cards (${visibleWidgets.size}/${state.widgets.size})", maxLines = 1, softWrap = false)
-                    }
+            item {
+                OutlinedButton(
+                    onClick = {
+                        widgetsSheetTab = 1
+                        showWidgetsSheet = true
+                    },
+                    border = BorderStroke(1.dp, tokens.borderSubtle),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp)
+                ) {
+                    Icon(Icons.Filled.DashboardCustomize, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Customize Dashboard Cards (${visibleWidgets.size}/${state.widgets.size})", maxLines = 1, softWrap = false)
                 }
             }
 
@@ -565,7 +638,7 @@ fun HomeScreen(
                     text = if (widgetsSheetTab == 0) {
                         "Pin live Android Glance widgets directly to your home screen."
                     } else {
-                        "Choose which cards appear on your Home tab."
+                        "Choose which calm cards appear on your Home tab."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary
@@ -609,6 +682,42 @@ fun HomeScreen(
 }
 
 @Composable
+private fun EditorialStatTile(
+    label: String,
+    value: String,
+    accent: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tokens = LifeOsThemeTokensProvider.current
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(tokens.cardRadius * 0.85f),
+        color = tokens.surfaceCard,
+        border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleLarge,
+                color = accent,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.inkSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
 private fun QuickModuleChip(
     label: String,
     sub: String,
@@ -626,7 +735,7 @@ private fun QuickModuleChip(
         shadowElevation = tokens.cardElevation,
         border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(4.dp))

@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,17 +55,18 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MailOutline
 import androidx.compose.material.icons.filled.MarkEmailRead
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.material.icons.filled.TaskAlt
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -93,9 +95,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -119,28 +125,115 @@ import com.example.notifications.AppPermissionInfo
 import com.example.notifications.AppPermissionStatus
 import com.example.notifications.PermissionCenterHelper
 import com.example.ui.components.FeeloraBannerTone
+import com.example.ui.components.FeeloraBrandMark
 import com.example.ui.components.FeeloraStatusBanner
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
+import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeMode
 import com.example.ui.theme.RoseAlert
 import com.example.ui.theme.tokensForMode
 import com.example.ui.viewmodel.AuthUiState
 
+private data class OnboardingStoryPage(
+    val eyebrow: String,
+    val title: String,
+    val headline: String,
+    val description: String,
+    val bullets: List<String>,
+    val icon: ImageVector
+)
+
+private val FeeloraStoryPages = listOf(
+    OnboardingStoryPage(
+        eyebrow = "01 · TASKS",
+        title = "Tasks",
+        headline = "Calm priority checklists without the clutter.",
+        description = "Organize study and daily actions into clean sections, capture tasks in a single tap, and receive gentle, respectful reminders.",
+        bullets = listOf(
+            "Group work into Overdue, Today, and Upcoming sections",
+            "Track streaks and earn XP as every task clicks complete"
+        ),
+        icon = Icons.Filled.TaskAlt
+    ),
+    OnboardingStoryPage(
+        eyebrow = "02 · STUDY",
+        title = "Study",
+        headline = "Structured subjects, chapters & focused sprints.",
+        description = "Map each subject and chapter, balance daily or weekly study hours, and enter deep focus with Pomodoro or custom timers.",
+        bullets = listOf(
+            "Track subject progress automatically as chapters finish",
+            "Review session logs, notes & quick resources in one home"
+        ),
+        icon = Icons.Filled.MenuBook
+    ),
+    OnboardingStoryPage(
+        eyebrow = "03 · CALENDAR",
+        title = "Calendar",
+        headline = "Deadlines and days ahead in peaceful view.",
+        description = "Switch between Month, Week, and Day horizons, watch exam countdowns, and export key blocks straight to your device calendar.",
+        bullets = listOf(
+            "Automatic conflict checks keep study blocks realistic",
+            "Pinned milestone countdowns highlight what matters most"
+        ),
+        icon = Icons.Filled.CalendarMonth
+    ),
+    OnboardingStoryPage(
+        eyebrow = "04 · WELLNESS",
+        title = "Wellness",
+        headline = "Gentle care for hydration, rhythm & screen balance.",
+        description = "Check in with your mood and energy, hit daily hydration goals, monitor screen balance honestly, and track Cycle Care in complete device privacy.",
+        bullets = listOf(
+            "One-tap hydration & quick daily emotional check-ins",
+            "Cycle Care & private reflections never leave your device"
+        ),
+        icon = Icons.Filled.Spa
+    ),
+    OnboardingStoryPage(
+        eyebrow = "05 · SURU AI",
+        title = "SURU AI",
+        headline = "Thoughtful study planning that asks before acting.",
+        description = "Ask SURU to divide chapters across your available hours, summarize notes, or reschedule overdue tasks with clear confirmation cards.",
+        bullets = listOf(
+            "Built-in study balancer splits chapters with smart breaks",
+            "Supports voice, handwritten note photos & multi-provider AI"
+        ),
+        icon = Icons.Filled.AutoAwesome
+    ),
+    OnboardingStoryPage(
+        eyebrow = "06 · COMPANION",
+        title = "KUTTA Companion",
+        headline = "Meet KUTTA — cheering every small step forward.",
+        description = "Your loyal desk companion reacts to focus sessions, hydration, streaks, and tasks with warm encouragement and unlockable keepsakes.",
+        bullets = listOf(
+            "Reflects your live momentum across calm animated states",
+            "Grows alongside your XP, streaks & finished study chapters"
+        ),
+        icon = Icons.Filled.Pets
+    ),
+    OnboardingStoryPage(
+        eyebrow = "07 · TOGETHER ONE",
+        title = "Together One",
+        headline = "Quiet accountability with people you trust.",
+        description = "Connecting with friends is completely optional. Share mutual study streaks, cheer progress, or work toward shared goals on your own terms.",
+        bullets = listOf(
+            "Invite via personal FLR friend code or deep link",
+            "Granular privacy controls — private logs stay 100% yours"
+        ),
+        icon = Icons.Filled.Groups
+    )
+)
+
 /**
- * 7-Screen FEELORA First-Launch Onboarding Experience:
- * 1. Welcome
- * 2. Discover FEELORA (Tasks, Study, Calendar, Wellness, SURU AI, Companion, Together)
- * 3. Together Introduction (Optional social features)
- * 4. Authentication (Create Account, Login, Forgot Password, Email verification, or local studio)
- * 5. Profile Creation (Display name, @username, photo/avatar, bio, language, 3-theme preference)
- * 6. Optional Connection (Friend code / invite link / share / Skip)
- * 7. Finish (Launch celebration)
- *
- * Strictly excludes companion pet visuals and mascot selection on all 7 onboarding screens.
+ * FEELORA Onboarding & Account Setup:
+ * - Story Stage (Pages 0..6): 7 illustrated Lavender Editorial feature pages (Tasks, Study, Calendar, Wellness, SURU AI, KUTTA Companion, Together One) with 7-step progress indicator, Back, Continue, and Skip.
+ * - Setup Stage (Steps 7..9):
+ *   7 -> Account (Supabase Cloud Create Account / Sign In / Reset Password or Offline Local)
+ *   8 -> Profile Creation (Display Name, @username, Photo/Avatar, Bio, Language, Theme Light/Dark/System, Focus Goal)
+ *   9 -> Optional Friend Code Connection & Launch
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -150,7 +243,7 @@ fun OnboardingScreen(
     inviteLink: String = "",
     onPreviewThemeMode: (LifeOsThemeMode) -> Unit = {},
     onSignUp: (email: String, password: String, displayName: String, onSuccess: () -> Unit) -> Unit = { _, _, _, onSuccess -> onSuccess() },
-    onSignIn: (email: String, password: String, onSuccess: () -> Unit) -> Unit = { _, _, onSuccess -> onSuccess() },
+    onSignIn: (email: String, password: String, onSuccess: () -> Unit) -> Unit = { _, _, _, -> },
     onSendPasswordReset: (String) -> Unit = {},
     onResendVerification: (String) -> Unit = {},
     onCheckUsername: (String) -> Unit = {},
@@ -167,7 +260,8 @@ fun OnboardingScreen(
         focusGoalMinutes: Int
     ) -> Unit
 ) {
-    var step by rememberSaveable { mutableIntStateOf(if (existingPrefs.hasCompletedOnboarding && !existingPrefs.isSignedIn) 3 else 0) }
+    // Pages 0..6 = 7 Illustrated Story Pages; Steps 7, 8, 9 = Account, Profile, Connection & Launch
+    var step by rememberSaveable { mutableIntStateOf(if (existingPrefs.hasCompletedOnboarding && !existingPrefs.isSignedIn) 7 else 0) }
     var authTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Create Account, 1 = Sign In, 2 = Reset
 
     // Auth fields
@@ -236,21 +330,21 @@ fun OnboardingScreen(
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            tokens.primary.copy(alpha = if (tokens.isDark) 0.24f else 0.14f),
+                            tokens.primary.copy(alpha = if (tokens.isDark) 0.22f else 0.14f),
                             Color.Transparent
                         ),
-                        center = Offset(size.width * 0.18f, size.height * 0.12f),
+                        center = Offset(size.width * 0.16f, size.height * 0.10f),
                         radius = size.maxDimension * 0.55f
                     )
                 )
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            tokens.secondary.copy(alpha = if (tokens.isDark) 0.16f else 0.10f),
+                            tokens.peach.copy(alpha = if (tokens.isDark) 0.12f else 0.24f),
                             Color.Transparent
                         ),
-                        center = Offset(size.width * 0.88f, size.height * 0.80f),
-                        radius = size.maxDimension * 0.50f
+                        center = Offset(size.width * 0.88f, size.height * 0.82f),
+                        radius = size.maxDimension * 0.48f
                     )
                 )
             }
@@ -262,12 +356,12 @@ fun OnboardingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .widthIn(max = 540.dp)
+                .widthIn(max = 560.dp)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top step indicator & Back arrow (Steps 2..7)
+            // Top Header Row: Back / Brand + Progress + Skip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -285,39 +379,55 @@ fun OnboardingScreen(
                         )
                     }
                 } else {
-                    Spacer(Modifier.size(48.dp))
-                }
-
-                // 7-step pill dots
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    repeat(7) { idx ->
-                        val active = idx == step
-                        val passed = idx < step
-                        Box(
-                            modifier = Modifier
-                                .height(6.dp)
-                                .width(if (active) 22.dp else 8.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        active -> tokens.primary
-                                        passed -> tokens.secondary
-                                        else -> tokens.borderSubtle
-                                    }
-                                )
-                        )
+                    Box(
+                        modifier = Modifier.size(48.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        FeeloraBrandMark(size = 34.dp, withSoftFrame = true)
                     }
                 }
 
-                Text(
-                    text = "${step + 1}/7",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = tokens.inkSecondary,
-                    modifier = Modifier.padding(end = 10.dp)
-                )
+                if (step in 0..6) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        repeat(7) { idx ->
+                            val active = idx == step
+                            val passed = idx < step
+                            Box(
+                                modifier = Modifier
+                                    .height(6.dp)
+                                    .width(if (active) 24.dp else 8.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        when {
+                                            active -> tokens.deepPrimary
+                                            passed -> tokens.primary
+                                            else -> tokens.borderSubtle
+                                        }
+                                    )
+                            )
+                        }
+                    }
+                    TextButton(
+                        onClick = { step = 7 },
+                        modifier = Modifier.testTag("onboarding_skip_btn")
+                    ) {
+                        Text(
+                            text = "Skip",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = tokens.inkSecondary
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "SETUP · ${step - 6}/3",
+                        style = FeeloraTypeHelpers.editorialTag,
+                        color = tokens.deepPrimary
+                    )
+                    Spacer(Modifier.size(48.dp))
+                }
             }
 
             Spacer(Modifier.height(10.dp))
@@ -328,220 +438,148 @@ fun OnboardingScreen(
                 label = "onboarding_step_anim"
             ) { currentStep ->
                 when (currentStep) {
-                    // SCREEN 1 — WELCOME
-                    0 -> {
+                    in 0..6 -> {
+                        val page = FeeloraStoryPages[currentStep]
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("onboarding_page_$currentStep"),
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Spacer(Modifier.height(12.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(240.dp)
-                                    .clip(RoundedCornerShape(tokens.heroRadius))
-                                    .border(1.dp, tokens.borderAccent.copy(alpha = 0.45f), RoundedCornerShape(tokens.heroRadius))
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.img_feelora_welcome_1795511874594),
-                                    contentDescription = "FEELORA calm studio illustration",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                            if (currentStep == 0) {
+                                // Opening Editorial Welcome Banner on Page 1
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(Color.Transparent, tokens.background.copy(alpha = 0.68f))
+                                        .fillMaxWidth()
+                                        .height(190.dp)
+                                        .clip(RoundedCornerShape(tokens.heroRadius))
+                                        .border(1.dp, tokens.borderAccent.copy(alpha = 0.55f), RoundedCornerShape(tokens.heroRadius))
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.img_feelora_welcome_editorial_1795527020857),
+                                        contentDescription = "FEELORA editorial botanical journal artwork",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                Brush.verticalGradient(
+                                                    listOf(Color.Transparent, tokens.background.copy(alpha = 0.72f))
+                                                )
                                             )
-                                        )
-                                )
-                            }
-
-                            Spacer(Modifier.height(26.dp))
-
-                            Text(
-                                text = "FEELORA",
-                                style = MaterialTheme.typography.displayLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                text = "Calm clarity for your study rhythm, tasks, calendar, wellness, and meaningful focus — every single day.",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = tokens.inkSecondary,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Spacer(Modifier.height(30.dp))
-
-                            Button(
-                                onClick = { step = 1 },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
-                                shape = RoundedCornerShape(tokens.smallRadius),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(54.dp)
-                                    .testTag("onboarding_get_started_btn")
-                            ) {
-                                Text("Get Started", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Spacer(Modifier.width(8.dp))
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
-                            }
-                        }
-                    }
-
-                    // SCREEN 2 — DISCOVER FEELORA
-                    1 -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Text(
-                                text = "Discover FEELORA",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Seven calm modules built into one cohesive personal workspace.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = tokens.inkSecondary
-                            )
-                            Spacer(Modifier.height(4.dp))
-
-                            val features = listOf(
-                                Triple(Icons.Filled.TaskAlt, "Tasks", "Sectioned lists, quick inline add, and smart gentle reminders."),
-                                Triple(Icons.Filled.School, "Study", "Pomodoro focus timer, weighted chapter plans, and study aids."),
-                                Triple(Icons.Filled.CalendarMonth, "Calendar", "Month, week, and day agenda with milestone countdowns."),
-                                Triple(Icons.Filled.HealthAndSafety, "Wellness", "Hydration, daily mood check-in, screen balance & private Cycle Care."),
-                                Triple(Icons.Filled.AutoAwesome, "SURU AI", "Voice, camera notes, briefings, and multi-provider intelligence."),
-                                Triple(Icons.Filled.Favorite, "Companion", "An expressive companion unlocked inside your workspace after setup."),
-                                Triple(Icons.Filled.Groups, "Together", "Optional accountability chats, shared goals, and friendly progress.")
-                            )
-                            features.forEach { (icon, title, desc) ->
-                                ObsidianCard(contentPadding = PaddingValues(12.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(38.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(tokens.primary.copy(alpha = 0.16f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(icon, contentDescription = null, tint = tokens.primary, modifier = Modifier.size(20.dp))
-                                        }
-                                        Spacer(Modifier.width(12.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary, fontWeight = FontWeight.SemiBold)
-                                            Text(desc, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    )
+                                    Row(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(16.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        FeeloraBrandMark(size = 36.dp, withSoftFrame = true)
+                                        Spacer(Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = "FEELORA",
+                                                style = MaterialTheme.typography.headlineLarge,
+                                                color = tokens.inkPrimary
+                                            )
+                                            Text(
+                                                text = "Calm clarity · Personal growth",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = tokens.inkSecondary
+                                            )
                                         }
                                     }
                                 }
+                            } else {
+                                // Distinct illustrated stage for Pages 2..7
+                                OnboardingFeatureIllustrationCard(
+                                    pageIndex = currentStep,
+                                    tokens = tokens
+                                )
                             }
 
-                            Spacer(Modifier.height(6.dp))
-                            Button(
-                                onClick = { step = 2 },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
-                                shape = RoundedCornerShape(tokens.smallRadius),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("onboarding_next_btn")
-                            ) {
-                                Text("Continue", fontWeight = FontWeight.SemiBold)
-                                Spacer(Modifier.width(8.dp))
-                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(
+                                    text = page.eyebrow,
+                                    style = FeeloraTypeHelpers.editorialTag,
+                                    color = tokens.deepPrimary
+                                )
+                                Text(
+                                    text = page.title,
+                                    style = MaterialTheme.typography.displayMedium,
+                                    color = tokens.inkPrimary
+                                )
+                                Text(
+                                    text = page.headline,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = tokens.deepPrimary
+                                )
+                                Text(
+                                    text = page.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = tokens.inkSecondary
+                                )
                             }
-                        }
-                    }
 
-                    // SCREEN 3 — TOGETHER INTRODUCTION
-                    2 -> {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            StatusPill(
-                                text = "OPTIONAL SOCIAL CIRCLE",
-                                color = tokens.secondary,
-                                icon = Icons.Filled.Groups
-                            )
-                            Text(
-                                text = "Meet Together",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "Grow alongside close study friends without social noise. Connecting with friends is completely optional — you decide what to share.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = tokens.inkSecondary
-                            )
-
-                            val highlights = listOf(
-                                "Private 1-to-1 chat & photo sharing with trusted friends",
-                                "Celebrate achievements & shared daily study streaks",
-                                "Create collaborative Shared Goals and stay accountable",
-                                "Friendly XP, Task, Focus & Streak challenges",
-                                "Compare only the stats you explicitly opt in to share"
-                            )
-                            ObsidianCard(elevated = true) {
+                            ObsidianCard(elevated = false) {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    highlights.forEach { line ->
+                                    page.bullets.forEach { bullet ->
                                         Row(verticalAlignment = Alignment.Top) {
                                             Icon(
                                                 imageVector = Icons.Filled.CheckCircle,
                                                 contentDescription = null,
-                                                tint = EmeraldSuccess,
+                                                tint = tokens.primary,
                                                 modifier = Modifier.size(18.dp).padding(top = 2.dp)
                                             )
                                             Spacer(Modifier.width(10.dp))
-                                            Text(line, style = MaterialTheme.typography.bodyMedium, color = tokens.inkPrimary)
+                                            Text(
+                                                text = bullet,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = tokens.inkPrimary
+                                            )
                                         }
                                     }
                                 }
                             }
 
-                            ObsidianCard(borderColor = tokens.secondary.copy(alpha = 0.45f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Filled.Lock, contentDescription = null, tint = tokens.secondary, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        text = "Cycle Care, private notes, daily reflections, and SURU conversations stay 100% private on your device.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = tokens.inkSecondary
-                                    )
-                                }
-                            }
-
                             Spacer(Modifier.height(4.dp))
                             Button(
-                                onClick = { step = 3 },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
+                                onClick = { step = currentStep + 1 },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = tokens.deepPrimary,
+                                    contentColor = Color.White
+                                ),
                                 shape = RoundedCornerShape(tokens.smallRadius),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("onboarding_together_next_btn")
+                                    .height(54.dp)
+                                    .testTag(
+                                        when (currentStep) {
+                                            0 -> "onboarding_get_started_btn"
+                                            6 -> "onboarding_together_next_btn"
+                                            else -> "onboarding_next_btn"
+                                        }
+                                    )
                             ) {
-                                Text("Continue to Account", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = if (currentStep == 6) "Set Up Your Space" else "Continue",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 Spacer(Modifier.width(8.dp))
                                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                             }
                         }
                     }
 
-                    // SCREEN 4 — AUTHENTICATION
-                    3 -> {
+                    // SETUP STEP 1 (index 7) — AUTHENTICATION
+                    7 -> {
                         val fieldColors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = tokens.primary,
                             unfocusedBorderColor = tokens.borderSubtle,
-                            focusedLabelColor = tokens.primary,
+                            focusedLabelColor = tokens.deepPrimary,
                             unfocusedLabelColor = tokens.inkSecondary,
                             focusedTextColor = tokens.inkPrimary,
                             unfocusedTextColor = tokens.inkPrimary
@@ -553,12 +591,11 @@ fun OnboardingScreen(
                         ) {
                             Text(
                                 text = "Your Account",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold
+                                style = MaterialTheme.typography.displayMedium,
+                                color = tokens.inkPrimary
                             )
                             Text(
-                                text = "Sign in or create an account to enable cloud Together sync across devices, or continue locally anytime.",
+                                text = "Sign in or create an account to enable Together One cloud sync across devices, or continue privately on this device.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = tokens.inkSecondary
                             )
@@ -574,7 +611,7 @@ fun OnboardingScreen(
                                         },
                                         label = { Text(label, maxLines = 1, softWrap = false) },
                                         colors = FilterChipDefaults.filterChipColors(
-                                            selectedContainerColor = tokens.primary.copy(alpha = 0.22f),
+                                            selectedContainerColor = tokens.surfaceHighlight,
                                             selectedLabelColor = tokens.inkPrimary
                                         ),
                                         modifier = Modifier.testTag("auth_tab_$idx")
@@ -584,7 +621,7 @@ fun OnboardingScreen(
 
                             if (!authUiState.isCloudConfigured) {
                                 FeeloraStatusBanner(
-                                    message = "Cloud Together keys are not set in Secrets. You can still use FEELORA locally with full offline privacy.",
+                                    message = "Cloud Together keys are not configured in Secrets yet. You can still enjoy FEELORA locally with full offline privacy.",
                                     tone = FeeloraBannerTone.INFO
                                 )
                             }
@@ -635,7 +672,7 @@ fun OnboardingScreen(
                                             value = displayName,
                                             onValueChange = { displayName = it },
                                             label = { Text("Full Name") },
-                                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = tokens.primary) },
+                                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = tokens.deepPrimary) },
                                             singleLine = true,
                                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
                                             colors = fieldColors,
@@ -725,7 +762,7 @@ fun OnboardingScreen(
                                                         return@Button
                                                     }
                                                     onSignUp(trimmedEmail, password, displayName.trim()) {
-                                                        step = 4
+                                                        step = 8
                                                     }
                                                 }
                                                 1 -> {
@@ -734,13 +771,13 @@ fun OnboardingScreen(
                                                         return@Button
                                                     }
                                                     onSignIn(trimmedEmail, password) {
-                                                        step = 4
+                                                        step = 8
                                                     }
                                                 }
                                                 else -> onSendPasswordReset(trimmedEmail)
                                             }
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
+                                        colors = ButtonDefaults.buttonColors(containerColor = tokens.deepPrimary, contentColor = Color.White),
                                         shape = RoundedCornerShape(tokens.smallRadius),
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -748,7 +785,7 @@ fun OnboardingScreen(
                                             .testTag("auth_primary_btn")
                                     ) {
                                         if (authUiState.isLoading) {
-                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = tokens.background)
+                                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
                                             Spacer(Modifier.width(8.dp))
                                         }
                                         Text(
@@ -764,24 +801,24 @@ fun OnboardingScreen(
                             }
 
                             OutlinedButton(
-                                onClick = { step = 4 },
-                                border = BorderStroke(1.dp, tokens.borderSubtle),
+                                onClick = { step = 8 },
+                                border = BorderStroke(1.dp, tokens.borderAccent),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
                                     .testTag("auth_continue_local_btn")
                             ) {
-                                Text("Continue Offline / Set Up Locally")
+                                Text("Continue Offline / Set Up Locally", color = tokens.inkPrimary)
                             }
                         }
                     }
 
-                    // SCREEN 5 — PROFILE CREATION
-                    4 -> {
+                    // SETUP STEP 2 (index 8) — PROFILE & THEME PREFERENCE
+                    8 -> {
                         val fieldColors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = tokens.primary,
                             unfocusedBorderColor = tokens.borderSubtle,
-                            focusedLabelColor = tokens.primary,
+                            focusedLabelColor = tokens.deepPrimary,
                             unfocusedLabelColor = tokens.inkSecondary,
                             focusedTextColor = tokens.inkPrimary,
                             unfocusedTextColor = tokens.inkPrimary
@@ -793,18 +830,16 @@ fun OnboardingScreen(
                         ) {
                             Text(
                                 text = "Create Your Profile",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold
+                                style = MaterialTheme.typography.displayMedium,
+                                color = tokens.inkPrimary
                             )
                             Text(
-                                text = "Personalize your look. Private journals, Cycle Care, and SURU memories stay private by default.",
+                                text = "Personalize your look. Private journals, Cycle Care, and SURU memories stay strictly on your device.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = tokens.inkSecondary
                             )
 
-                            ObsidianCard(elevated = true) {
-                                // Avatar preview + Photo Picker
+                            ObsidianCard(elevated = false) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically
@@ -848,7 +883,7 @@ fun OnboardingScreen(
                                                 .clip(CircleShape)
                                                 .border(
                                                     width = if (active) 2.dp else 1.dp,
-                                                    color = if (active) tokens.primary else tokens.borderSubtle,
+                                                    color = if (active) tokens.deepPrimary else tokens.borderSubtle,
                                                     shape = CircleShape
                                                 )
                                                 .clickable {
@@ -871,7 +906,7 @@ fun OnboardingScreen(
                                     },
                                     label = { Text("Display Name") },
                                     placeholder = { Text("Your name") },
-                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = tokens.primary) },
+                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = tokens.deepPrimary) },
                                     isError = nameError,
                                     supportingText = if (nameError) {
                                         { Text("Please enter your display name.", color = RoseAlert) }
@@ -952,10 +987,10 @@ fun OnboardingScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(tokens.smallRadius))
-                                                .background(if (active) mode.previewPrimary.copy(alpha = 0.16f) else tokens.surfaceElevated)
+                                                .background(if (active) tokens.surfaceHighlight else tokens.surfaceBase)
                                                 .border(
                                                     width = if (active) 1.5.dp else 1.dp,
-                                                    color = if (active) mode.previewPrimary else tokens.borderSubtle,
+                                                    color = if (active) tokens.deepPrimary else tokens.borderSubtle,
                                                     shape = RoundedCornerShape(tokens.smallRadius)
                                                 )
                                                 .clickable {
@@ -969,9 +1004,10 @@ fun OnboardingScreen(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(mode.displayName, style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary, fontWeight = FontWeight.SemiBold)
-                                                Text(mode.subtitle, style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                                                Text(mode.subtitle, style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                             }
                                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewSurface))
                                                 Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewPrimary))
                                                 Box(Modifier.size(14.dp).clip(CircleShape).background(mode.previewSecondary))
                                             }
@@ -986,10 +1022,10 @@ fun OnboardingScreen(
                                         nameError = true
                                     } else {
                                         focusManager.clearFocus()
-                                        step = 5
+                                        step = 9
                                     }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
+                                colors = ButtonDefaults.buttonColors(containerColor = tokens.deepPrimary, contentColor = Color.White),
                                 shape = RoundedCornerShape(tokens.smallRadius),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1003,29 +1039,29 @@ fun OnboardingScreen(
                         }
                     }
 
-                    // SCREEN 6 — OPTIONAL FRIEND CONNECTION
-                    5 -> {
+                    // SETUP STEP 3 (index 9) — OPTIONAL FRIEND CONNECTION & READY TO ENTER
+                    else -> {
+                        val safeName = displayName.trim().ifBlank { "Explorer" }
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             Text(
-                                text = "Connect with a Friend",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold
+                                text = "Together One & Launch",
+                                style = MaterialTheme.typography.displayMedium,
+                                color = tokens.inkPrimary
                             )
                             Text(
-                                text = "Have a Friend Code or invite link? Paste it below to connect right away, or invite someone to join Together.",
+                                text = "Optional: paste a Friend Code or invite link to connect now, or jump straight into FEELORA.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = tokens.inkSecondary
                             )
 
-                            ObsidianCard(elevated = true) {
+                            ObsidianCard(elevated = false) {
                                 OutlinedTextField(
                                     value = friendCodeInput,
                                     onValueChange = { friendCodeInput = it },
-                                    label = { Text("Friend Code or Invite Link") },
+                                    label = { Text("Friend Code or Invite Link (Optional)") },
                                     placeholder = { Text("FLR-NAME-1234 or feelora://invite?...") },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth().testTag("onboarding_friend_code_input")
@@ -1052,7 +1088,7 @@ fun OnboardingScreen(
                                                 type = "text/plain"
                                                 putExtra(
                                                     Intent.EXTRA_TEXT,
-                                                    "Join me on FEELORA Together! ${inviteLink.ifBlank { "feelora://invite" }}"
+                                                    "Join me on FEELORA Together One! ${inviteLink.ifBlank { "feelora://invite" }}"
                                                 )
                                             }
                                             runCatching {
@@ -1076,65 +1112,6 @@ fun OnboardingScreen(
                                 }
                             }
 
-                            Button(
-                                onClick = { step = 6 },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
-                                shape = RoundedCornerShape(tokens.smallRadius),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("onboarding_connection_next_btn")
-                            ) {
-                                Text("Continue", fontWeight = FontWeight.SemiBold)
-                            }
-                            TextButton(
-                                onClick = { step = 6 },
-                                modifier = Modifier.align(Alignment.CenterHorizontally).testTag("onboarding_skip_connection_btn")
-                            ) {
-                                Text("Skip for now")
-                            }
-                        }
-                    }
-
-                    // SCREEN 7 — FINISH
-                    else -> {
-                        val safeName = displayName.trim().ifBlank { "Explorer" }
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Spacer(Modifier.height(14.dp))
-                            Box(
-                                modifier = Modifier
-                                    .size(92.dp)
-                                    .clip(CircleShape)
-                                    .background(tokens.primary.copy(alpha = 0.16f))
-                                    .border(2.dp, tokens.primary, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.EmojiEvents,
-                                    contentDescription = "Setup complete",
-                                    tint = tokens.secondary,
-                                    modifier = Modifier.size(44.dp)
-                                )
-                            }
-
-                            Text(
-                                text = "You're All Set, $safeName",
-                                style = MaterialTheme.typography.headlineLarge,
-                                color = tokens.inkPrimary,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                text = "Your personal FEELORA studio is ready with ${selectedTheme.displayName} theme, ${focusGoalMinutes}m daily focus target, and SURU standing by.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = tokens.inkSecondary,
-                                textAlign = TextAlign.Center
-                            )
-
                             ObsidianCard(elevated = true) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     UserAvatarBadge(
@@ -1145,21 +1122,21 @@ fun OnboardingScreen(
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(safeName, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                        Text("Ready, $safeName", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                                         Text(
-                                            text = "${usernameHandle.ifBlank { "@member" }} · $preferredLanguage · ${selectedTheme.displayName}",
+                                            text = "${usernameHandle.ifBlank { "@member" }} · ${focusGoalMinutes}m goal · ${selectedTheme.displayName}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = tokens.inkSecondary
                                         )
                                     }
-                                    StatusPill(text = "Ready", color = EmeraldSuccess)
+                                    StatusPill(text = "Ready", color = EmeraldSuccess, icon = Icons.Filled.EmojiEvents)
                                 }
                             }
 
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(4.dp))
                             Button(
                                 onClick = { finishAll() },
-                                colors = ButtonDefaults.buttonColors(containerColor = tokens.primary, contentColor = tokens.background),
+                                colors = ButtonDefaults.buttonColors(containerColor = tokens.deepPrimary, contentColor = Color.White),
                                 shape = RoundedCornerShape(tokens.smallRadius),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1172,6 +1149,203 @@ fun OnboardingScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnboardingFeatureIllustrationCard(
+    pageIndex: Int,
+    tokens: com.example.ui.theme.LifeOsThemeTokens
+) {
+    val shape = RoundedCornerShape(tokens.heroRadius)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(210.dp)
+            .clip(shape)
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        tokens.surfaceElevated,
+                        tokens.surfaceCard,
+                        tokens.peach.copy(alpha = if (tokens.isDark) 0.16f else 0.32f)
+                    )
+                )
+            )
+            .border(1.dp, tokens.borderAccent.copy(alpha = 0.6f), shape),
+        contentAlignment = Alignment.Center
+    ) {
+        when (pageIndex) {
+            // Page 2 — Study (Subject progress rings & session pills)
+            1 -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    drawCircle(
+                        color = tokens.primary.copy(alpha = 0.14f),
+                        radius = h * 0.34f,
+                        center = Offset(w * 0.28f, h * 0.50f)
+                    )
+                    drawArc(
+                        color = tokens.deepPrimary,
+                        startAngle = -90f,
+                        sweepAngle = 250f,
+                        useCenter = false,
+                        topLeft = Offset(w * 0.28f - h * 0.26f, h * 0.50f - h * 0.26f),
+                        size = Size(h * 0.52f, h * 0.52f),
+                        style = Stroke(width = 14f, cap = StrokeCap.Round)
+                    )
+                    drawRoundRect(
+                        color = tokens.surfaceCard,
+                        topLeft = Offset(w * 0.52f, h * 0.24f),
+                        size = Size(w * 0.38f, h * 0.22f),
+                        cornerRadius = CornerRadius(24f, 24f)
+                    )
+                    drawRoundRect(
+                        color = tokens.peach.copy(alpha = 0.65f),
+                        topLeft = Offset(w * 0.52f, h * 0.54f),
+                        size = Size(w * 0.34f, h * 0.22f),
+                        cornerRadius = CornerRadius(24f, 24f)
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(
+                        modifier = Modifier.padding(start = 18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("72%", style = FeeloraTypeHelpers.statNumber, color = tokens.deepPrimary)
+                        Text("Mastery", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(24.dp), modifier = Modifier.padding(end = 16.dp)) {
+                        Text("3 Chapters · 25m Focus", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                        Text("5m Mindful Break", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                    }
+                }
+            }
+            // Page 3 — Calendar (Editorial Grid + Countdown)
+            2 -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val w = size.width
+                    val h = size.height
+                    val cols = 5
+                    val cell = 24f
+                    val gap = 14f
+                    val startX = w * 0.14f
+                    val startY = h * 0.28f
+                    for (r in 0..2) {
+                        for (c in 0 until cols) {
+                            val active = (r == 1 && c == 2) || (r == 2 && c == 4)
+                            drawCircle(
+                                color = if (active) tokens.deepPrimary else tokens.primary.copy(alpha = 0.20f),
+                                radius = cell * 0.52f,
+                                center = Offset(startX + c * (cell + gap), startY + r * (cell + gap))
+                            )
+                        }
+                    }
+                    drawRoundRect(
+                        color = tokens.peach.copy(alpha = 0.55f),
+                        topLeft = Offset(w * 0.58f, h * 0.28f),
+                        size = Size(w * 0.32f, h * 0.44f),
+                        cornerRadius = CornerRadius(32f, 32f)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 36.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("4 DAYS", style = FeeloraTypeHelpers.statNumber, color = tokens.inkPrimary)
+                        Text("Next Milestone", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
+                    }
+                }
+            }
+            // Page 4 — Wellness (Water ripples & Calm Mood Wave)
+            3 -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val c = Offset(size.width * 0.5f, size.height * 0.5f)
+                    listOf(0.42f, 0.30f, 0.18f).forEachIndexed { i, factor ->
+                        drawCircle(
+                            color = if (i == 2) tokens.peach.copy(alpha = 0.55f) else tokens.primary.copy(alpha = 0.14f + i * 0.08f),
+                            radius = size.minDimension * factor,
+                            center = c
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.Spa, contentDescription = null, tint = tokens.deepPrimary, modifier = Modifier.size(38.dp))
+                    Spacer(Modifier.height(6.dp))
+                    Text("Hydration · Mood · Private Cycle Care", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                }
+            }
+            // Page 5 — SURU AI (Luminous botanical intelligence halo)
+            4 -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(tokens.primary.copy(alpha = 0.36f), Color.Transparent),
+                            center = Offset(size.width * 0.5f, size.height * 0.44f),
+                            radius = size.minDimension * 0.46f
+                        )
+                    )
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 24.dp)) {
+                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = tokens.deepPrimary, modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.height(8.dp))
+                    StatusPill(text = "\"3 chapters · 4h balanced with breaks\"", color = tokens.deepPrimary)
+                }
+            }
+            // Page 6 — KUTTA Companion (Official companion ONLY here!)
+            5 -> {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.kutta_happy),
+                        contentDescription = "KUTTA companion illustration",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.size(154.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatusPill(text = "KUTTA", color = tokens.deepPrimary, icon = Icons.Filled.Favorite)
+                        Text(
+                            text = "\"Malkin, har chhota step celebrate karenge!\"",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.inkPrimary
+                        )
+                    }
+                }
+            }
+            // Page 7 — Together One (Overlapping Lavender & Peach circles)
+            else -> {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val cy = size.height * 0.48f
+                    drawCircle(
+                        color = tokens.primary.copy(alpha = 0.24f),
+                        radius = size.minDimension * 0.30f,
+                        center = Offset(size.width * 0.41f, cy)
+                    )
+                    drawCircle(
+                        color = tokens.peach.copy(alpha = 0.52f),
+                        radius = size.minDimension * 0.30f,
+                        center = Offset(size.width * 0.59f, cy)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.Groups, contentDescription = null, tint = tokens.deepPrimary, modifier = Modifier.size(40.dp))
+                    Spacer(Modifier.height(6.dp))
+                    StatusPill(text = "TOGETHER ONE · OPTIONAL", color = tokens.deepPrimary)
                 }
             }
         }
@@ -1215,14 +1389,14 @@ fun PermissionSetupScreen(
         ) {
             Surface(
                 shape = CircleShape,
-                color = tokens.primary.copy(alpha = 0.14f),
+                color = tokens.surfaceHighlight,
                 modifier = Modifier.size(56.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Filled.Shield,
                         contentDescription = null,
-                        tint = tokens.primary,
+                        tint = tokens.deepPrimary,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1232,10 +1406,9 @@ fun PermissionSetupScreen(
 
             Text(
                 text = "Optional Permissions",
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.headlineLarge,
                 color = tokens.inkPrimary,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Bold
+                textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(6.dp))
             Text(
@@ -1254,7 +1427,7 @@ fun PermissionSetupScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = tokens.primary)
+                        Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = tokens.deepPrimary)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("Smart Task Reminders", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
@@ -1296,7 +1469,7 @@ fun PermissionSetupScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Filled.PhoneAndroid, contentDescription = null, tint = tokens.secondary)
+                        Icon(Icons.Filled.PhoneAndroid, contentDescription = null, tint = tokens.primary)
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text("Digital Wellbeing Sync (Optional)", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
@@ -1340,8 +1513,8 @@ fun PermissionSetupScreen(
             Button(
                 onClick = onContinue,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = tokens.primary,
-                    contentColor = tokens.background
+                    containerColor = tokens.deepPrimary,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(tokens.smallRadius),
                 modifier = Modifier

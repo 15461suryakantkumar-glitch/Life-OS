@@ -64,11 +64,19 @@ fun FeeloraScreenBackdrop(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val backdropBrush = Brush.verticalGradient(
-        colors = listOf(
-            tokens.background,
-            tokens.surfaceBase.copy(alpha = 0.85f),
-            tokens.background
-        )
+        colors = if (tokens.isDark) {
+            listOf(
+                tokens.background,
+                tokens.surfaceBase.copy(alpha = 0.92f),
+                tokens.background
+            )
+        } else {
+            listOf(
+                tokens.background,
+                tokens.surfaceElevated.copy(alpha = 0.35f),
+                tokens.background
+            )
+        }
     )
     Box(
         modifier = modifier
@@ -153,13 +161,13 @@ fun FeeloraTopHeader(
                             .padding(top = 8.dp, end = 8.dp)
                             .size(16.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.secondary),
+                            .background(tokens.deepPrimary),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = if (unreadNotifications > 9) "9+" else "$unreadNotifications",
                             style = MaterialTheme.typography.labelSmall,
-                            color = tokens.background,
+                            color = Color.White,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -322,12 +330,15 @@ fun <T> FeeloraSegmentedRow(
                 modifier = Modifier
                     .clip(pillShape)
                     .background(
-                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = if (tokens.isDark) 0.28f else 0.18f)
-                        else tokens.surfaceElevated
+                        when {
+                            selected && !tokens.isDark -> tokens.surfaceHighlight
+                            selected -> tokens.primary.copy(alpha = 0.28f)
+                            else -> tokens.surfaceCard
+                        }
                     )
                     .border(
                         1.dp,
-                        if (selected) MaterialTheme.colorScheme.primary else tokens.borderSubtle,
+                        if (selected) tokens.primary else tokens.borderSubtle,
                         pillShape
                     )
                     .clickable { onSelect(item) }
@@ -339,7 +350,7 @@ fun <T> FeeloraSegmentedRow(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = if (selected) MaterialTheme.colorScheme.primary else tokens.inkSecondary,
+                        tint = if (selected) tokens.deepPrimary else tokens.inkSecondary,
                         modifier = Modifier.size(15.dp)
                     )
                     Spacer(Modifier.width(6.dp))

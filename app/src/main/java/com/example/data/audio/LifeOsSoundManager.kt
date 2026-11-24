@@ -59,7 +59,10 @@ enum class LifeOsSoundCue(
     FOCUS_COMPLETE("sfx_focus_complete", SoundCategory.REMINDERS, 0.66f),
     COMPANION_INTERACT("sfx_companion_tap", SoundCategory.KUTTA_INTERACTION, 0.52f),
     TOGETHER_MESSAGE("sfx_together_msg", SoundCategory.TOGETHER_MESSAGES, 0.54f),
-    NOTIFICATION_PING("sfx_notif_ping", SoundCategory.NOTIFICATIONS, 0.52f)
+    NOTIFICATION_PING("sfx_notif_ping", SoundCategory.NOTIFICATIONS, 0.52f),
+    APP_OPEN_LOGO("sfx_app_open_logo", SoundCategory.NAVIGATION, 0.42f),
+    STUDY_BREAK("sfx_study_break", SoundCategory.REMINDERS, 0.52f),
+    CHAPTER_DONE("sfx_chapter_done", SoundCategory.ACHIEVEMENT, 0.60f)
 }
 
 /**
@@ -165,13 +168,11 @@ class LifeOsSoundManager(
 
         val now = System.currentTimeMillis()
         val cooldown = if (cue.category == SoundCategory.NAVIGATION) 110L else 45L
-        val last = synchronized(lastPlayedAt) {
+        synchronized(lastPlayedAt) {
             val prev = lastPlayedAt[cue] ?: 0L
             if (now - prev < cooldown) return false
             lastPlayedAt[cue] = now
-            prev
         }
-        if (now - last < cooldown) return false
 
         if (!isInitialized) preload()
 
@@ -276,6 +277,9 @@ class LifeOsSoundManager(
 
         fun shouldPlayForPrefs(cue: LifeOsSoundCue, prefs: UserPreferencesState): Boolean {
             if (!prefs.soundEffectsEnabled) return false
+            if (cue == LifeOsSoundCue.APP_OPEN_LOGO) {
+                return prefs.splashAudioLogoEnabled && prefs.soundNavEnabled
+            }
             return when (cue.category) {
                 SoundCategory.NAVIGATION -> prefs.soundNavEnabled
                 SoundCategory.BUTTON_INTERACTION -> prefs.soundInteractionEnabled
@@ -381,6 +385,20 @@ class LifeOsSoundManager(
                 LifeOsSoundCue.NOTIFICATION_PING -> listOf(
                     ToneNote(freqHz = 587.33, durationMs = 55, gain = 0.20),
                     ToneNote(freqHz = 880.00, durationMs = 110, gain = 0.22)
+                )
+                LifeOsSoundCue.APP_OPEN_LOGO -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 80, gain = 0.16),
+                    ToneNote(freqHz = 659.25, durationMs = 95, gain = 0.18),
+                    ToneNote(freqHz = 783.99, durationMs = 170, gain = 0.20)
+                )
+                LifeOsSoundCue.STUDY_BREAK -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 95, gain = 0.20),
+                    ToneNote(freqHz = 659.25, durationMs = 150, gain = 0.22)
+                )
+                LifeOsSoundCue.CHAPTER_DONE -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 65, gain = 0.22),
+                    ToneNote(freqHz = 783.99, durationMs = 75, gain = 0.24),
+                    ToneNote(freqHz = 1046.50, durationMs = 150, gain = 0.26)
                 )
             }
             return buildToneWavBytes(tones)

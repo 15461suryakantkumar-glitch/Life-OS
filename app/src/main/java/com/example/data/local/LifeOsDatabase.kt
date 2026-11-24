@@ -26,9 +26,13 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SuruStudyPlanEntity::class,
         NotificationHistoryEntity::class,
         AiProviderUsageEntity::class,
-        TogetherOutboxEntity::class
+        TogetherOutboxEntity::class,
+        SubjectEntity::class,
+        StudyChapterEntity::class,
+        StudySessionEntity::class,
+        StudyResourceEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -50,6 +54,10 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun notificationHistoryDao(): NotificationHistoryDao
     abstract fun aiProviderUsageDao(): AiProviderUsageDao
     abstract fun togetherOutboxDao(): TogetherOutboxDao
+    abstract fun subjectDao(): SubjectDao
+    abstract fun studyChapterDao(): StudyChapterDao
+    abstract fun studySessionDao(): StudySessionDao
+    abstract fun studyResourceDao(): StudyResourceDao
 
     companion object {
         @Volatile
@@ -136,6 +144,23 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `study_subjects` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `colorHex` TEXT NOT NULL DEFAULT '#9274D8', `iconName` TEXT NOT NULL DEFAULT 'MenuBook', `targetMinutesPerDay` INTEGER NOT NULL DEFAULT 60, `weeklyGoalMinutes` INTEGER NOT NULL DEFAULT 300, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `study_chapters` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subjectId` INTEGER NOT NULL, `title` TEXT NOT NULL, `notes` TEXT NOT NULL DEFAULT '', `status` TEXT NOT NULL DEFAULT 'PENDING', `estimatedMinutes` INTEGER NOT NULL DEFAULT 45, `sortOrder` INTEGER NOT NULL DEFAULT 0, `completedAtMillis` INTEGER, `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `study_sessions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subjectId` INTEGER, `chapterId` INTEGER, `plannedMinutes` INTEGER NOT NULL DEFAULT 25, `actualMinutes` INTEGER NOT NULL DEFAULT 25, `breakMinutes` INTEGER NOT NULL DEFAULT 5, `sessionMode` TEXT NOT NULL DEFAULT 'POMODORO', `completed` INTEGER NOT NULL DEFAULT 1, `startedAtMillis` INTEGER NOT NULL DEFAULT 0, `endedAtMillis` INTEGER NOT NULL DEFAULT 0, `dateEpochDay` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `study_resources` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subjectId` INTEGER NOT NULL, `chapterId` INTEGER, `title` TEXT NOT NULL, `content` TEXT NOT NULL, `resourceType` TEXT NOT NULL DEFAULT 'NOTE', `updatedAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -150,7 +175,8 @@ abstract class LifeOsDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
-                        MIGRATION_7_8
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

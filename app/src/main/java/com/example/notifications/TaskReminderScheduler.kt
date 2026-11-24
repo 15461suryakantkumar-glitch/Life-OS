@@ -271,7 +271,7 @@ object TaskReminderScheduler {
         }
 
         val builder = NotificationCompat.Builder(context, FeeloraNotificationCategory.PENDING_TASK.channelId)
-            .setSmallIcon(R.drawable.ic_widget_check)
+            .setSmallIcon(R.drawable.ic_notif_feelora)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

@@ -81,7 +81,7 @@ enum class UserAvatarPreset(val label: String) {
     FOREST_DEER("Forest Deer"),
     OCEAN_WHALE("Ocean Whale"),
     BERRY_CAT("Berry Cat"),
-    STAR_BUNNY("BUNNI · Star Bunny"),
+    STAR_BUNNY("Starry Charm"),
     AMBER_FOX("Amber Fox");
 
     companion object {
@@ -119,7 +119,8 @@ data class UserPreferencesState(
     val averageCycleLengthDays: Int = 28,
     val averagePeriodLengthDays: Int = 5,
     val reducedMotionEnabled: Boolean = false,
-    val themeMode: LifeOsThemeMode = LifeOsThemeMode.HYBRID_LAVENDER,
+    val splashAudioLogoEnabled: Boolean = true,
+    val themeMode: LifeOsThemeMode = LifeOsThemeMode.LIGHT,
     // Gamification & Companion
     val totalXp: Int = 0,
     val dailyStreak: Int = 0,
@@ -234,6 +235,7 @@ class UserPreferencesRepository(private val context: Context) {
         val CYCLE_LENGTH_DAYS = intPreferencesKey("average_cycle_length_days")
         val PERIOD_LENGTH_DAYS = intPreferencesKey("average_period_length_days")
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion_enabled")
+        val SPLASH_AUDIO_LOGO = booleanPreferencesKey("splash_audio_logo_enabled")
         val THEME_MODE = stringPreferencesKey("accent_preset")
         val TOTAL_XP = intPreferencesKey("total_xp")
         val DAILY_STREAK = intPreferencesKey("daily_streak")
@@ -350,6 +352,7 @@ class UserPreferencesRepository(private val context: Context) {
             averageCycleLengthDays = prefs[Keys.CYCLE_LENGTH_DAYS] ?: 28,
             averagePeriodLengthDays = prefs[Keys.PERIOD_LENGTH_DAYS] ?: 5,
             reducedMotionEnabled = prefs[Keys.REDUCED_MOTION] ?: false,
+            splashAudioLogoEnabled = prefs[Keys.SPLASH_AUDIO_LOGO] ?: true,
             themeMode = theme,
             totalXp = prefs[Keys.TOTAL_XP] ?: 0,
             dailyStreak = prefs[Keys.DAILY_STREAK] ?: 0,
@@ -498,6 +501,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateReducedMotion(enabled: Boolean) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.REDUCED_MOTION] = enabled
+        }
+    }
+
+    suspend fun updateSplashAudioLogo(enabled: Boolean) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SPLASH_AUDIO_LOGO] = enabled
         }
     }
 
