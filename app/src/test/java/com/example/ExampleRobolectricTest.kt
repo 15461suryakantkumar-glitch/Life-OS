@@ -19,10 +19,10 @@ import org.robolectric.annotation.Config
 class ExampleRobolectricTest {
 
     @Test
-    fun `app name matches Life OS`() {
+    fun `app name matches Feelora`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Life OS", appName)
+        assertEquals("Feelora", appName)
     }
 
     @Test
@@ -53,5 +53,6 @@ class ExampleRobolectricTest {
         val permissions = pkgInfo.requestedPermissions?.toSet().orEmpty()
         assertTrue(permissions.contains(Manifest.permission.PACKAGE_USAGE_STATS))
         assertTrue(permissions.contains(Manifest.permission.POST_NOTIFICATIONS))
+        assertTrue(permissions.contains(Manifest.permission.RECORD_AUDIO))
     }
 }

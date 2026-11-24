@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -112,7 +113,8 @@ fun TasksScreen(
     onRenameSection: (TaskSectionEntity, String) -> Unit,
     onDeleteSection: (TaskSectionEntity) -> Unit,
     onQuickAddTaskInSection: (Long, String) -> Unit,
-    onTapKutta: () -> Unit = {}
+    onTapKutta: () -> Unit = {},
+    onAskSuruBacklog: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
@@ -194,23 +196,34 @@ fun TasksScreen(
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                FilledTonalButton(
-                    onClick = { showSectionCreator = !showSectionCreator },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(38.dp).testTag("new_section_btn")
-                ) {
-                    Icon(
-                        imageVector = if (showSectionCreator) Icons.Filled.Close else Icons.Filled.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        text = if (showSectionCreator) "Close" else "New Section",
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        softWrap = false
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = onAskSuruBacklog,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(38.dp).testTag("tasks_ask_suru_btn")
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                    }
+                    FilledTonalButton(
+                        onClick = { showSectionCreator = !showSectionCreator },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(38.dp).testTag("new_section_btn")
+                    ) {
+                        Icon(
+                            imageVector = if (showSectionCreator) Icons.Filled.Close else Icons.Filled.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = if (showSectionCreator) "Close" else "Section",
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
                 }
             }
         }

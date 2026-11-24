@@ -98,7 +98,7 @@ object KuttaDialogue {
 
     val worriedLines = listOf(
         "Koi baat nahi Malkin, KUTTA hai na saath.",
-        "Sab theek ho jayega, ek step lo bas.",
+        "Sab theek ho jayega Malkin, ek step lo bas.",
         "Malkin thak gayi ho kya? Thoda paani pee lo."
     )
 

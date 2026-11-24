@@ -21,9 +21,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FriendEntity::class,
         AiMessageEntity::class,
         CycleLogEntity::class,
-        DailyCheckInEntity::class
+        DailyCheckInEntity::class,
+        SuruMemoryEntity::class,
+        SuruStudyPlanEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -40,6 +42,8 @@ abstract class LifeOsDatabase : RoomDatabase() {
     abstract fun aiMessageDao(): AiMessageDao
     abstract fun cycleLogDao(): CycleLogDao
     abstract fun dailyCheckInDao(): DailyCheckInDao
+    abstract fun suruMemoryDao(): SuruMemoryDao
+    abstract fun suruStudyPlanDao(): SuruStudyPlanDao
 
     companion object {
         @Volatile
@@ -89,6 +93,17 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `suru_memories` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `category` TEXT NOT NULL, `keyLabel` TEXT NOT NULL, `valueText` TEXT NOT NULL, `isEnabled` INTEGER NOT NULL DEFAULT 1, `updatedAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `suru_study_plans` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `subject` TEXT NOT NULL, `chaptersCsv` TEXT NOT NULL, `startEpochDay` INTEGER NOT NULL, `deadlineDays` INTEGER NOT NULL, `dailyMinutesBudget` INTEGER NOT NULL, `preferredWindow` TEXT NOT NULL, `status` TEXT NOT NULL DEFAULT 'ACTIVE', `createdAtMillis` INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -96,7 +111,7 @@ abstract class LifeOsDatabase : RoomDatabase() {
                     LifeOsDatabase::class.java,
                     "life_os_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

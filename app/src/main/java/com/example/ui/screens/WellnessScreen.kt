@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
@@ -106,7 +107,8 @@ fun WellnessScreen(
     onLogCycleStart: (Long, String, String) -> Unit = { _, _, _ -> },
     onLogCycleEnd: (Long) -> Unit = {},
     onToggleCycleSymptom: (String) -> Unit = {},
-    onDeleteCycleLog: (CycleLogEntity) -> Unit = {}
+    onDeleteCycleLog: (CycleLogEntity) -> Unit = {},
+    onAskSuru: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val context = LocalContext.current
@@ -161,8 +163,26 @@ fun WellnessScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Wellness OS", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-                Text("Water hydration, daily check-ins, private Cycle Care & screen wellbeing", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Wellness OS", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+                        Text("Water hydration, daily check-ins, private Cycle Care & screen wellbeing", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = onAskSuru,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(38.dp).testTag("wellness_ask_suru_btn")
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Ask SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                    }
+                }
             }
 
             // 1. Water Tracker & KUTTA Reminder Card

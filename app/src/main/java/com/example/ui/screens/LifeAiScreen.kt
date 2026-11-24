@@ -1,8 +1,12 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,23 +29,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,12 +62,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.R
+import androidx.core.content.ContextCompat
+import com.example.data.local.SuruMemoryEntity
+import com.example.data.local.SuruStudyPlanEntity
+import com.example.suru.SuruBriefingsPanel
+import com.example.suru.SuruConfirmationCard
+import com.example.suru.SuruMascot
+import com.example.suru.SuruMemoryPanel
+import com.example.suru.SuruStudyHelpMode
+import com.example.suru.SuruStudyLabPanel
+import com.example.suru.SuruVoiceLanguage
+import com.example.suru.SuruVoiceState
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
@@ -67,22 +90,72 @@ import com.example.ui.viewmodel.LifeOsUiState
 fun LifeAiScreen(
     state: LifeOsUiState,
     onSendPrompt: (String) -> Unit,
-    onDismissError: () -> Unit
+    onDismissError: () -> Unit,
+    onStartVoice: () -> Unit = {},
+    onStopVoice: () -> Unit = {},
+    onSpeakText: (String) -> Unit = {},
+    onStopSpeaking: () -> Unit = {},
+    onClearVoiceError: () -> Unit = {},
+    onUpdateVoiceSettings: (Boolean, Float, SuruVoiceLanguage) -> Unit = { _, _, _ -> },
+    onAdjustStudyPlanMinutes: (Int) -> Unit = {},
+    onConfirmPendingAction: () -> Unit = {},
+    onDismissPendingAction: () -> Unit = {},
+    onUndoLastAction: () -> Unit = {},
+    onGenerateStudyHelp: (String, SuruStudyHelpMode, String) -> Unit = { _, _, _ -> },
+    onTriggerBacklogRecovery: () -> Unit = {},
+    onUpdateStudyPlanStatus: (SuruStudyPlanEntity, String) -> Unit = { _, _ -> },
+    onTogglePersonalization: (Boolean) -> Unit = {},
+    onAddMemory: (String, String, String) -> Unit = { _, _, _ -> },
+    onToggleMemory: (SuruMemoryEntity) -> Unit = {},
+    onDeleteMemory: (SuruMemoryEntity) -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
+    val context = LocalContext.current
     var input by remember { mutableStateOf("") }
+    var activeTab by remember { mutableIntStateOf(0) } // 0=Assistant, 1=Study Lab, 2=Briefings, 3=Memory
     val listState = rememberLazyListState()
+    val voiceLanguage = remember(state.prefs.suruVoiceLanguage) {
+        SuruVoiceLanguage.fromStored(state.prefs.suruVoiceLanguage)
+    }
+
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            onStartVoice()
+        } else {
+            onClearVoiceError()
+        }
+    }
+
+    fun handleMicTap() {
+        when (state.suruVoiceState) {
+            SuruVoiceState.LISTENING -> onStopVoice()
+            SuruVoiceState.SPEAKING -> onStopSpeaking()
+            else -> {
+                val granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (granted) {
+                    onStartVoice()
+                } else {
+                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        }
+    }
 
     val quickPrompts = listOf(
-        "Add Review Physics Notes tomorrow",
-        "Schedule Deep Work at 9 AM for 60m",
-        "Add habit Hydrate 2L water",
-        "Suggest my daily plan",
-        "Show my productivity insights"
+        "Suru, mujhe agle 5 din mein Physics ke 3 chapters complete karne hain",
+        "Add Revise Organic Chemistry tomorrow",
+        "Clear my pending backlog",
+        "Morning briefing",
+        "Schedule Deep Focus at 6 PM"
     )
 
     LaunchedEffect(state.aiMessages.size) {
-        if (state.aiMessages.isNotEmpty()) {
+        if (activeTab == 0 && state.aiMessages.isNotEmpty()) {
             listState.animateScrollToItem(state.aiMessages.lastIndex)
         }
     }
@@ -93,215 +166,374 @@ fun LifeAiScreen(
             .background(tokens.background)
             .testTag("life_ai_screen")
     ) {
-        // AI Assistant Header
-        Row(
+        // SURU Character + Voice Control Header
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(tokens.surfaceBase)
                 .border(0.5.dp, tokens.borderSubtle)
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.img_ai_core_1795431261833),
-                contentDescription = "LIFE AI Assistant",
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.secondary, CircleShape),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("LIFE AI", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
-                Text(
-                    text = if (state.isCloudAiAvailable) "On-device + Cloud AI ready" else "On-device engine active (offline ₹0)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.inkSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            StatusPill(
-                text = if (state.isCloudAiAvailable) "Hybrid" else "Local Ready",
-                color = EmeraldSuccess,
-                icon = Icons.Filled.AutoAwesome
-            )
-        }
-
-        // Quick Prompt Suggestions
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            quickPrompts.forEach { sample ->
-                AssistChip(
-                    onClick = { onSendPrompt(sample) },
-                    label = { Text(sample, maxLines = 1, softWrap = false) },
-                    enabled = !state.isAiLoading
-                )
-            }
-        }
-
-        // Real Error Banner if AI call fails
-        if (state.aiErrorMessage != null) {
-            ObsidianCard(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                borderColor = RoseAlert
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = RoseAlert)
-                    Spacer(Modifier.width(8.dp))
+                SuruMascot(
+                    state = state.suruMascotState,
+                    size = 64.dp,
+                    onClick = {
+                        if (state.suruVoiceState == SuruVoiceState.SPEAKING) onStopSpeaking()
+                    }
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("SURU", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary, fontWeight = FontWeight.Bold)
+                        StatusPill(
+                            text = if (state.suruVoiceState != SuruVoiceState.READY) state.suruVoiceState.label else state.suruMascotState.label,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Text(
-                        text = state.aiErrorMessage,
+                        text = if (state.isCloudAiAvailable) "Personal AI · Voice + Hybrid Ready" else "Personal AI · Voice + Offline Ready",
                         style = MaterialTheme.typography.bodySmall,
-                        color = tokens.inkPrimary,
-                        modifier = Modifier.weight(1f)
+                        color = tokens.inkSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    TextButton(onClick = onDismissError) { Text("Dismiss") }
+                }
+
+                // Language switcher chip
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        val nextLang = when (voiceLanguage) {
+                            SuruVoiceLanguage.HINGLISH -> SuruVoiceLanguage.ENGLISH
+                            SuruVoiceLanguage.ENGLISH -> SuruVoiceLanguage.HINDI
+                            SuruVoiceLanguage.HINDI -> SuruVoiceLanguage.HINGLISH
+                        }
+                        onUpdateVoiceSettings(state.prefs.suruVoiceMuted, state.prefs.suruSpeechSpeed, nextLang)
+                    },
+                    label = { Text(voiceLanguage.label, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.testTag("suru_lang_btn")
+                )
+
+                IconButton(
+                    onClick = {
+                        if (state.suruVoiceState == SuruVoiceState.SPEAKING) {
+                            onStopSpeaking()
+                        } else {
+                            onUpdateVoiceSettings(!state.prefs.suruVoiceMuted, state.prefs.suruSpeechSpeed, voiceLanguage)
+                        }
+                    },
+                    modifier = Modifier.size(48.dp).testTag("suru_mute_btn")
+                ) {
+                    Icon(
+                        imageVector = if (state.prefs.suruVoiceMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = if (state.prefs.suruVoiceMuted) "Unmute SURU voice" else "Mute or stop SURU voice",
+                        tint = if (state.prefs.suruVoiceMuted) tokens.inkMuted else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    0 to "Assistant",
+                    1 to "Study Lab",
+                    2 to "Briefings",
+                    3 to "Memory (${state.suruMemories.size})"
+                ).forEach { (idx, label) ->
+                    FilterChip(
+                        selected = activeTab == idx,
+                        onClick = { activeTab = idx },
+                        label = { Text(label, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.testTag("suru_tab_$idx")
+                    )
                 }
             }
         }
 
-        // Chat Timeline or Clean Welcome Hero
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (state.aiMessages.isEmpty()) {
-                item {
-                    GradientGlowCard(modifier = Modifier.testTag("ai_empty_hero")) {
+        // Undo Bar
+        state.suruLastUndo?.let { undo ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(tokens.smallRadius),
+                color = tokens.surfaceElevated
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(undo.label, style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary, modifier = Modifier.weight(1f))
+                    TextButton(
+                        onClick = onUndoLastAction,
+                        modifier = Modifier.testTag("suru_undo_btn")
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Undo")
+                    }
+                }
+            }
+        }
+
+        when (activeTab) {
+            1 -> Box(Modifier.weight(1f)) {
+                SuruStudyLabPanel(
+                    activeHelp = state.suruActiveStudyHelp,
+                    isLoading = state.isAiLoading,
+                    onGenerateHelp = onGenerateStudyHelp
+                )
+            }
+
+            2 -> Box(Modifier.weight(1f)) {
+                SuruBriefingsPanel(
+                    state = state,
+                    onTriggerBacklogRecovery = {
+                        onTriggerBacklogRecovery()
+                        activeTab = 0
+                    },
+                    onUpdatePlanStatus = onUpdateStudyPlanStatus
+                )
+            }
+
+            3 -> Box(Modifier.weight(1f)) {
+                SuruMemoryPanel(
+                    personalizationEnabled = state.prefs.suruPersonalizationEnabled,
+                    memories = state.suruMemories,
+                    onTogglePersonalization = onTogglePersonalization,
+                    onAddMemory = onAddMemory,
+                    onToggleMemory = onToggleMemory,
+                    onDeleteMemory = onDeleteMemory
+                )
+            }
+
+            else -> {
+                // Quick Prompt Suggestions
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    quickPrompts.forEach { sample ->
+                        AssistChip(
+                            onClick = { onSendPrompt(sample) },
+                            label = { Text(sample, maxLines = 1, softWrap = false) },
+                            enabled = !state.isAiLoading
+                        )
+                    }
+                }
+
+                if (state.suruPartialTranscript.isNotBlank() && state.suruVoiceState == SuruVoiceState.LISTENING) {
+                    ObsidianCard(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        borderColor = MaterialTheme.colorScheme.primary
+                    ) {
                         Text(
-                            text = "Ask LIFE AI, ${state.prefs.userName.ifBlank { "Friend" }}",
-                            style = MaterialTheme.typography.titleLarge,
+                            text = "Hearing: \"${state.suruPartialTranscript}\"",
+                            style = MaterialTheme.typography.bodySmall,
                             color = tokens.inkPrimary
                         )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Instant offline task creation, habit setup, calendar scheduling, daily planning, and productivity insights — ready with zero extra setup.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.inkSecondary
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            quickPrompts.take(3).forEach { cmd ->
-                                OutlinedButton(
-                                    onClick = { onSendPrompt(cmd) },
-                                    modifier = Modifier.fillMaxWidth()
+                    }
+                }
+
+                val activeError = state.suruVoiceError ?: state.aiErrorMessage
+                if (activeError != null) {
+                    ObsidianCard(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        borderColor = RoseAlert
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = RoseAlert)
+                            Spacer(Modifier.width(8.dp))
+                            Text(activeError, style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary, modifier = Modifier.weight(1f))
+                            TextButton(onClick = {
+                                onClearVoiceError()
+                                onDismissError()
+                            }) { Text("Dismiss") }
+                        }
+                    }
+                }
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (state.aiMessages.isEmpty()) {
+                        item {
+                            GradientGlowCard(modifier = Modifier.testTag("ai_empty_hero")) {
+                                Text(
+                                    text = "Hi ${state.prefs.userName.ifBlank { "Friend" }}, I'm SURU",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = tokens.inkPrimary
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "Speak or type naturally in English, Hindi, or Hinglish. I can build weighted study plans, schedule conflict-free sessions, break tasks down, recover your backlog, and keep you steady.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.inkSecondary
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    quickPrompts.take(3).forEach { cmd ->
+                                        OutlinedButton(
+                                            onClick = { onSendPrompt(cmd) },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(cmd, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        items(state.aiMessages, key = { it.id }) { msg ->
+                            val align = if (msg.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
+                            val bubbleShape = RoundedCornerShape(
+                                topStart = 18.dp,
+                                topEnd = 18.dp,
+                                bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
+                                bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
+                            )
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = align) {
+                                Column(
+                                    modifier = Modifier
+                                        .widthIn(max = 320.dp)
+                                        .clip(bubbleShape)
+                                        .background(
+                                            if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                            else tokens.surfaceCard
+                                        )
+                                        .border(
+                                            1.dp,
+                                            if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else tokens.borderSubtle,
+                                            bubbleShape
+                                        )
+                                        .padding(14.dp)
                                 ) {
-                                    Text(cmd, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(msg.text, style = MaterialTheme.typography.bodyMedium, color = tokens.inkPrimary)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        if (!msg.actionBadge.isNullOrBlank()) {
+                                            StatusPill(
+                                                text = msg.actionBadge,
+                                                color = EmeraldSuccess,
+                                                icon = Icons.Filled.CheckCircle
+                                            )
+                                        } else {
+                                            Spacer(Modifier.width(1.dp))
+                                        }
+                                        if (!msg.isFromUser) {
+                                            IconButton(
+                                                onClick = { onSpeakText(msg.text) },
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.AutoMirrored.Filled.VolumeUp,
+                                                    contentDescription = "Read aloud",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            } else {
-                items(state.aiMessages, key = { it.id }) { msg ->
-                    val align = if (msg.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
-                    val bubbleShape = RoundedCornerShape(
-                        topStart = 18.dp,
-                        topEnd = 18.dp,
-                        bottomStart = if (msg.isFromUser) 18.dp else 4.dp,
-                        bottomEnd = if (msg.isFromUser) 4.dp else 18.dp
-                    )
-                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = align) {
-                        Column(
-                            modifier = Modifier
-                                .widthIn(max = 320.dp)
-                                .clip(bubbleShape)
-                                .background(
-                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                    else tokens.surfaceCard
-                                )
-                                .border(
-                                    1.dp,
-                                    if (msg.isFromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else tokens.borderSubtle,
-                                    bubbleShape
-                                )
-                                .padding(14.dp)
-                        ) {
-                            Text(
-                                text = msg.text,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = tokens.inkPrimary
+
+                    state.suruPendingConfirmation?.let { pendingReq ->
+                        item {
+                            SuruConfirmationCard(
+                                request = pendingReq,
+                                onAdjustDailyMinutes = onAdjustStudyPlanMinutes,
+                                onConfirm = onConfirmPendingAction,
+                                onDismiss = onDismissPendingAction
                             )
-                            if (!msg.actionBadge.isNullOrBlank()) {
-                                Spacer(Modifier.height(8.dp))
-                                StatusPill(
-                                    text = msg.actionBadge,
-                                    color = EmeraldSuccess,
-                                    icon = Icons.Filled.CheckCircle
-                                )
+                        }
+                    }
+
+                    if (state.isAiLoading) {
+                        item {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(10.dp))
+                                Text("SURU is thinking...", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                             }
                         }
                     }
                 }
-            }
 
-            if (state.isAiLoading) {
-                item {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(4.dp)
+                // Voice + Manual Text Composer
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(tokens.surfaceBase)
+                        .border(0.5.dp, tokens.borderSubtle)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val isListening = state.suruVoiceState == SuruVoiceState.LISTENING
+                    FilledIconButton(
+                        onClick = { handleMicTap() },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = if (isListening) RoseAlert else MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = if (isListening) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        modifier = Modifier.size(48.dp).testTag("suru_mic_btn")
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.secondary
+                        Icon(
+                            imageVector = if (isListening) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = if (isListening) "Stop listening" else "Speak to SURU"
                         )
-                        Spacer(Modifier.width(10.dp))
-                        Text("LIFE AI is thinking...", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.weight(1f).testTag("ai_prompt_input"),
+                        placeholder = { Text("Ask SURU (English / Hinglish)...") },
+                        maxLines = 3,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = tokens.surfaceCard,
+                            unfocusedContainerColor = tokens.surfaceCard,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = tokens.borderSubtle,
+                            focusedTextColor = tokens.inkPrimary,
+                            unfocusedTextColor = tokens.inkPrimary
+                        )
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilledIconButton(
+                        onClick = {
+                            val toSend = input.trim()
+                            if (toSend.isNotEmpty()) {
+                                input = ""
+                                onSendPrompt(toSend)
+                            }
+                        },
+                        enabled = input.isNotBlank() && !state.isAiLoading,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier.size(48.dp).testTag("ai_send_btn")
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send prompt")
                     }
                 }
-            }
-        }
-
-        // Message Composer
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(tokens.surfaceBase)
-                .border(0.5.dp, tokens.borderSubtle)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                modifier = Modifier.weight(1f).testTag("ai_prompt_input"),
-                placeholder = { Text("Ask LIFE AI to add tasks, schedule, or analyze...") },
-                maxLines = 3,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = tokens.surfaceCard,
-                    unfocusedContainerColor = tokens.surfaceCard,
-                    focusedBorderColor = MaterialTheme.colorScheme.secondary,
-                    unfocusedBorderColor = tokens.borderSubtle,
-                    focusedTextColor = tokens.inkPrimary,
-                    unfocusedTextColor = tokens.inkPrimary
-                )
-            )
-            Spacer(Modifier.width(8.dp))
-            FilledIconButton(
-                onClick = {
-                    val toSend = input.trim()
-                    if (toSend.isNotEmpty()) {
-                        input = ""
-                        onSendPrompt(toSend)
-                    }
-                },
-                enabled = input.isNotBlank() && !state.isAiLoading,
-                colors = IconButtonDefaults.filledIconButtonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = Color.White
-                ),
-                modifier = Modifier.size(48.dp).testTag("ai_send_btn")
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send prompt")
             }
         }
     }

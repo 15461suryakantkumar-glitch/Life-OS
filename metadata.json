@@ -1,6 +1,6 @@
 {
-  "name": "Life OS",
-  "description": "Personal productivity command center with customizable widgets, smart calendar, tasks, digital wellness, gamified companion, and LIFE AI assistant.",
+  "name": "Feelora",
+  "description": "Personal ecosystem for studying, wellness, tasks, smart calendar, KUTTA companion, and SURU voice-first AI assistant.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

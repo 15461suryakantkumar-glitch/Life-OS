@@ -27,6 +27,22 @@ enum class LifeOsThemeMode(
     val previewSecondary: Color,
     val previewSurface: Color
 ) {
+    FEELORA_LIGHT(
+        displayName = "Feelora Lavender",
+        subtitle = "Light · Soft lavender & pastel blush",
+        isDark = false,
+        previewPrimary = FeeloraLightPrimary,
+        previewSecondary = FeeloraLightAccent,
+        previewSurface = FeeloraLightBg
+    ),
+    FEELORA_DARK(
+        displayName = "Feelora Velvet",
+        subtitle = "Dark · Deep plum & luminous lavender",
+        isDark = true,
+        previewPrimary = FeeloraDarkPrimary,
+        previewSecondary = FeeloraDarkSecondary,
+        previewSurface = FeeloraDarkBg
+    ),
     MIDNIGHT_AURORA(
         displayName = "Midnight Aurora",
         subtitle = "Dark · Luminous glass & sleek edges",
@@ -62,11 +78,11 @@ enum class LifeOsThemeMode(
 
     companion object {
         fun fromStored(raw: String?): LifeOsThemeMode {
-            if (raw.isNullOrBlank()) return MIDNIGHT_AURORA
+            if (raw.isNullOrBlank()) return FEELORA_DARK
             entries.firstOrNull { it.name == raw }?.let { return it }
             return when (raw) {
                 "VIOLET_CYAN", "CYBER_INDIGO", "AURORA_PULSE" -> MIDNIGHT_AURORA
-                else -> MIDNIGHT_AURORA
+                else -> FEELORA_DARK
             }
         }
     }
@@ -193,7 +209,55 @@ private val WarmLinenTokens = LifeOsThemeTokens(
     typographyLabel = "Editorial Serif"
 )
 
-val LocalLifeOsTokens = staticCompositionLocalOf { MidnightAuroraTokens }
+private val FeeloraLightTokens = LifeOsThemeTokens(
+    mode = LifeOsThemeMode.FEELORA_LIGHT,
+    isDark = false,
+    background = FeeloraLightBg,
+    surfaceBase = FeeloraLightBase,
+    surfaceCard = FeeloraLightCard,
+    surfaceElevated = FeeloraLightElevated,
+    surfaceHighlight = FeeloraLightHighlight,
+    borderSubtle = FeeloraLightBorder,
+    borderAccent = FeeloraLightBorderGlow,
+    inkPrimary = FeeloraLightInkPrimary,
+    inkSecondary = FeeloraLightInkSecondary,
+    inkMuted = FeeloraLightInkMuted,
+    primary = FeeloraLightPrimary,
+    secondary = FeeloraLightSecondary,
+    cardRadius = 22.dp,
+    heroRadius = 26.dp,
+    smallRadius = 14.dp,
+    pillRadius = 50.dp,
+    cardBorderWidth = 1.dp,
+    cardElevation = 2.dp,
+    typographyLabel = "Feelora Lavender"
+)
+
+private val FeeloraDarkTokens = LifeOsThemeTokens(
+    mode = LifeOsThemeMode.FEELORA_DARK,
+    isDark = true,
+    background = FeeloraDarkBg,
+    surfaceBase = FeeloraDarkBase,
+    surfaceCard = FeeloraDarkCard,
+    surfaceElevated = FeeloraDarkElevated,
+    surfaceHighlight = FeeloraDarkHighlight,
+    borderSubtle = FeeloraDarkBorder,
+    borderAccent = FeeloraDarkBorderGlow,
+    inkPrimary = FeeloraDarkInkPrimary,
+    inkSecondary = FeeloraDarkInkSecondary,
+    inkMuted = FeeloraDarkInkMuted,
+    primary = FeeloraDarkPrimary,
+    secondary = FeeloraDarkSecondary,
+    cardRadius = 20.dp,
+    heroRadius = 24.dp,
+    smallRadius = 12.dp,
+    pillRadius = 50.dp,
+    cardBorderWidth = 1.dp,
+    cardElevation = 0.dp,
+    typographyLabel = "Feelora Velvet"
+)
+
+val LocalLifeOsTokens = staticCompositionLocalOf { FeeloraDarkTokens }
 
 object LifeOsThemeTokensProvider {
     val current: LifeOsThemeTokens
@@ -203,6 +267,8 @@ object LifeOsThemeTokensProvider {
 }
 
 fun tokensForMode(mode: LifeOsThemeMode): LifeOsThemeTokens = when (mode) {
+    LifeOsThemeMode.FEELORA_LIGHT -> FeeloraLightTokens
+    LifeOsThemeMode.FEELORA_DARK -> FeeloraDarkTokens
     LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTokens
     LifeOsThemeMode.ALABASTER_CLOUD -> AlabasterCloudTokens
     LifeOsThemeMode.MATCHA_MIST -> MatchaMistTokens
@@ -210,6 +276,7 @@ fun tokensForMode(mode: LifeOsThemeMode): LifeOsThemeTokens = when (mode) {
 }
 
 private fun typographyForMode(mode: LifeOsThemeMode): Typography = when (mode) {
+    LifeOsThemeMode.FEELORA_LIGHT, LifeOsThemeMode.FEELORA_DARK -> FeeloraLavenderTypography
     LifeOsThemeMode.MIDNIGHT_AURORA -> MidnightAuroraTypography
     LifeOsThemeMode.ALABASTER_CLOUD -> AlabasterCloudTypography
     LifeOsThemeMode.MATCHA_MIST -> MatchaMistTypography
@@ -218,7 +285,7 @@ private fun typographyForMode(mode: LifeOsThemeMode): Typography = when (mode) {
 
 @Composable
 fun LifeOsTheme(
-    themeMode: LifeOsThemeMode = LifeOsThemeMode.MIDNIGHT_AURORA,
+    themeMode: LifeOsThemeMode = LifeOsThemeMode.FEELORA_DARK,
     content: @Composable () -> Unit
 ) {
     val tokens = tokensForMode(themeMode)
@@ -232,14 +299,15 @@ fun LifeOsTheme(
     )
 
     val colorScheme = if (tokens.isDark) {
+        val isFeeloraDark = themeMode == LifeOsThemeMode.FEELORA_DARK
         darkColorScheme(
             primary = tokens.primary,
-            onPrimary = Color.White,
-            primaryContainer = tokens.primary.copy(alpha = 0.22f),
+            onPrimary = if (isFeeloraDark) FeeloraDarkBg else Color.White,
+            primaryContainer = if (isFeeloraDark) FeeloraDarkSecondaryContainer else tokens.primary.copy(alpha = 0.22f),
             onPrimaryContainer = tokens.inkPrimary,
             secondary = tokens.secondary,
             onSecondary = tokens.background,
-            secondaryContainer = tokens.secondary.copy(alpha = 0.18f),
+            secondaryContainer = if (isFeeloraDark) FeeloraDarkSecondaryContainer else tokens.secondary.copy(alpha = 0.18f),
             onSecondaryContainer = tokens.inkPrimary,
             tertiary = EmeraldSuccess,
             onTertiary = tokens.background,
@@ -260,14 +328,15 @@ fun LifeOsTheme(
             onError = Color.White
         )
     } else {
+        val isFeeloraLight = themeMode == LifeOsThemeMode.FEELORA_LIGHT
         lightColorScheme(
             primary = tokens.primary,
-            onPrimary = Color.White,
-            primaryContainer = tokens.primary.copy(alpha = 0.14f),
-            onPrimaryContainer = tokens.primary,
+            onPrimary = if (isFeeloraLight) FeeloraLightInkPrimary else Color.White,
+            primaryContainer = if (isFeeloraLight) FeeloraLightElevated else tokens.primary.copy(alpha = 0.14f),
+            onPrimaryContainer = if (isFeeloraLight) FeeloraLightInkPrimary else tokens.primary,
             secondary = tokens.secondary,
             onSecondary = Color.White,
-            secondaryContainer = tokens.secondary.copy(alpha = 0.14f),
+            secondaryContainer = if (isFeeloraLight) FeeloraLightAccent else tokens.secondary.copy(alpha = 0.14f),
             onSecondaryContainer = tokens.inkPrimary,
             tertiary = EmeraldSuccess,
             onTertiary = Color.White,

@@ -159,4 +159,12 @@ val WarmLinenTypography = buildThemeTypography(
     labelTrackingBoost = 0.1f
 )
 
-val LifeOsTypography = MidnightAuroraTypography
+val FeeloraLavenderTypography = buildThemeTypography(
+    displayFamily = SpaceGroteskFamily,
+    bodyFamily = ManropeFamily,
+    monoFamily = JetBrainsMonoFamily,
+    displayTrackingScale = 0.7f,
+    labelTrackingBoost = 0.15f
+)
+
+val LifeOsTypography = FeeloraLavenderTypography

@@ -153,6 +153,75 @@ object TaskReminderScheduler {
             false
         }
     }
+
+    const val BRIEFING_WORK_NAME = "feelora_suru_daily_briefing"
+    const val BRIEFING_NOTIFICATION_ID = 4202
+    private const val BRIEFING_PREFS = "feelora_briefing_guard"
+
+    fun syncDailyBriefings(
+        context: Context,
+        notificationsEnabled: Boolean,
+        morningEnabled: Boolean,
+        eveningEnabled: Boolean
+    ) {
+        val wm = WorkManager.getInstance(context)
+        if (!notificationsEnabled || (!morningEnabled && !eveningEnabled)) {
+            wm.cancelUniqueWork(BRIEFING_WORK_NAME)
+            return
+        }
+        val request = PeriodicWorkRequestBuilder<SuruDailyBriefingWorker>(1, TimeUnit.HOURS)
+            .setInitialDelay(1, TimeUnit.HOURS)
+            .build()
+        wm.enqueueUniquePeriodicWork(
+            BRIEFING_WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request
+        )
+    }
+
+    fun postSuruBriefingNotification(
+        context: Context,
+        isMorning: Boolean,
+        title: String,
+        body: String
+    ): Boolean {
+        if (!hasNotificationPermission(context)) return false
+        ensureChannel(context)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigate_to", "life_ai")
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            BRIEFING_NOTIFICATION_ID,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_widget_check)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+        return try {
+            NotificationManagerCompat.from(context).notify(BRIEFING_NOTIFICATION_ID + if (isMorning) 0 else 1, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
+    internal fun shouldFireBriefingForWindow(
+        currentHour: Int,
+        targetHour: Int,
+        lastFiredDay: Long,
+        todayEpochDay: Long
+    ): Boolean {
+        return lastFiredDay != todayEpochDay && currentHour == targetHour
+    }
 }
 
 class PendingTaskReminderWorker(
@@ -195,3 +264,62 @@ class PendingTaskReminderWorker(
         return Result.success()
     }
 }
+
+class SuruDailyBriefingWorker(
+    appContext: Context,
+    params: WorkerParameters
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val prefs = UserPreferencesRepository(applicationContext).preferencesFlow.first()
+        if (!prefs.isSignedIn || !prefs.notificationsEnabled) {
+            return Result.success()
+        }
+        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        if (TaskReminderScheduler.isWithinQuietHours(
+                currentHour = currentHour,
+                quietHoursEnabled = prefs.quietHoursEnabled,
+                startHour = prefs.quietStartHour,
+                endHour = prefs.quietEndHour
+            )
+        ) {
+            return Result.success()
+        }
+
+        val today = com.example.util.DateTimeUtils.todayEpochDay()
+        val guard = applicationContext.getSharedPreferences("feelora_briefing_guard", Context.MODE_PRIVATE)
+        val db = LifeOsDatabase.getInstance(applicationContext)
+        val tasks = db.taskDao().getAllTasksOnce()
+        val events = db.calendarEventDao().getAllEventsOnce()
+
+        if (prefs.suruMorningBriefingEnabled &&
+            TaskReminderScheduler.shouldFireBriefingForWindow(
+                currentHour = currentHour,
+                targetHour = prefs.suruMorningHour,
+                lastFiredDay = guard.getLong("last_morning_day", -1L),
+                todayEpochDay = today
+            )
+        ) {
+            val briefing = com.example.suru.SuruIntelligenceService.buildMorningBriefing(prefs, tasks, events, today)
+            if (TaskReminderScheduler.postSuruBriefingNotification(applicationContext, true, briefing.headline, briefing.focusSummary)) {
+                guard.edit().putLong("last_morning_day", today).apply()
+            }
+        }
+
+        if (prefs.suruEveningReflectionEnabled &&
+            TaskReminderScheduler.shouldFireBriefingForWindow(
+                currentHour = currentHour,
+                targetHour = prefs.suruEveningHour,
+                lastFiredDay = guard.getLong("last_evening_day", -1L),
+                todayEpochDay = today
+            )
+        ) {
+            val reflection = com.example.suru.SuruIntelligenceService.buildEveningReflection(prefs, tasks, today)
+            if (TaskReminderScheduler.postSuruBriefingNotification(applicationContext, false, reflection.headline, reflection.focusSummary)) {
+                guard.edit().putLong("last_evening_day", today).apply()
+            }
+        }
+        return Result.success()
+    }
+}
+

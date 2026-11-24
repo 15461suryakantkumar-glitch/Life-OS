@@ -118,7 +118,7 @@ enum class LifeOsSection(
     WELLNESS("wellness", "Wellness", Icons.Filled.HealthAndSafety, Icons.Outlined.HealthAndSafety),
     GROWTH("growth", "Growth", Icons.Filled.EmojiEvents, Icons.Outlined.EmojiEvents),
     FRIENDS("friends", "Friends", Icons.Filled.Groups, Icons.Outlined.Groups),
-    LIFE_AI("life_ai", "LIFE AI", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
+    LIFE_AI("life_ai", "SURU", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
     PROFILE("profile", "Profile", Icons.Filled.Person, Icons.Outlined.Person),
     SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
 }
@@ -355,7 +355,7 @@ fun LifeOsApp(
                                     ) {
                                         Spacer(Modifier.height(12.dp))
                                         Text(
-                                            text = "Life OS",
+                                            text = "Feelora",
                                             style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.secondary,
                                             fontWeight = FontWeight.Bold,
@@ -413,6 +413,10 @@ fun LifeOsApp(
                                                     openCreateTaskImmediately = true
                                                     currentSection = LifeOsSection.TASKS
                                                 },
+                                                onOpenSuruWithVoice = {
+                                                    currentSection = LifeOsSection.LIFE_AI
+                                                    viewModel.startSuruVoiceListening()
+                                                },
                                                 onDismissLevelUp = viewModel::clearLevelUpBanner,
                                                 onShowMessage = viewModel::showMessage
                                             )
@@ -428,12 +432,18 @@ fun LifeOsApp(
                                                 onRenameSection = viewModel::renameTaskSection,
                                                 onDeleteSection = viewModel::deleteTaskSection,
                                                 onQuickAddTaskInSection = viewModel::addInlineTask,
-                                                onTapKutta = viewModel::triggerKuttaTap
+                                                onTapKutta = viewModel::triggerKuttaTap,
+                                                onAskSuruBacklog = {
+                                                    viewModel.triggerBacklogRecoveryPreview()
+                                                    currentSection = LifeOsSection.LIFE_AI
+                                                }
                                             )
                                             LifeOsSection.CALENDAR -> CalendarScreen(
                                                 state = state,
                                                 onSaveEvent = viewModel::saveCalendarEvent,
-                                                onDeleteEvent = viewModel::deleteCalendarEvent
+                                                onDeleteEvent = viewModel::deleteCalendarEvent,
+                                                onAskSuru = { currentSection = LifeOsSection.LIFE_AI },
+                                                onShowMessage = viewModel::showMessage
                                             )
                                             LifeOsSection.WELLNESS -> WellnessScreen(
                                                 state = state,
@@ -449,7 +459,8 @@ fun LifeOsApp(
                                                 onLogCycleStart = viewModel::logCyclePeriodStart,
                                                 onLogCycleEnd = viewModel::logCyclePeriodEnd,
                                                 onToggleCycleSymptom = viewModel::toggleCycleSymptom,
-                                                onDeleteCycleLog = viewModel::deleteCycleLog
+                                                onDeleteCycleLog = viewModel::deleteCycleLog,
+                                                onAskSuru = { currentSection = LifeOsSection.LIFE_AI }
                                             )
                                             LifeOsSection.GROWTH -> GrowthScreen(
                                                 state = state,
@@ -473,8 +484,25 @@ fun LifeOsApp(
                                             )
                                             LifeOsSection.LIFE_AI -> LifeAiScreen(
                                                 state = state,
-                                                onSendPrompt = viewModel::sendAiPrompt,
-                                                onDismissError = viewModel::clearAiError
+                                                onSendPrompt = { prompt -> viewModel.sendAiPrompt(prompt) },
+                                                onDismissError = viewModel::clearAiError,
+                                                onStartVoice = viewModel::startSuruVoiceListening,
+                                                onStopVoice = viewModel::stopSuruVoiceListening,
+                                                onSpeakText = viewModel::speakSuruText,
+                                                onStopSpeaking = viewModel::stopSuruSpeaking,
+                                                onClearVoiceError = viewModel::clearSuruVoiceError,
+                                                onUpdateVoiceSettings = viewModel::updateSuruVoiceSettings,
+                                                onAdjustStudyPlanMinutes = viewModel::adjustPendingStudyPlanWorkload,
+                                                onConfirmPendingAction = viewModel::confirmPendingSuruAction,
+                                                onDismissPendingAction = viewModel::dismissPendingSuruConfirmation,
+                                                onUndoLastAction = viewModel::undoLastSuruAction,
+                                                onGenerateStudyHelp = viewModel::generateSuruStudyHelp,
+                                                onTriggerBacklogRecovery = viewModel::triggerBacklogRecoveryPreview,
+                                                onUpdateStudyPlanStatus = viewModel::updateStudyPlanStatus,
+                                                onTogglePersonalization = viewModel::updateSuruMemoryPersonalization,
+                                                onAddMemory = viewModel::upsertSuruMemory,
+                                                onToggleMemory = viewModel::toggleSuruMemory,
+                                                onDeleteMemory = viewModel::deleteSuruMemory
                                             )
                                             LifeOsSection.PROFILE -> ProfileScreen(
                                                 state = state,
@@ -498,6 +526,10 @@ fun LifeOsApp(
                                                 onUpdateWaterSettings = viewModel::updateWaterSettings,
                                                 onUpdateCycleSettings = viewModel::updateCycleSettings,
                                                 onUpdateReducedMotion = viewModel::updateReducedMotion,
+                                                onUpdateSuruVoiceSettings = viewModel::updateSuruVoiceSettings,
+                                                onUpdateSuruBriefingSettings = viewModel::updateSuruBriefingSettings,
+                                                onUpdateSuruPersonalization = viewModel::updateSuruMemoryPersonalization,
+                                                onOpenSuru = { currentSection = LifeOsSection.LIFE_AI },
                                                 onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                                 onMoveWidget = viewModel::moveWidget,
                                                 onSignOut = viewModel::signOutLocalSession,
@@ -522,15 +554,15 @@ fun LifeOsApp(
                                         .padding(horizontal = 16.dp, vertical = 10.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text("Life OS Workspace", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
-                                    Text("Jump to analytics, KUTTA, wellness & preferences", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    Text("Feelora Workspace", style = MaterialTheme.typography.headlineMedium, color = tokens.inkPrimary)
+                                    Text("Jump to analytics, KUTTA, SURU, wellness & preferences", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                                     Spacer(Modifier.height(4.dp))
                                     val modules = listOf(
-                                        LifeOsSection.PROFILE to "Avatar, graphs, Friend ID & Daily/Weekly analyzer",
+                                        LifeOsSection.PROFILE to "BUNNI avatar, graphs, Friend ID & Daily/Weekly analyzer",
                                         LifeOsSection.WELLNESS to "Water tracker, Daily Check-In, private Cycle Care & screen time",
                                         LifeOsSection.GROWTH to "KUTTA, habits & badges",
                                         LifeOsSection.FRIENDS to "Leaderboard, invites & Wi-Fi sync",
-                                        LifeOsSection.SETTINGS to "4 themes, water, cycle privacy, 2h reminders & reduced motion"
+                                        LifeOsSection.SETTINGS to "6 themes (FEELORA Lavender default), SURU voice, water & reminders"
                                     )
                                     modules.forEach { (section, subtitle) ->
                                         val active = currentSection == section

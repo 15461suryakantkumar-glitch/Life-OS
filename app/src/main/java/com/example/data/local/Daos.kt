@@ -233,3 +233,48 @@ interface DailyCheckInDao {
     suspend fun clearAll()
 }
 
+@Dao
+interface SuruMemoryDao {
+    @Query("SELECT * FROM suru_memories ORDER BY updatedAtMillis DESC, id DESC")
+    fun observeAllMemories(): Flow<List<SuruMemoryEntity>>
+
+    @Query("SELECT * FROM suru_memories ORDER BY updatedAtMillis DESC, id DESC")
+    suspend fun getAllMemoriesOnce(): List<SuruMemoryEntity>
+
+    @Query("SELECT * FROM suru_memories WHERE LOWER(keyLabel) = LOWER(:keyLabel) LIMIT 1")
+    suspend fun findByKey(keyLabel: String): SuruMemoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMemory(memory: SuruMemoryEntity): Long
+
+    @Update
+    suspend fun updateMemory(memory: SuruMemoryEntity)
+
+    @Delete
+    suspend fun deleteMemory(memory: SuruMemoryEntity)
+
+    @Query("DELETE FROM suru_memories")
+    suspend fun clearAll()
+}
+
+@Dao
+interface SuruStudyPlanDao {
+    @Query("SELECT * FROM suru_study_plans ORDER BY createdAtMillis DESC")
+    fun observeAllPlans(): Flow<List<SuruStudyPlanEntity>>
+
+    @Query("SELECT * FROM suru_study_plans ORDER BY createdAtMillis DESC")
+    suspend fun getAllPlansOnce(): List<SuruStudyPlanEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPlan(plan: SuruStudyPlanEntity): Long
+
+    @Update
+    suspend fun updatePlan(plan: SuruStudyPlanEntity)
+
+    @Delete
+    suspend fun deletePlan(plan: SuruStudyPlanEntity)
+
+    @Query("DELETE FROM suru_study_plans")
+    suspend fun clearAll()
+}
+

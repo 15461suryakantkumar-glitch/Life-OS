@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -35,16 +39,19 @@ import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.HealthAndSafety
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -66,17 +73,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.R
 import com.example.data.local.DashboardWidgetType
 import com.example.data.local.HabitEntity
 import com.example.data.local.TaskEntity
 import com.example.data.local.WidgetConfigEntity
 import com.example.kutta.KuttaDashboardCard
+import com.example.suru.SuruMascot
 import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DashboardWidgetCard
 import com.example.ui.components.GlanceWidgetPinningSection
@@ -109,13 +119,26 @@ fun HomeScreen(
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onNavigateToSection: (String) -> Unit,
     onQuickAddTaskClick: () -> Unit,
+    onOpenSuruWithVoice: () -> Unit = { onNavigateToSection("life_ai") },
     onDismissLevelUp: () -> Unit = {},
     onShowMessage: (String) -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
+    val context = LocalContext.current
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var showWidgetsSheet by remember { mutableStateOf(false) }
     var widgetsSheetTab by remember { mutableIntStateOf(0) } // 0 = Home Widgets, 1 = Dashboard Cards
+
+    val micLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            onOpenSuruWithVoice()
+        } else {
+            onNavigateToSection("life_ai")
+            onShowMessage("Enable microphone permission to speak directly with SURU.")
+        }
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -153,7 +176,7 @@ fun HomeScreen(
                 if (tokens.isDark) {
                     Image(
                         painter = painterResource(id = R.drawable.img_hero_command_1795431263383),
-                        contentDescription = "Life OS Banner",
+                        contentDescription = "Feelora Banner",
                         modifier = Modifier.matchParentSize(),
                         contentScale = ContentScale.Crop
                     )
@@ -193,7 +216,7 @@ fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "LIFE OS${if (state.prefs.userHandle.isNotBlank()) " · ${state.prefs.userHandle}" else ""}",
+                                text = "FEELORA${if (state.prefs.userHandle.isNotBlank()) " · ${state.prefs.userHandle}" else ""}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary,
                                 maxLines = 1,
@@ -312,7 +335,7 @@ fun HomeScreen(
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "AI",
+                                text = "SURU",
                                 style = MaterialTheme.typography.labelMedium,
                                 maxLines = 1,
                                 softWrap = false
@@ -350,6 +373,86 @@ fun HomeScreen(
                 onTapKutta = onTapKutta,
                 onOpenSanctuary = { onNavigateToSection("growth") }
             )
+        }
+
+        // SURU Voice & Personal Assistant Quick Access Bar
+        item {
+            Surface(
+                onClick = { onNavigateToSection("life_ai") },
+                shape = RoundedCornerShape(tokens.cardRadius),
+                color = tokens.surfaceCard,
+                shadowElevation = tokens.cardElevation,
+                border = BorderStroke(tokens.cardBorderWidth, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_suru_quick_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SuruMascot(
+                        state = state.suruMascotState,
+                        size = 48.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "SURU",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = tokens.inkPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            StatusPill(
+                                text = "Personal AI",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = state.suruMorningBriefing.headline.ifBlank {
+                                "Tap to plan study, backlog, or talk in Hinglish / Hindi / English"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.inkSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    FilledIconButton(
+                        onClick = {
+                            val granted = ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO
+                            ) == PackageManager.PERMISSION_GRANTED
+                            if (granted) {
+                                onOpenSuruWithVoice()
+                            } else {
+                                micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("home_suru_mic_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Mic,
+                            contentDescription = "Speak to SURU"
+                        )
+                    }
+                }
+            }
         }
 
         // Compact Water & Private Cycle Quick Strip

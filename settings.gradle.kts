@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Life OS"
+rootProject.name = "Feelora"
 
 include(":app")

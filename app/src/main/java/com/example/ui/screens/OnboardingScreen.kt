@@ -170,7 +170,7 @@ fun OnboardingScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "LIFE OS · YOUR PERMANENT COMPANION KUTTA",
+                        text = "FEELORA · KUTTA, SURU & BUNNI",
                         style = MaterialTheme.typography.labelSmall,
                         color = tokens.inkSecondary,
                         maxLines = 1,
@@ -351,7 +351,7 @@ fun OnboardingScreen(
                         .height(50.dp)
                         .testTag("onboarding_submit_btn")
                 ) {
-                    Text("Launch Life OS with KUTTA", maxLines = 1, softWrap = false)
+                    Text("Launch Feelora with KUTTA & SURU", maxLines = 1, softWrap = false)
                     Spacer(Modifier.width(8.dp))
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
@@ -360,7 +360,7 @@ fun OnboardingScreen(
             Spacer(Modifier.height(12.dp))
 
             Text(
-                text = "Your profile, KUTTA progress, tasks, and Cycle Care stay 100% private on this device.",
+                text = "FEELORA keeps KUTTA, BUNNI (your avatar), SURU personal memories, tasks, and Cycle Care private on this device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.inkMuted,
                 textAlign = TextAlign.Center

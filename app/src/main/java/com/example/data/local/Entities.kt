@@ -235,3 +235,25 @@ data class DailyCheckInEntity(
     val timestampMillis: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "suru_memories")
+data class SuruMemoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: String, // STUDY_PREF | TIME_PREF | GOAL | WEAK_SUBJECT | WELLNESS_PREF
+    val keyLabel: String,
+    val valueText: String,
+    val isEnabled: Boolean = true,
+    val updatedAtMillis: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "suru_study_plans")
+data class SuruStudyPlanEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val subject: String,
+    val chaptersCsv: String,
+    val startEpochDay: Long,
+    val deadlineDays: Int,
+    val dailyMinutesBudget: Int,
+    val preferredWindow: String,
+    val status: String = "ACTIVE", // ACTIVE | COMPLETED | ARCHIVED
+    val createdAtMillis: Long = System.currentTimeMillis()
+)

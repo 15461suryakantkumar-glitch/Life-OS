@@ -188,7 +188,7 @@ object ProductivityAnalyzer {
         }
         val pendingCount = tasks.count { !it.isCompleted }
         if (pendingCount > 4) {
-            recs.add("You have $pendingCount open tasks. Ask LIFE AI to \"Organize tomorrow\" to time-block your top 3.")
+            recs.add("You have $pendingCount open tasks. Ask SURU to \"Organize tomorrow\" to time-block your top 3.")
         } else {
             recs.add("Task backlog is manageable ($pendingCount open). Keep new sections concise and actionable.")
         }

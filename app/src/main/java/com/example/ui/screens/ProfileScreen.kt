@@ -108,7 +108,7 @@ fun ProfileScreen(
 
     fun shareFriendId() {
         val summary = buildString {
-            appendLine("Add me on LIFE OS!")
+            appendLine("Add me on FEELORA!")
             appendLine("Friend ID: $friendId")
             appendLine("Name: ${prefs.userName.ifBlank { "Explorer" }} (${prefs.userHandle})")
             appendLine()
@@ -116,7 +116,7 @@ fun ProfileScreen(
         }
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "LIFE OS Friend ID · $friendId")
+            putExtra(Intent.EXTRA_SUBJECT, "FEELORA Friend ID · $friendId")
             putExtra(Intent.EXTRA_TEXT, summary)
         }
         context.startActivity(Intent.createChooser(intent, "Share Friend ID"))
@@ -254,7 +254,7 @@ fun ProfileScreen(
 
                 Spacer(Modifier.height(12.dp))
 
-                Text("Choose Avatar", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
+                Text("Profile Avatar (Default: BUNNI)", style = MaterialTheme.typography.labelLarge, color = tokens.inkPrimary)
                 Spacer(Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),

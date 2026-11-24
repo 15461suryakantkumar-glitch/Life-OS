@@ -26,6 +26,8 @@ import com.example.data.local.LifeOsSeeder
 import com.example.data.local.PetAccessory
 import com.example.data.local.QuickNoteEntity
 import com.example.data.local.RecurrencePattern
+import com.example.data.local.SuruMemoryEntity
+import com.example.data.local.SuruStudyPlanEntity
 import com.example.data.local.TaskCategory
 import com.example.data.local.TaskEntity
 import com.example.data.local.TaskPriority
@@ -42,6 +44,22 @@ import com.example.kutta.KuttaEvent
 import com.example.kutta.KuttaEventHandler
 import com.example.kutta.KuttaVisualState
 import com.example.notifications.TaskReminderScheduler
+import com.example.suru.SuruActionEngine
+import com.example.suru.SuruConfirmationRequest
+import com.example.suru.SuruDailyBriefing
+import com.example.suru.SuruIntent
+import com.example.suru.SuruIntelligenceService
+import com.example.suru.SuruMascotState
+import com.example.suru.SuruNluEngine
+import com.example.suru.SuruPendingContext
+import com.example.suru.SuruStudyHelpMode
+import com.example.suru.SuruStudyHelpResult
+import com.example.suru.SuruStudyPlanDraft
+import com.example.suru.SuruStudyPlanner
+import com.example.suru.SuruUndoRecord
+import com.example.suru.SuruVoiceLanguage
+import com.example.suru.SuruVoiceManager
+import com.example.suru.SuruVoiceState
 import com.example.ui.theme.LifeOsThemeMode
 import com.example.util.CycleCareAnalyzer
 import com.example.util.CycleCareSummary
@@ -70,12 +88,12 @@ data class AchievementBadge(
 
 object BadgeCatalog {
     val all = listOf(
-        AchievementBadge("FIRST_LAUNCH", "Ready to Go", "Set up your Life OS workspace", 0),
+        AchievementBadge("FIRST_LAUNCH", "Ready to Go", "Set up your Feelora workspace", 0),
         AchievementBadge("STREAK_3", "3-Day Streak", "Stayed active for 3 days in a row", 75),
         AchievementBadge("TASK_MASTER_5", "Task Finisher", "Completed 5 or more tasks", 100),
         AchievementBadge("DEEP_FOCUS", "Deep Focus", "Logged 60+ minutes of focus time", 120),
-        AchievementBadge("LEVEL_5", "Steady Explorer", "Reached Level 5 with your companion", 200),
-        AchievementBadge("AI_COMMANDER", "AI Planner", "Ran a command with LIFE AI", 0)
+        AchievementBadge("LEVEL_5", "Steady Explorer", "Reached Level 5 with KUTTA", 200),
+        AchievementBadge("AI_COMMANDER", "SURU Strategist", "Planned a mission with SURU", 0)
     )
 }
 
@@ -114,8 +132,23 @@ data class LifeOsUiState(
     val isOnline: Boolean = false,
     val isCloudAiAvailable: Boolean = false,
     val isPeerRadarActive: Boolean = false,
-    val nearbyPeers: List<NearbyFriendPeer> = emptyList()
+    val nearbyPeers: List<NearbyFriendPeer> = emptyList(),
+    val suruMemories: List<SuruMemoryEntity> = emptyList(),
+    val suruStudyPlans: List<SuruStudyPlanEntity> = emptyList(),
+    val suruVoiceState: SuruVoiceState = SuruVoiceState.READY,
+    val suruPartialTranscript: String = "",
+    val suruVoiceError: String? = null,
+    val suruMascotState: SuruMascotState = SuruMascotState.IDLE,
+    val suruPendingConfirmation: SuruConfirmationRequest? = null,
+    val suruLastUndo: SuruUndoRecord? = null,
+    val suruActiveStudyHelp: SuruStudyHelpResult? = null
 ) {
+    val suruMorningBriefing: SuruDailyBriefing
+        get() = SuruIntelligenceService.buildMorningBriefing(prefs, tasks, events, todayEpochDay)
+
+    val suruEveningReflection: SuruDailyBriefing
+        get() = SuruIntelligenceService.buildEveningReflection(prefs, tasks, todayEpochDay)
+
     val todayEpochDay: Long get() = DateTimeUtils.todayEpochDay()
 
     val todayTasks: List<TaskEntity>
@@ -213,6 +246,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val db = LifeOsDatabase.getInstance(application)
     private val prefsRepo = UserPreferencesRepository(application)
     private val aiRepo = LifeAiRepository(application)
+    private val suruService = SuruIntelligenceService(application)
+    private val suruActionEngine = SuruActionEngine(db)
+    private val suruVoiceManager = SuruVoiceManager(application)
     private val usageBridge = AndroidUsageStatsBridge(application)
     private val friendSyncManager = FriendSyncManager(application)
     private val soundManager = LifeOsSoundManager(application)
@@ -225,9 +261,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val snackbarState = MutableStateFlow<String?>(null)
     private val usagePermissionTick = MutableStateFlow(0)
     private val kuttaEventState = MutableStateFlow<KuttaVisualState?>(null)
+    private val suruSuccessOverride = MutableStateFlow(false)
+    private val suruPendingConfirmationState = MutableStateFlow<SuruConfirmationRequest?>(null)
+    private val suruLastUndoState = MutableStateFlow<SuruUndoRecord?>(null)
+    private val suruStudyHelpState = MutableStateFlow<SuruStudyHelpResult?>(null)
+
+    private var pendingSuruContext: SuruPendingContext? = null
+    private var lastProposedStudyDraft: SuruStudyPlanDraft? = null
 
     private var timerJob: Job? = null
     private var kuttaEventJob: Job? = null
+    private var suruSuccessJob: Job? = null
     private var hasTriggeredMorningToday = false
     private var hasTriggeredCycleApproachToday = false
 
@@ -248,7 +292,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val friends: List<FriendEntity>,
         val aiMessages: List<AiMessageEntity>,
         val cycleLogs: List<CycleLogEntity>,
-        val dailyCheckIns: List<DailyCheckInEntity>
+        val dailyCheckIns: List<DailyCheckInEntity>,
+        val suruMemories: List<SuruMemoryEntity>,
+        val suruStudyPlans: List<SuruStudyPlanEntity>
     )
 
     private data class TransientFlows(
@@ -259,6 +305,16 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val levelUpBanner: Int?,
         val snackbar: String?,
         val kuttaOverride: KuttaVisualState?
+    )
+
+    private data class SuruUiTransientFlows(
+        val voiceState: SuruVoiceState,
+        val partialTranscript: String,
+        val voiceError: String?,
+        val successOverride: Boolean,
+        val confirmation: SuruConfirmationRequest?,
+        val undoRecord: SuruUndoRecord?,
+        val studyHelp: SuruStudyHelpResult?
     )
 
     private data class SocialNetworkFlows(
@@ -295,27 +351,32 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val wellnessAndAiFlow = combine(
         db.aiMessageDao().observeMessages(),
         db.cycleLogDao().observeAllLogs(),
-        db.dailyCheckInDao().observeAllCheckIns()
-    ) { aiMessages, cycleLogs, checkIns ->
-        Triple(aiMessages, cycleLogs, checkIns)
+        db.dailyCheckInDao().observeAllCheckIns(),
+        db.suruMemoryDao().observeAllMemories(),
+        db.suruStudyPlanDao().observeAllPlans()
+    ) { aiMessages, cycleLogs, checkIns, memories, plans ->
+        listOf(aiMessages, cycleLogs, checkIns, memories, plans)
     }
 
+    @Suppress("UNCHECKED_CAST")
     private val secondaryFlow = combine(
         db.quickNoteDao().observeNote(),
         usageAndProgressFlow,
         db.challengeDao().observeAllChallenges(),
         db.friendDao().observeAllFriends(),
         wellnessAndAiFlow
-    ) { note, usagePair, challenges, friends, triple ->
+    ) { note, usagePair, challenges, friends, packed ->
         SecondaryFlows(
             note = note,
             usage = usagePair.first,
             dailyProgress = usagePair.second,
             challenges = challenges,
             friends = friends,
-            aiMessages = triple.first,
-            cycleLogs = triple.second,
-            dailyCheckIns = triple.third
+            aiMessages = packed[0] as List<AiMessageEntity>,
+            cycleLogs = packed[1] as List<CycleLogEntity>,
+            dailyCheckIns = packed[2] as List<DailyCheckInEntity>,
+            suruMemories = packed[3] as List<SuruMemoryEntity>,
+            suruStudyPlans = packed[4] as List<SuruStudyPlanEntity>
         )
     }
 
@@ -337,6 +398,32 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         TransientFlows(timer, loading, err, banners.first, banners.second, snack, banners.third)
     }
 
+    private val suruVoiceFlow = combine(
+        suruVoiceManager.voiceState,
+        suruVoiceManager.partialTranscript,
+        suruVoiceManager.voiceError
+    ) { vState, partial, vErr ->
+        Triple(vState, partial, vErr)
+    }
+
+    private val suruFlow = combine(
+        suruVoiceFlow,
+        suruSuccessOverride,
+        suruPendingConfirmationState,
+        suruLastUndoState,
+        suruStudyHelpState
+    ) { voiceTriple, success, confirm, undo, help ->
+        SuruUiTransientFlows(
+            voiceState = voiceTriple.first,
+            partialTranscript = voiceTriple.second,
+            voiceError = voiceTriple.third,
+            successOverride = success,
+            confirmation = confirm,
+            undoRecord = undo,
+            studyHelp = help
+        )
+    }
+
     private val socialNetworkFlow = combine(
         friendSyncManager.observeNetworkOnline(),
         friendSyncManager.isPeerRadarActive,
@@ -350,14 +437,33 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         coreFlow,
         secondaryFlow,
         transientFlow,
-        socialNetworkFlow
-    ) { core, sec, trans, social ->
+        socialNetworkFlow,
+        suruFlow
+    ) { core, sec, trans, social, suru ->
         val completedChal = sec.challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
         val totalChal = sec.challenges.size.coerceAtLeast(1)
         friendSyncManager.updateOutgoingToken(
             FriendSyncCodec.buildShareToken(core.prefs, completedChal, totalChal)
         )
+        suruVoiceManager.updateSettings(
+            muted = core.prefs.suruVoiceMuted,
+            speechRate = core.prefs.suruSpeechSpeed,
+            language = SuruVoiceLanguage.fromStored(core.prefs.suruVoiceLanguage)
+        )
         val hasUsagePerm = usageBridge.hasSystemUsagePermission()
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val mascotState = when {
+            suru.voiceState == SuruVoiceState.LISTENING -> SuruMascotState.LISTENING
+            suru.voiceState == SuruVoiceState.PROCESSING -> SuruMascotState.THINKING
+            suru.voiceState == SuruVoiceState.SPEAKING -> SuruMascotState.SPEAKING
+            trans.aiLoading -> if (suru.confirmation != null) SuruMascotState.WORKING else SuruMascotState.THINKING
+            trans.aiError != null || suru.voiceState == SuruVoiceState.FAILED -> SuruMascotState.ERROR
+            suru.successOverride -> SuruMascotState.SUCCESS
+            suru.confirmation != null -> SuruMascotState.WORKING
+            hour >= 23 || hour < 5 -> SuruMascotState.SLEEPING
+            else -> SuruMascotState.IDLE
+        }
+
         LifeOsUiState(
             isPrefsLoaded = true,
             prefs = core.prefs,
@@ -384,9 +490,18 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             hasUsageStatsPermission = hasUsagePerm,
             usageStatsStatusLabel = usageBridge.getSourceStatusLabel(),
             isOnline = social.isOnline,
-            isCloudAiAvailable = social.isOnline && aiRepo.isCloudAiAvailable(),
+            isCloudAiAvailable = social.isOnline && (aiRepo.isCloudAiAvailable() || suruService.isCloudReady()),
             isPeerRadarActive = social.isPeerRadarActive,
-            nearbyPeers = social.nearbyPeers
+            nearbyPeers = social.nearbyPeers,
+            suruMemories = sec.suruMemories,
+            suruStudyPlans = sec.suruStudyPlans,
+            suruVoiceState = suru.voiceState,
+            suruPartialTranscript = suru.partialTranscript,
+            suruVoiceError = suru.voiceError,
+            suruMascotState = mascotState,
+            suruPendingConfirmation = suru.confirmation,
+            suruLastUndo = suru.undoRecord,
+            suruActiveStudyHelp = suru.studyHelp
         )
     }.stateIn(
         scope = viewModelScope,
@@ -407,6 +522,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 notificationsEnabled = p.notificationsEnabled,
                 taskRemindersEnabled = p.taskRemindersEnabled
             )
+            TaskReminderScheduler.syncDailyBriefings(
+                context = getApplication(),
+                notificationsEnabled = p.notificationsEnabled,
+                morningEnabled = p.suruMorningBriefingEnabled,
+                eveningEnabled = p.suruEveningReflectionEnabled
+            )
             onAppForegrounded()
         }
     }
@@ -415,6 +536,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         super.onCleared()
         friendSyncManager.stopNearbyPeerSync()
         soundManager.release()
+        suruVoiceManager.release()
     }
 
     private fun emitKuttaEvent(event: KuttaEvent) {
@@ -1380,11 +1502,105 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- LIFE AI ASSISTANT ---
-    fun sendAiPrompt(prompt: String) {
+    // --- SURU VOICE, ASSISTANT, PLANNER, STUDY LAB, MEMORY & UNDO ---
+    private fun triggerSuruSuccessPulse() {
+        suruSuccessOverride.value = true
+        suruSuccessJob?.cancel()
+        suruSuccessJob = viewModelScope.launch {
+            delay(2800L)
+            suruSuccessOverride.value = false
+        }
+    }
+
+    fun startSuruVoiceListening() {
+        val currentLang = SuruVoiceLanguage.fromStored(uiState.value.prefs.suruVoiceLanguage)
+        suruVoiceManager.startListening(language = currentLang) { transcript ->
+            sendAiPrompt(prompt = transcript, speakReply = true)
+        }
+    }
+
+    fun stopSuruVoiceListening() {
+        suruVoiceManager.stopListening()
+    }
+
+    fun speakSuruText(text: String) {
+        suruVoiceManager.speak(text)
+    }
+
+    fun stopSuruSpeaking() {
+        suruVoiceManager.stopSpeaking()
+    }
+
+    fun clearSuruVoiceError() {
+        suruVoiceManager.clearError()
+    }
+
+    fun updateSuruVoiceSettings(muted: Boolean, speechSpeed: Float, language: SuruVoiceLanguage) {
+        viewModelScope.launch {
+            prefsRepo.updateSuruVoiceSettings(muted, speechSpeed, language.name)
+            suruVoiceManager.updateSettings(muted, speechSpeed, language)
+            snackbarState.value = if (muted) "SURU voice muted" else "SURU voice: ${language.label}"
+        }
+    }
+
+    fun updateSuruMemoryPersonalization(enabled: Boolean) {
+        viewModelScope.launch {
+            prefsRepo.updateSuruMemoryPersonalization(enabled)
+            snackbarState.value = if (enabled) "SURU personalization enabled" else "SURU personalization paused"
+        }
+    }
+
+    fun upsertSuruMemory(category: String, keyLabel: String, valueText: String) {
+        if (keyLabel.isBlank() || valueText.isBlank()) return
+        viewModelScope.launch {
+            db.suruMemoryDao().upsertMemory(
+                SuruMemoryEntity(
+                    category = category,
+                    keyLabel = keyLabel.trim(),
+                    valueText = valueText.trim(),
+                    isEnabled = true
+                )
+            )
+            snackbarState.value = "Saved to SURU Memory"
+        }
+    }
+
+    fun toggleSuruMemory(memory: SuruMemoryEntity) {
+        viewModelScope.launch {
+            db.suruMemoryDao().updateMemory(memory.copy(isEnabled = !memory.isEnabled))
+        }
+    }
+
+    fun deleteSuruMemory(memory: SuruMemoryEntity) {
+        viewModelScope.launch {
+            db.suruMemoryDao().deleteMemory(memory)
+            snackbarState.value = "Removed memory \"${memory.keyLabel}\""
+        }
+    }
+
+    fun updateSuruBriefingSettings(
+        morningEnabled: Boolean,
+        eveningEnabled: Boolean,
+        morningHour: Int = uiState.value.prefs.suruMorningHour,
+        eveningHour: Int = uiState.value.prefs.suruEveningHour
+    ) {
+        viewModelScope.launch {
+            prefsRepo.updateSuruBriefingSettings(morningEnabled, eveningEnabled, morningHour, eveningHour)
+            TaskReminderScheduler.syncDailyBriefings(
+                context = getApplication(),
+                notificationsEnabled = uiState.value.prefs.notificationsEnabled,
+                morningEnabled = morningEnabled,
+                eveningEnabled = eveningEnabled
+            )
+            snackbarState.value = "Daily briefing preferences saved"
+        }
+    }
+
+    fun sendAiPrompt(prompt: String, speakReply: Boolean = false) {
         val clean = prompt.trim()
         if (clean.isEmpty() || aiLoadingState.value) return
         aiErrorState.value = null
+        suruVoiceManager.clearError()
 
         viewModelScope.launch {
             db.aiMessageDao().insertMessage(AiMessageEntity(isFromUser = true, text = clean))
@@ -1418,74 +1634,196 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 productivityScore = current.productivityScore
             )
 
+            val enabledMemories = if (current.prefs.suruPersonalizationEnabled) {
+                current.suruMemories.filter { it.isEnabled }
+            } else {
+                emptyList()
+            }
+
+            // 1. Try SURU NLU + Multi-Turn Planner
+            val suruAction = SuruNluEngine.parseAndPlan(
+                userPrompt = clean,
+                context = snapshot,
+                tasks = current.tasks,
+                events = current.events,
+                memories = enabledMemories,
+                pendingContext = pendingSuruContext,
+                lastStudyDraft = lastProposedStudyDraft,
+                todayEpochDay = today
+            )
+
+            if (suruAction != null) {
+                pendingSuruContext = suruAction.updatedPendingContext
+                if (suruAction.studyPlanDraft != null) {
+                    lastProposedStudyDraft = suruAction.studyPlanDraft
+                }
+
+                var finalReply = suruAction.reply
+                var badge: String? = null
+
+                when {
+                    suruAction.intent == SuruIntent.STUDY_HELP -> {
+                        val help = suruService.generateStudyHelp(
+                            topic = suruAction.studyHelpTopic ?: clean,
+                            mode = suruAction.studyHelpMode,
+                            userNotes = ""
+                        )
+                        suruStudyHelpState.value = help
+                        finalReply = "${help.conceptExplanation}\n\nKey Takeaways:\n" +
+                            help.summaryBullets.joinToString("\n") { "• $it" }
+                        badge = "Study Help · ${help.mode.label}"
+                    }
+
+                    suruAction.intent == SuruIntent.MORNING_BRIEFING -> {
+                        val b = current.suruMorningBriefing
+                        finalReply = buildString {
+                            appendLine("${b.headline} — ${b.focusSummary}")
+                            if (b.priorityTasks.isNotEmpty()) {
+                                appendLine("Top tasks: ${b.priorityTasks.joinToString(", ")}")
+                            }
+                            append(b.wellnessNote)
+                        }
+                        badge = "Morning Briefing"
+                    }
+
+                    suruAction.intent == SuruIntent.EVENING_REFLECTION -> {
+                        val r = current.suruEveningReflection
+                        finalReply = buildString {
+                            appendLine("${r.headline} — ${r.focusSummary}")
+                            append(r.wellnessNote)
+                        }
+                        badge = "Evening Reflection"
+                    }
+
+                    suruAction.requiresConfirmation -> {
+                        when {
+                            suruAction.studyPlanDraft != null -> {
+                                suruPendingConfirmationState.value = SuruConfirmationRequest.StudyPlanConfirmation(
+                                    draft = suruAction.studyPlanDraft,
+                                    sourcePrompt = clean
+                                )
+                            }
+                            suruAction.backlogPlan != null -> {
+                                suruPendingConfirmationState.value = SuruConfirmationRequest.BacklogConfirmation(
+                                    plan = suruAction.backlogPlan,
+                                    sourcePrompt = clean
+                                )
+                            }
+                            else -> {
+                                suruPendingConfirmationState.value = SuruConfirmationRequest.ActionConfirmation(
+                                    title = suruAction.confirmationTitle ?: "Confirm Action",
+                                    message = suruAction.confirmationMessage ?: suruAction.reply,
+                                    action = suruAction
+                                )
+                            }
+                        }
+                    }
+
+                    suruAction.intent !in setOf(SuruIntent.CHAT, SuruIntent.ASK_CLARIFICATION, SuruIntent.WELLNESS_CHECK) -> {
+                        val outcome = suruActionEngine.executeStructuredAction(suruAction, today)
+                        badge = outcome.actionBadge
+                        if (outcome.undoRecord != null) {
+                            suruLastUndoState.value = outcome.undoRecord
+                        }
+                        if (suruAction.intent == SuruIntent.COMPLETE_TASK) {
+                            emitKuttaEvent(KuttaEvent.TaskCompleted(suruAction.title ?: "Task"))
+                        }
+                        triggerSuruSuccessPulse()
+                    }
+                }
+
+                prefsRepo.unlockBadge("AI_COMMANDER")
+                db.aiMessageDao().insertMessage(
+                    AiMessageEntity(isFromUser = false, text = finalReply, actionBadge = badge)
+                )
+                if (speakReply && !current.prefs.suruVoiceMuted) {
+                    suruVoiceManager.speak(finalReply)
+                }
+                syncHomeWidgets()
+                aiLoadingState.value = false
+                return@launch
+            }
+
+            // 2. Fallback to existing LifeAiRepository + SURU conversational reply
             when (val result = aiRepo.processPrompt(clean, snapshot)) {
                 is AiExecutionResult.Error -> {
                     aiErrorState.value = result.message
                 }
                 is AiExecutionResult.Success -> {
                     var badge: String? = null
+                    var replyText = result.reply
                     when (result.actionType) {
                         "CREATE_TASK" -> {
                             val title = result.title ?: clean.take(40)
-                            val matchedSection = current.taskSections.firstOrNull { sec ->
-                                title.contains(sec.name, ignoreCase = true) || clean.contains(sec.name, ignoreCase = true)
-                            }
-                            db.taskDao().insertTask(
-                                TaskEntity(
-                                    sectionId = matchedSection?.id ?: 0L,
+                            val outcome = suruActionEngine.executeStructuredAction(
+                                com.example.suru.SuruStructuredAction(
+                                    intent = SuruIntent.CREATE_TASK,
+                                    reply = result.reply,
                                     title = title,
-                                    priorityName = result.priority.name,
-                                    categoryName = result.category.name,
-                                    deadlineEpochDay = today + result.dateOffsetDays,
-                                    xpReward = result.priority.xpValue
-                                )
+                                    dateOffsetDays = result.dateOffsetDays,
+                                    category = result.category,
+                                    priority = result.priority
+                                ),
+                                today
                             )
-                            badge = "Task Added · $title"
+                            badge = outcome.actionBadge
+                            suruLastUndoState.value = outcome.undoRecord
+                            triggerSuruSuccessPulse()
                         }
                         "CREATE_HABIT" -> {
                             val title = result.title ?: clean.take(40)
-                            db.habitDao().insertHabit(
-                                HabitEntity(
+                            val outcome = suruActionEngine.executeStructuredAction(
+                                com.example.suru.SuruStructuredAction(
+                                    intent = SuruIntent.CREATE_HABIT,
+                                    reply = result.reply,
                                     title = title,
-                                    categoryName = result.category.name,
-                                    targetPerWeek = 7,
-                                    xpReward = 25
-                                )
+                                    category = result.category
+                                ),
+                                today
                             )
-                            badge = "Habit Created · $title"
+                            badge = outcome.actionBadge
+                            suruLastUndoState.value = outcome.undoRecord
+                            triggerSuruSuccessPulse()
                         }
                         "CREATE_EVENT" -> {
                             val title = result.title ?: clean.take(40)
-                            val startMin = result.startHour * 60 + result.startMinute
-                            db.calendarEventDao().insertEvent(
-                                CalendarEventEntity(
+                            val outcome = suruActionEngine.executeStructuredAction(
+                                com.example.suru.SuruStructuredAction(
+                                    intent = SuruIntent.CREATE_EVENT,
+                                    reply = result.reply,
                                     title = title,
-                                    notes = "Scheduled by LIFE AI",
-                                    dateEpochDay = today + result.dateOffsetDays,
-                                    startMinuteOfDay = startMin,
+                                    dateOffsetDays = result.dateOffsetDays,
+                                    startHour = result.startHour,
+                                    startMinute = result.startMinute,
                                     durationMinutes = result.durationMinutes,
-                                    categoryName = result.category.name
-                                )
+                                    category = result.category
+                                ),
+                                today
                             )
-                            badge = "Scheduled · ${DateTimeUtils.formatFullDate(today + result.dateOffsetDays)} ${DateTimeUtils.formatTimeOfDay(startMin)}"
+                            badge = outcome.actionBadge
+                            suruLastUndoState.value = outcome.undoRecord
+                            triggerSuruSuccessPulse()
                         }
                         "ORGANIZE_TOMORROW" -> {
-                            val pending = current.tasks.filter { !it.isCompleted }.take(3)
-                            pending.forEachIndexed { idx, task ->
-                                val startMin = 540 + idx * 120
-                                db.calendarEventDao().insertEvent(
-                                    CalendarEventEntity(
-                                        title = task.title,
-                                        notes = "Scheduled by LIFE AI",
-                                        dateEpochDay = today + 1,
-                                        startMinuteOfDay = startMin,
-                                        durationMinutes = 60,
-                                        categoryName = task.categoryName
-                                    )
+                            val outcome = suruActionEngine.executeStructuredAction(
+                                com.example.suru.SuruStructuredAction(
+                                    intent = SuruIntent.ORGANIZE_TOMORROW,
+                                    reply = result.reply
+                                ),
+                                today
+                            )
+                            badge = outcome.actionBadge
+                            suruLastUndoState.value = outcome.undoRecord
+                            triggerSuruSuccessPulse()
+                        }
+                        else -> {
+                            if (result.isOfflineEngine && result.reply.contains("LIFE AI active offline")) {
+                                val (convReply, _) = suruService.generateConversationalReply(
+                                    userPrompt = clean,
+                                    context = snapshot,
+                                    enabledMemories = enabledMemories
                                 )
-                            }
-                            if (pending.isNotEmpty()) {
-                                badge = "Tomorrow Planned · ${pending.size} Focus Blocks"
+                                replyText = convReply
                             }
                         }
                     }
@@ -1493,14 +1831,126 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     db.aiMessageDao().insertMessage(
                         AiMessageEntity(
                             isFromUser = false,
-                            text = result.reply,
+                            text = replyText,
                             actionBadge = badge
                         )
                     )
+                    if (speakReply && !current.prefs.suruVoiceMuted) {
+                        suruVoiceManager.speak(replyText)
+                    }
                     syncHomeWidgets()
                 }
             }
             aiLoadingState.value = false
+        }
+    }
+
+    fun adjustPendingStudyPlanWorkload(newDailyMinutes: Int) {
+        val current = suruPendingConfirmationState.value as? SuruConfirmationRequest.StudyPlanConfirmation ?: return
+        val updatedDraft = SuruStudyPlanner.buildStudyPlanDraft(
+            subject = current.draft.subject,
+            chapters = current.draft.chapters,
+            deadlineDays = current.draft.deadlineDays,
+            dailyAvailableMinutes = newDailyMinutes.coerceIn(30, 360),
+            preferredWindow = current.draft.preferredWindow,
+            startHour = current.draft.startHour,
+            startMinute = current.draft.startMinute,
+            existingEvents = uiState.value.events,
+            todayEpochDay = DateTimeUtils.todayEpochDay(),
+            customWeights = current.draft.chapterWeights
+        )
+        lastProposedStudyDraft = updatedDraft
+        suruPendingConfirmationState.value = current.copy(draft = updatedDraft)
+    }
+
+    fun confirmPendingSuruAction() {
+        val pending = suruPendingConfirmationState.value ?: return
+        viewModelScope.launch {
+            val today = DateTimeUtils.todayEpochDay()
+            val outcome = when (pending) {
+                is SuruConfirmationRequest.StudyPlanConfirmation ->
+                    suruActionEngine.executeStudyPlan(pending.draft, today)
+                is SuruConfirmationRequest.BacklogConfirmation ->
+                    suruActionEngine.executeBacklogPlan(pending.plan, today)
+                is SuruConfirmationRequest.ActionConfirmation ->
+                    suruActionEngine.executeStructuredAction(pending.action, today)
+            }
+            suruPendingConfirmationState.value = null
+            lastProposedStudyDraft = null
+            if (outcome.undoRecord != null) {
+                suruLastUndoState.value = outcome.undoRecord
+            }
+            triggerSuruSuccessPulse()
+            db.aiMessageDao().insertMessage(
+                AiMessageEntity(
+                    isFromUser = false,
+                    text = outcome.feedbackMessage.ifBlank { "Confirmed and applied!" },
+                    actionBadge = outcome.actionBadge
+                )
+            )
+            snackbarState.value = outcome.feedbackMessage.ifBlank { "Changes applied" }
+            syncHomeWidgets()
+        }
+    }
+
+    fun dismissPendingSuruConfirmation() {
+        suruPendingConfirmationState.value = null
+        snackbarState.value = "Draft dismissed"
+    }
+
+    fun undoLastSuruAction() {
+        val record = suruLastUndoState.value ?: return
+        viewModelScope.launch {
+            suruActionEngine.undo(record)
+            suruLastUndoState.value = null
+            snackbarState.value = "Undid: ${record.label}"
+            db.aiMessageDao().insertMessage(
+                AiMessageEntity(
+                    isFromUser = false,
+                    text = "Reverted (${record.label}). Your data is back to how it was before.",
+                    actionBadge = "Undone"
+                )
+            )
+            syncHomeWidgets()
+        }
+    }
+
+    fun triggerBacklogRecoveryPreview() {
+        val current = uiState.value
+        val plan = SuruStudyPlanner.buildBacklogRecoveryPlan(
+            tasks = current.tasks,
+            existingEvents = current.events,
+            dailyFocusGoalMinutes = current.prefs.dailyFocusGoalMinutes,
+            todayEpochDay = current.todayEpochDay
+        )
+        if (plan.items.isEmpty()) {
+            snackbarState.value = "No pending tasks in backlog!"
+            return
+        }
+        suruPendingConfirmationState.value = SuruConfirmationRequest.BacklogConfirmation(
+            plan = plan,
+            sourcePrompt = "Backlog Recovery"
+        )
+    }
+
+    fun generateSuruStudyHelp(topic: String, mode: SuruStudyHelpMode, userNotes: String) {
+        if (topic.isBlank() && userNotes.isBlank()) return
+        viewModelScope.launch {
+            aiLoadingState.value = true
+            val result = suruService.generateStudyHelp(
+                topic = topic.ifBlank { "Study Notes" },
+                mode = mode,
+                userNotes = userNotes
+            )
+            suruStudyHelpState.value = result
+            aiLoadingState.value = false
+        }
+    }
+
+    fun updateStudyPlanStatus(plan: SuruStudyPlanEntity, status: String) {
+        viewModelScope.launch {
+            db.suruStudyPlanDao().updatePlan(plan.copy(status = status))
+            snackbarState.value = "Study plan marked $status"
         }
     }
 
@@ -1600,10 +2050,18 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             db.aiMessageDao().clearAll()
             db.cycleLogDao().clearAll()
             db.dailyCheckInDao().clearAll()
+            db.suruMemoryDao().clearAll()
+            db.suruStudyPlanDao().clearAll()
             db.quickNoteDao().saveNote(QuickNoteEntity(id = 1, content = ""))
             prefsRepo.resetDefaults()
             LifeOsSeeder.seedInitialDataIfNeeded(db)
             TaskReminderScheduler.syncSchedule(getApplication(), notificationsEnabled = false, taskRemindersEnabled = false)
+            TaskReminderScheduler.syncDailyBriefings(getApplication(), notificationsEnabled = false, morningEnabled = false, eveningEnabled = false)
+            suruPendingConfirmationState.value = null
+            suruLastUndoState.value = null
+            suruStudyHelpState.value = null
+            pendingSuruContext = null
+            lastProposedStudyDraft = null
             snackbarState.value = "Workspace reset to a clean slate"
             syncHomeWidgets()
         }

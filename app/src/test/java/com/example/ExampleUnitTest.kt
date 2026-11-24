@@ -556,9 +556,11 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun themeModes_includeOneDarkAndThreeLightModes() {
-        assertEquals(4, LifeOsThemeMode.entries.size)
-        assertEquals(1, LifeOsThemeMode.entries.count { it.isDark })
-        assertEquals(3, LifeOsThemeMode.entries.count { !it.isDark })
+    fun themeModes_includeTwoDarkAndFourLightModes_withFeeloraLavender() {
+        assertEquals(6, LifeOsThemeMode.entries.size)
+        assertEquals(2, LifeOsThemeMode.entries.count { it.isDark })
+        assertEquals(4, LifeOsThemeMode.entries.count { !it.isDark })
+        assertTrue(LifeOsThemeMode.FEELORA_LIGHT in LifeOsThemeMode.entries)
+        assertTrue(LifeOsThemeMode.FEELORA_DARK in LifeOsThemeMode.entries)
     }
 }

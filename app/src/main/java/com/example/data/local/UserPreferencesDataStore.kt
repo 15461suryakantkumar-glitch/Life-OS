@@ -81,12 +81,12 @@ enum class UserAvatarPreset(val label: String) {
     FOREST_DEER("Forest Deer"),
     OCEAN_WHALE("Ocean Whale"),
     BERRY_CAT("Berry Cat"),
-    STAR_BUNNY("Star Bunny"),
+    STAR_BUNNY("BUNNI · Star Bunny"),
     AMBER_FOX("Amber Fox");
 
     companion object {
         fun fromStored(raw: String?): UserAvatarPreset {
-            return entries.firstOrNull { it.name == raw } ?: SUNNY_CLOUD
+            return entries.firstOrNull { it.name == raw } ?: STAR_BUNNY
         }
     }
 }
@@ -97,7 +97,7 @@ data class UserPreferencesState(
     val userHandle: String = "",
     val userEmail: String = "",
     val friendCode: String = "",
-    val avatarPreset: UserAvatarPreset = UserAvatarPreset.SUNNY_CLOUD,
+    val avatarPreset: UserAvatarPreset = UserAvatarPreset.STAR_BUNNY,
     val dailyFocusGoalMinutes: Int = 120,
     val dailyScreenLimitMinutes: Int = 180,
     val focusMinutesLoggedToday: Int = 0,
@@ -108,7 +108,7 @@ data class UserPreferencesState(
     val averageCycleLengthDays: Int = 28,
     val averagePeriodLengthDays: Int = 5,
     val reducedMotionEnabled: Boolean = false,
-    val themeMode: LifeOsThemeMode = LifeOsThemeMode.MIDNIGHT_AURORA,
+    val themeMode: LifeOsThemeMode = LifeOsThemeMode.FEELORA_DARK,
     val totalXp: Int = 0,
     val dailyStreak: Int = 0,
     val weeklyStreak: Int = 0,
@@ -129,7 +129,15 @@ data class UserPreferencesState(
     val quietHoursEnabled: Boolean = true,
     val quietStartHour: Int = 22,
     val quietEndHour: Int = 7,
-    val soundEffectsEnabled: Boolean = true
+    val soundEffectsEnabled: Boolean = true,
+    val suruPersonalizationEnabled: Boolean = true,
+    val suruVoiceMuted: Boolean = false,
+    val suruSpeechSpeed: Float = 1.0f,
+    val suruVoiceLanguage: String = "HINGLISH",
+    val suruMorningBriefingEnabled: Boolean = true,
+    val suruEveningReflectionEnabled: Boolean = true,
+    val suruMorningHour: Int = 8,
+    val suruEveningHour: Int = 20
 ) {
     val level: Int
         get() = (totalXp / 250) + 1
@@ -188,6 +196,14 @@ class UserPreferencesRepository(private val context: Context) {
         val QUIET_START_HOUR = intPreferencesKey("quiet_start_hour")
         val QUIET_END_HOUR = intPreferencesKey("quiet_end_hour")
         val SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
+        val SURU_PERSONALIZATION = booleanPreferencesKey("suru_personalization_enabled")
+        val SURU_VOICE_MUTED = booleanPreferencesKey("suru_voice_muted")
+        val SURU_SPEECH_SPEED_X100 = intPreferencesKey("suru_speech_speed_x100")
+        val SURU_VOICE_LANG = stringPreferencesKey("suru_voice_lang")
+        val SURU_MORNING_BRIEFING = booleanPreferencesKey("suru_morning_briefing")
+        val SURU_EVENING_REFLECTION = booleanPreferencesKey("suru_evening_reflection")
+        val SURU_MORNING_HOUR = intPreferencesKey("suru_morning_hour")
+        val SURU_EVENING_HOUR = intPreferencesKey("suru_evening_hour")
     }
 
     val preferencesFlow: Flow<UserPreferencesState> = context.lifeOsDataStore.data.map { prefs ->
@@ -252,7 +268,15 @@ class UserPreferencesRepository(private val context: Context) {
             quietHoursEnabled = prefs[Keys.QUIET_HOURS_ENABLED] ?: true,
             quietStartHour = prefs[Keys.QUIET_START_HOUR] ?: 22,
             quietEndHour = prefs[Keys.QUIET_END_HOUR] ?: 7,
-            soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS] ?: true
+            soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS] ?: true,
+            suruPersonalizationEnabled = prefs[Keys.SURU_PERSONALIZATION] ?: true,
+            suruVoiceMuted = prefs[Keys.SURU_VOICE_MUTED] ?: false,
+            suruSpeechSpeed = ((prefs[Keys.SURU_SPEECH_SPEED_X100] ?: 100) / 100f).coerceIn(0.75f, 1.5f),
+            suruVoiceLanguage = prefs[Keys.SURU_VOICE_LANG] ?: "HINGLISH",
+            suruMorningBriefingEnabled = prefs[Keys.SURU_MORNING_BRIEFING] ?: true,
+            suruEveningReflectionEnabled = prefs[Keys.SURU_EVENING_REFLECTION] ?: true,
+            suruMorningHour = prefs[Keys.SURU_MORNING_HOUR] ?: 8,
+            suruEveningHour = prefs[Keys.SURU_EVENING_HOUR] ?: 20
         )
     }
 
@@ -491,6 +515,38 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateSoundEffects(enabled: Boolean) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.SOUND_EFFECTS] = enabled
+        }
+    }
+
+    suspend fun updateSuruVoiceSettings(
+        muted: Boolean,
+        speechSpeed: Float,
+        languageName: String
+    ) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SURU_VOICE_MUTED] = muted
+            prefs[Keys.SURU_SPEECH_SPEED_X100] = (speechSpeed.coerceIn(0.75f, 1.5f) * 100).toInt()
+            prefs[Keys.SURU_VOICE_LANG] = languageName
+        }
+    }
+
+    suspend fun updateSuruMemoryPersonalization(enabled: Boolean) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SURU_PERSONALIZATION] = enabled
+        }
+    }
+
+    suspend fun updateSuruBriefingSettings(
+        morningEnabled: Boolean,
+        eveningEnabled: Boolean,
+        morningHour: Int = 8,
+        eveningHour: Int = 20
+    ) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SURU_MORNING_BRIEFING] = morningEnabled
+            prefs[Keys.SURU_EVENING_REFLECTION] = eveningEnabled
+            prefs[Keys.SURU_MORNING_HOUR] = morningHour.coerceIn(5, 12)
+            prefs[Keys.SURU_EVENING_HOUR] = eveningHour.coerceIn(17, 23)
         }
     }
 

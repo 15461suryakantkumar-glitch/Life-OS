@@ -1,9 +1,9 @@
 <resources>
-    <string name="app_name">Life OS</string>
-    <string name="widget_tasks_desc">Life OS · Interactive tasks and XP checklist</string>
-    <string name="widget_calendar_desc">Life OS · Smart schedule and upcoming blocks</string>
-    <string name="widget_countdown_desc">Life OS · Milestone countdowns and days left</string>
-    <string name="widget_xp_desc">Life OS · Level, total XP, and productivity score</string>
-    <string name="widget_streak_desc">Life OS · Daily streaks and quick habit check-in</string>
-    <string name="widget_pet_desc">Life OS · Interactive companion mood and energy</string>
+    <string name="app_name">Feelora</string>
+    <string name="widget_tasks_desc">Feelora · Interactive tasks and XP checklist</string>
+    <string name="widget_calendar_desc">Feelora · Smart schedule and upcoming blocks</string>
+    <string name="widget_countdown_desc">Feelora · Milestone countdowns and days left</string>
+    <string name="widget_xp_desc">Feelora · Level, total XP, and productivity score</string>
+    <string name="widget_streak_desc">Feelora · Daily streaks and quick habit check-in</string>
+    <string name="widget_pet_desc">Feelora · Interactive companion mood and energy</string>
 </resources>

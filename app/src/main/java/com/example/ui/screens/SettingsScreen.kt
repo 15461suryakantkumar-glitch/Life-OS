@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.DeleteForever
@@ -61,6 +62,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.WidgetConfigEntity
+import com.example.suru.SuruVoiceLanguage
 import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.SectionHeader
@@ -87,6 +89,10 @@ fun SettingsScreen(
     onUpdateWaterSettings: (Int, Boolean) -> Unit = { _, _ -> },
     onUpdateCycleSettings: (Boolean, Int, Int) -> Unit = { _, _, _ -> },
     onUpdateReducedMotion: (Boolean) -> Unit = {},
+    onUpdateSuruVoiceSettings: (Boolean, Float, SuruVoiceLanguage) -> Unit = { _, _, _ -> },
+    onUpdateSuruBriefingSettings: (Boolean, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
+    onUpdateSuruPersonalization: (Boolean) -> Unit = {},
+    onOpenSuru: () -> Unit = {},
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onSignOut: () -> Unit,
@@ -94,6 +100,9 @@ fun SettingsScreen(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val prefs = state.prefs
+    val currentVoiceLang = remember(prefs.suruVoiceLanguage) {
+        SuruVoiceLanguage.fromStored(prefs.suruVoiceLanguage)
+    }
     var name by remember(prefs.userName) { mutableStateOf(prefs.userName) }
     var handle by remember(prefs.userHandle) { mutableStateOf(prefs.userHandle) }
     var focusGoal by remember(prefs.dailyFocusGoalMinutes) { mutableStateOf(prefs.dailyFocusGoalMinutes.toString()) }
@@ -175,7 +184,7 @@ fun SettingsScreen(
                     Spacer(Modifier.width(8.dp))
                     Column {
                         Text("Aesthetic Theme", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Text("1 dark mode + 3 curated light studio themes", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        Text("2 dark modes + 4 curated light studio themes (FEELORA Lavender default)", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -233,6 +242,104 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+        }
+
+        // SURU Personal AI Voice, Daily Briefings & Memory
+        item {
+            ObsidianCard(borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Column {
+                            Text("SURU Assistant & Voice", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                            Text("Voice language, speech speed, daily briefings & memory", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        }
+                    }
+                    OutlinedButton(onClick = onOpenSuru, modifier = Modifier.testTag("settings_open_suru_btn")) {
+                        Text("Open", maxLines = 1, softWrap = false)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                ToggleRow(
+                    label = "Mute SURU Voice Responses",
+                    checked = prefs.suruVoiceMuted,
+                    onCheckedChange = { muted ->
+                        onUpdateSuruVoiceSettings(muted, prefs.suruSpeechSpeed, currentVoiceLang)
+                    }
+                )
+                Text("Voice Recognition & Speech Language", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SuruVoiceLanguage.entries.forEach { lang ->
+                        FilterChip(
+                            selected = currentVoiceLang == lang,
+                            onClick = { onUpdateSuruVoiceSettings(prefs.suruVoiceMuted, prefs.suruSpeechSpeed, lang) },
+                            label = { Text(lang.label, maxLines = 1, softWrap = false) },
+                            modifier = Modifier.testTag("settings_suru_lang_${lang.name}")
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text("Speech Rate (${prefs.suruSpeechSpeed}x)", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(0.85f to "0.85x", 1.0f to "1.0x", 1.25f to "1.25x").forEach { (rate, label) ->
+                        FilterChip(
+                            selected = kotlin.math.abs(prefs.suruSpeechSpeed - rate) < 0.05f,
+                            onClick = { onUpdateSuruVoiceSettings(prefs.suruVoiceMuted, rate, currentVoiceLang) },
+                            label = { Text(label, maxLines = 1, softWrap = false) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                ToggleRow(
+                    label = "Morning Briefing Notification",
+                    checked = prefs.suruMorningBriefingEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) onRequestNotificationPermission()
+                        onUpdateSuruBriefingSettings(
+                            enabled,
+                            prefs.suruEveningReflectionEnabled,
+                            prefs.suruMorningHour,
+                            prefs.suruEveningHour
+                        )
+                    }
+                )
+                ToggleRow(
+                    label = "Evening Reflection Notification",
+                    checked = prefs.suruEveningReflectionEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled) onRequestNotificationPermission()
+                        onUpdateSuruBriefingSettings(
+                            prefs.suruMorningBriefingEnabled,
+                            enabled,
+                            prefs.suruMorningHour,
+                            prefs.suruEveningHour
+                        )
+                    }
+                )
+                ToggleRow(
+                    label = "SURU Personalization Memory (editable in SURU -> Memory)",
+                    checked = prefs.suruPersonalizationEnabled,
+                    onCheckedChange = onUpdateSuruPersonalization
+                )
+                Text(
+                    text = "SURU never sends audio silently, respects quiet hours, and never accesses private Cycle Care or journal notes.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.inkMuted
+                )
             }
         }
 
@@ -417,7 +524,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Pin interactive Life OS widgets directly to your Android launcher.",
+                    "Pin interactive Feelora widgets directly to your Android launcher.",
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary
                 )
@@ -609,7 +716,7 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Local Room + DataStore persistence is active. Offline LIFE AI works without cloud keys, and Friend sync runs at ₹0 cost via share links and local Wi-Fi.",
+                    "Local Room + DataStore persistence is active. SURU NLU, study planner, and voice work on-device (when Android Speech service supports it); optional cloud AI uses Firebase AI Logic.",
                     style = MaterialTheme.typography.bodySmall,
                     color = tokens.inkSecondary
                 )
@@ -669,7 +776,7 @@ fun SettingsScreen(
             title = { Text("Reset Local Workspace?", color = tokens.inkPrimary) },
             text = {
                 Text(
-                    "This clears all tasks, events, habits, friends, and XP, returning Life OS to a clean zero baseline.",
+                    "This clears all tasks, events, habits, SURU plans/memories, friends, and XP, returning Feelora to a clean zero baseline.",
                     color = tokens.inkSecondary
                 )
             },

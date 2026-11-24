@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.provider.CalendarContract
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,7 +28,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Repeat
@@ -37,6 +42,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -52,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -75,9 +82,12 @@ import java.util.Calendar
 fun CalendarScreen(
     state: LifeOsUiState,
     onSaveEvent: (String, String, Long, Int, Int, TaskCategory, RecurrencePattern, Int, Boolean) -> Unit,
-    onDeleteEvent: (CalendarEventEntity) -> Unit
+    onDeleteEvent: (CalendarEventEntity) -> Unit,
+    onAskSuru: () -> Unit = {},
+    onShowMessage: (String) -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
+    val context = LocalContext.current
     val today = state.todayEpochDay
     var selectedEpochDay by remember { mutableLongStateOf(today) }
     var calendarView by remember { mutableStateOf("MONTH") } // MONTH | WEEK | DAY
@@ -124,12 +134,30 @@ fun CalendarScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Smart Calendar", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
-                Text(
-                    "Schedule focus blocks, recurring events, task deadlines, and countdowns",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.inkSecondary
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Smart Calendar", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
+                        Text(
+                            "Schedule focus blocks, recurring events, task deadlines, and countdowns",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.inkSecondary
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        onClick = onAskSuru,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.height(38.dp).testTag("calendar_ask_suru_btn")
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Ask SURU", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                    }
+                }
             }
 
             // View mode switch: Monthly / Weekly / Daily
@@ -303,6 +331,38 @@ fun CalendarScreen(
                                         )
                                     }
                                 }
+                            }
+                            IconButton(
+                                onClick = {
+                                    val dayMillis = event.dateEpochDay * 86_400_000L
+                                    val cal = Calendar.getInstance().apply {
+                                        timeInMillis = dayMillis
+                                        set(Calendar.HOUR_OF_DAY, event.startMinuteOfDay / 60)
+                                        set(Calendar.MINUTE, event.startMinuteOfDay % 60)
+                                        set(Calendar.SECOND, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }
+                                    val startMs = cal.timeInMillis
+                                    val endMs = startMs + event.durationMinutes.coerceAtLeast(15) * 60_000L
+                                    val intent = Intent(Intent.ACTION_INSERT)
+                                        .setData(CalendarContract.Events.CONTENT_URI)
+                                        .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startMs)
+                                        .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endMs)
+                                        .putExtra(CalendarContract.Events.TITLE, event.title)
+                                        .putExtra(CalendarContract.Events.DESCRIPTION, event.notes.ifBlank { "Scheduled via Feelora SURU" })
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: ActivityNotFoundException) {
+                                        onShowMessage("No external Calendar app available to export.")
+                                    }
+                                },
+                                modifier = Modifier.testTag("export_event_btn_${event.id}")
+                            ) {
+                                Icon(
+                                    Icons.Filled.EventAvailable,
+                                    contentDescription = "Export to Google Calendar",
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
                             }
                             IconButton(onClick = { onDeleteEvent(event) }) {
                                 Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete event", tint = RoseAlert)
