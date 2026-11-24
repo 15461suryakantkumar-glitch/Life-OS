@@ -2,8 +2,11 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,13 +35,19 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -62,16 +71,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.data.audio.LifeOsSoundCue
 import com.example.data.local.SuruMemoryEntity
 import com.example.data.local.SuruStudyPlanEntity
 import com.example.suru.SuruBriefingsPanel
 import com.example.suru.SuruConfirmationCard
+import com.example.suru.SuruImageProcessor
 import com.example.suru.SuruMascot
 import com.example.suru.SuruMemoryPanel
 import com.example.suru.SuruStudyHelpMode
@@ -107,15 +119,76 @@ fun LifeAiScreen(
     onTogglePersonalization: (Boolean) -> Unit = {},
     onAddMemory: (String, String, String) -> Unit = { _, _, _ -> },
     onToggleMemory: (SuruMemoryEntity) -> Unit = {},
-    onDeleteMemory: (SuruMemoryEntity) -> Unit = {}
+    onDeleteMemory: (SuruMemoryEntity) -> Unit = {},
+    onAttachImageUri: (Uri, String) -> Unit = { _, _ -> },
+    onClearImage: () -> Unit = {},
+    onPlayCue: (LifeOsSoundCue) -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var activeTab by remember { mutableIntStateOf(0) } // 0=Assistant, 1=Study Lab, 2=Briefings, 3=Memory
+    var showAttachMenu by remember { mutableStateOf(false) }
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     val listState = rememberLazyListState()
     val voiceLanguage = remember(state.prefs.suruVoiceLanguage) {
         SuruVoiceLanguage.fromStored(state.prefs.suruVoiceLanguage)
+    }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            onAttachImageUri(uri, "Photo")
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { saved ->
+        val captureUri = pendingCameraUri
+        pendingCameraUri = null
+        if (saved && captureUri != null) {
+            onAttachImageUri(captureUri, "Camera Photo")
+        }
+    }
+
+    fun launchCameraCapture() {
+        runCatching {
+            val uri = SuruImageProcessor.createCameraCaptureUri(context)
+            pendingCameraUri = uri
+            cameraLauncher.launch(uri)
+        }.onFailure {
+            pendingCameraUri = null
+            onPlayCue(LifeOsSoundCue.SURU_ERROR)
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            launchCameraCapture()
+        } else {
+            onPlayCue(LifeOsSoundCue.SURU_ERROR)
+        }
+    }
+
+    fun handleCameraTap() {
+        val hasCamera = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+        if (!hasCamera) {
+            onPlayCue(LifeOsSoundCue.SURU_ERROR)
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            launchCameraCapture()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -148,10 +221,10 @@ fun LifeAiScreen(
 
     val quickPrompts = listOf(
         "Suru, mujhe agle 5 din mein Physics ke 3 chapters complete karne hain",
-        "Add Revise Organic Chemistry tomorrow",
-        "Clear my pending backlog",
-        "Morning briefing",
-        "Schedule Deep Focus at 6 PM"
+        "Plan my entire week",
+        "Move today's tasks to tomorrow",
+        "Summarize my progress this month",
+        "What should I focus on today?"
     )
 
     LaunchedEffect(state.aiMessages.size) {
@@ -195,7 +268,7 @@ fun LifeAiScreen(
                         )
                     }
                     Text(
-                        text = if (state.isCloudAiAvailable) "Personal AI · Voice + Hybrid Ready" else "Personal AI · Voice + Offline Ready",
+                        text = "Personal AI · ${state.cloudAiStatus.badgeLabel}",
                         style = MaterialTheme.typography.bodySmall,
                         color = tokens.inkSecondary,
                         maxLines = 1,
@@ -420,6 +493,14 @@ fun LifeAiScreen(
                                         )
                                         .padding(14.dp)
                                 ) {
+                                    if (!msg.attachmentSummary.isNullOrBlank()) {
+                                        StatusPill(
+                                            text = msg.attachmentSummary,
+                                            color = MaterialTheme.colorScheme.secondary,
+                                            icon = Icons.Filled.PhotoLibrary
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                    }
                                     Text(msg.text, style = MaterialTheme.typography.bodyMedium, color = tokens.inkPrimary)
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -476,7 +557,76 @@ fun LifeAiScreen(
                     }
                 }
 
-                // Voice + Manual Text Composer
+                // Attached Image Preview Strip
+                state.pendingSuruImage?.let { img ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(tokens.surfaceElevated)
+                            .border(0.5.dp, tokens.borderSubtle)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .testTag("suru_image_preview_strip")
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Image(
+                                bitmap = img.toComposeImageBitmap(),
+                                contentDescription = "Attached study photo preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Photo ready for SURU",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = tokens.inkPrimary
+                                )
+                                Text(
+                                    text = img.summaryLabel,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.inkSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            IconButton(
+                                onClick = onClearImage,
+                                modifier = Modifier.size(48.dp).testTag("suru_remove_image_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "Remove attached photo",
+                                    tint = RoseAlert
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                "Solve step-by-step",
+                                "Summarize notes",
+                                "Make study tasks from this"
+                            ).forEach { chipPrompt ->
+                                AssistChip(
+                                    onClick = { onSendPrompt(chipPrompt) },
+                                    label = { Text(chipPrompt, maxLines = 1, softWrap = false) },
+                                    enabled = !state.isAiLoading
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Voice + Photo + Manual Text Composer
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -499,12 +649,53 @@ fun LifeAiScreen(
                             contentDescription = if (isListening) "Stop listening" else "Speak to SURU"
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Box {
+                        FilledIconButton(
+                            onClick = { showAttachMenu = true },
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = if (state.pendingSuruImage != null) MaterialTheme.colorScheme.secondaryContainer else tokens.surfaceElevated,
+                                contentColor = if (state.pendingSuruImage != null) MaterialTheme.colorScheme.onSecondaryContainer else tokens.inkPrimary
+                            ),
+                            modifier = Modifier.size(48.dp).testTag("suru_attach_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AddPhotoAlternate,
+                                contentDescription = "Attach photo or camera image"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showAttachMenu,
+                            onDismissRequest = { showAttachMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Choose from Photos") },
+                                leadingIcon = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null) },
+                                onClick = {
+                                    showAttachMenu = false
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                },
+                                modifier = Modifier.testTag("suru_pick_photo_item")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Take Photo") },
+                                leadingIcon = { Icon(Icons.Filled.CameraAlt, contentDescription = null) },
+                                onClick = {
+                                    showAttachMenu = false
+                                    handleCameraTap()
+                                },
+                                modifier = Modifier.testTag("suru_take_photo_item")
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(6.dp))
                     OutlinedTextField(
                         value = input,
                         onValueChange = { input = it },
                         modifier = Modifier.weight(1f).testTag("ai_prompt_input"),
-                        placeholder = { Text("Ask SURU (English / Hinglish)...") },
+                        placeholder = { Text(if (state.pendingSuruImage != null) "Ask about this photo..." else "Ask SURU (English / Hinglish)...") },
                         maxLines = 3,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = tokens.surfaceCard,
@@ -515,16 +706,16 @@ fun LifeAiScreen(
                             unfocusedTextColor = tokens.inkPrimary
                         )
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
                     FilledIconButton(
                         onClick = {
                             val toSend = input.trim()
-                            if (toSend.isNotEmpty()) {
+                            if (toSend.isNotEmpty() || state.pendingSuruImage != null) {
                                 input = ""
                                 onSendPrompt(toSend)
                             }
                         },
-                        enabled = input.isNotBlank() && !state.isAiLoading,
+                        enabled = (input.isNotBlank() || state.pendingSuruImage != null) && !state.isAiLoading,
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary

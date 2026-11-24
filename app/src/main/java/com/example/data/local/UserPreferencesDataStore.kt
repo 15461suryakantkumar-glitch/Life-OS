@@ -129,7 +129,19 @@ data class UserPreferencesState(
     val quietHoursEnabled: Boolean = true,
     val quietStartHour: Int = 22,
     val quietEndHour: Int = 7,
+    val reminderFrequencyHours: Int = 2,
+    val maxRemindersPerTaskPerDay: Int = 3,
     val soundEffectsEnabled: Boolean = true,
+    val soundVolume: Float = 0.72f,
+    val hapticsEnabled: Boolean = true,
+    val soundNavEnabled: Boolean = true,
+    val soundInteractionEnabled: Boolean = true,
+    val soundTaskEnabled: Boolean = true,
+    val soundCalendarEnabled: Boolean = true,
+    val soundSuruEnabled: Boolean = true,
+    val soundGamificationEnabled: Boolean = true,
+    val soundCompanionEnabled: Boolean = true,
+    val hasCompletedPermissionSetup: Boolean = false,
     val suruPersonalizationEnabled: Boolean = true,
     val suruVoiceMuted: Boolean = false,
     val suruSpeechSpeed: Float = 1.0f,
@@ -195,7 +207,19 @@ class UserPreferencesRepository(private val context: Context) {
         val QUIET_HOURS_ENABLED = booleanPreferencesKey("quiet_hours_enabled")
         val QUIET_START_HOUR = intPreferencesKey("quiet_start_hour")
         val QUIET_END_HOUR = intPreferencesKey("quiet_end_hour")
+        val REMINDER_FREQUENCY_HOURS = intPreferencesKey("reminder_frequency_hours")
+        val MAX_REMINDERS_PER_TASK = intPreferencesKey("max_reminders_per_task_day")
         val SOUND_EFFECTS = booleanPreferencesKey("sound_effects_enabled")
+        val SOUND_VOLUME_X100 = intPreferencesKey("sound_volume_x100")
+        val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
+        val SOUND_NAV = booleanPreferencesKey("sound_nav_enabled")
+        val SOUND_INTERACTION = booleanPreferencesKey("sound_interaction_enabled")
+        val SOUND_TASK = booleanPreferencesKey("sound_task_enabled")
+        val SOUND_CALENDAR = booleanPreferencesKey("sound_calendar_enabled")
+        val SOUND_SURU = booleanPreferencesKey("sound_suru_enabled")
+        val SOUND_GAMIFICATION = booleanPreferencesKey("sound_gamification_enabled")
+        val SOUND_COMPANION = booleanPreferencesKey("sound_companion_enabled")
+        val HAS_COMPLETED_PERMISSION_SETUP = booleanPreferencesKey("has_completed_permission_setup")
         val SURU_PERSONALIZATION = booleanPreferencesKey("suru_personalization_enabled")
         val SURU_VOICE_MUTED = booleanPreferencesKey("suru_voice_muted")
         val SURU_SPEECH_SPEED_X100 = intPreferencesKey("suru_speech_speed_x100")
@@ -268,7 +292,19 @@ class UserPreferencesRepository(private val context: Context) {
             quietHoursEnabled = prefs[Keys.QUIET_HOURS_ENABLED] ?: true,
             quietStartHour = prefs[Keys.QUIET_START_HOUR] ?: 22,
             quietEndHour = prefs[Keys.QUIET_END_HOUR] ?: 7,
+            reminderFrequencyHours = (prefs[Keys.REMINDER_FREQUENCY_HOURS] ?: 2).coerceIn(1, 6),
+            maxRemindersPerTaskPerDay = (prefs[Keys.MAX_REMINDERS_PER_TASK] ?: 3).coerceIn(1, 10),
             soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS] ?: true,
+            soundVolume = ((prefs[Keys.SOUND_VOLUME_X100] ?: 72) / 100f).coerceIn(0.1f, 1.0f),
+            hapticsEnabled = prefs[Keys.HAPTICS_ENABLED] ?: true,
+            soundNavEnabled = prefs[Keys.SOUND_NAV] ?: true,
+            soundInteractionEnabled = prefs[Keys.SOUND_INTERACTION] ?: true,
+            soundTaskEnabled = prefs[Keys.SOUND_TASK] ?: true,
+            soundCalendarEnabled = prefs[Keys.SOUND_CALENDAR] ?: true,
+            soundSuruEnabled = prefs[Keys.SOUND_SURU] ?: true,
+            soundGamificationEnabled = prefs[Keys.SOUND_GAMIFICATION] ?: true,
+            soundCompanionEnabled = prefs[Keys.SOUND_COMPANION] ?: true,
+            hasCompletedPermissionSetup = prefs[Keys.HAS_COMPLETED_PERMISSION_SETUP] ?: false,
             suruPersonalizationEnabled = prefs[Keys.SURU_PERSONALIZATION] ?: true,
             suruVoiceMuted = prefs[Keys.SURU_VOICE_MUTED] ?: false,
             suruSpeechSpeed = ((prefs[Keys.SURU_SPEECH_SPEED_X100] ?: 100) / 100f).coerceIn(0.75f, 1.5f),
@@ -515,6 +551,45 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun updateSoundEffects(enabled: Boolean) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.SOUND_EFFECTS] = enabled
+        }
+    }
+
+    suspend fun updateSoundConfiguration(
+        masterEnabled: Boolean,
+        volume: Float,
+        hapticsEnabled: Boolean,
+        navEnabled: Boolean,
+        interactionEnabled: Boolean,
+        taskEnabled: Boolean,
+        calendarEnabled: Boolean,
+        suruEnabled: Boolean,
+        gamificationEnabled: Boolean,
+        companionEnabled: Boolean
+    ) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.SOUND_EFFECTS] = masterEnabled
+            prefs[Keys.SOUND_VOLUME_X100] = (volume.coerceIn(0.1f, 1.0f) * 100).toInt()
+            prefs[Keys.HAPTICS_ENABLED] = hapticsEnabled
+            prefs[Keys.SOUND_NAV] = navEnabled
+            prefs[Keys.SOUND_INTERACTION] = interactionEnabled
+            prefs[Keys.SOUND_TASK] = taskEnabled
+            prefs[Keys.SOUND_CALENDAR] = calendarEnabled
+            prefs[Keys.SOUND_SURU] = suruEnabled
+            prefs[Keys.SOUND_GAMIFICATION] = gamificationEnabled
+            prefs[Keys.SOUND_COMPANION] = companionEnabled
+        }
+    }
+
+    suspend fun updateSmartReminderPolicy(frequencyHours: Int, maxPerTaskPerDay: Int) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.REMINDER_FREQUENCY_HOURS] = frequencyHours.coerceIn(1, 6)
+            prefs[Keys.MAX_REMINDERS_PER_TASK] = maxPerTaskPerDay.coerceIn(1, 10)
+        }
+    }
+
+    suspend fun markPermissionSetupCompleted(completed: Boolean = true) {
+        context.lifeOsDataStore.edit { prefs ->
+            prefs[Keys.HAS_COMPLETED_PERMISSION_SETUP] = completed
         }
     }
 

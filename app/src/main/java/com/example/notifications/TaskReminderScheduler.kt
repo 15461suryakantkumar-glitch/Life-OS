@@ -18,21 +18,87 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.example.MainActivity
 import com.example.R
+import com.example.data.local.CalendarEventEntity
 import com.example.data.local.LifeOsDatabase
+import com.example.data.local.RecurrencePattern
+import com.example.data.local.TaskEntity
 import com.example.data.local.UserPreferencesRepository
+import com.example.util.DateTimeUtils
 import kotlinx.coroutines.flow.first
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
+
+object TaskReminderPolicy {
+
+    fun isUserCurrentlyBusyInEvent(
+        events: List<CalendarEventEntity>,
+        todayEpochDay: Long,
+        minuteOfDay: Int
+    ): CalendarEventEntity? {
+        return events.firstOrNull { ev ->
+            if (ev.isCountdown) return@firstOrNull false
+            val occursToday = ev.dateEpochDay == todayEpochDay ||
+                (ev.recurrence == RecurrencePattern.DAILY && ev.dateEpochDay <= todayEpochDay)
+            if (!occursToday) return@firstOrNull false
+            val end = ev.startMinuteOfDay + ev.durationMinutes
+            minuteOfDay in ev.startMinuteOfDay until end
+        }
+    }
+
+    fun selectEligibleTasks(
+        tasks: List<TaskEntity>,
+        events: List<CalendarEventEntity>,
+        todayEpochDay: Long,
+        minuteOfDay: Int,
+        nowMillis: Long,
+        frequencyHours: Int,
+        maxRemindersPerTaskPerDay: Int
+    ): List<TaskEntity> {
+        if (isUserCurrentlyBusyInEvent(events, todayEpochDay, minuteOfDay) != null) {
+            return emptyList()
+        }
+
+        val minIntervalMillis = frequencyHours.coerceIn(1, 6) * 60L * 60L * 1000L
+        return tasks
+            .filter { task ->
+                if (task.isCompleted || task.remindersDismissed) return@filter false
+                if (task.deadlineEpochDay > todayEpochDay + 1L) return@filter false
+                if (task.snoozedUntilMillis > nowMillis) return@filter false
+                if (task.lastRemindedAtMillis > 0L && (nowMillis - task.lastRemindedAtMillis) < minIntervalMillis) {
+                    return@filter false
+                }
+                val countToday = if (task.lastReminderEpochDay == todayEpochDay) task.reminderCountToday else 0
+                if (countToday >= maxRemindersPerTaskPerDay.coerceIn(1, 10)) {
+                    return@filter false
+                }
+                true
+            }
+            .sortedWith(
+                compareByDescending<TaskEntity> { it.deadlineEpochDay < todayEpochDay }
+                    .thenByDescending { it.priority.ordinal }
+                    .thenBy { it.deadlineEpochDay }
+                    .thenBy { if (it.lastReminderEpochDay == todayEpochDay) it.reminderCountToday else 0 }
+            )
+    }
+}
 
 object TaskReminderScheduler {
     const val WORK_NAME = "lifeos_pending_task_reminder_2h"
     const val CHANNEL_ID = "lifeos_task_reminders"
     const val NOTIFICATION_ID = 4201
 
+    const val ACTION_MARK_COMPLETE = "com.example.notifications.ACTION_MARK_COMPLETE"
+    const val ACTION_SNOOZE = "com.example.notifications.ACTION_SNOOZE"
+    const val ACTION_RESCHEDULE = "com.example.notifications.ACTION_RESCHEDULE"
+    const val ACTION_DISMISS = "com.example.notifications.ACTION_DISMISS"
+    const val EXTRA_TASK_ID = "extra_task_id"
+    const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
+
     fun syncSchedule(
         context: Context,
         notificationsEnabled: Boolean,
-        taskRemindersEnabled: Boolean
+        taskRemindersEnabled: Boolean,
+        frequencyHours: Int = 2
     ) {
         val wm = WorkManager.getInstance(context)
         if (!notificationsEnabled || !taskRemindersEnabled) {
@@ -40,8 +106,9 @@ object TaskReminderScheduler {
             clearReminderNotification(context)
             return
         }
-        val request = PeriodicWorkRequestBuilder<PendingTaskReminderWorker>(2, TimeUnit.HOURS)
-            .setInitialDelay(2, TimeUnit.HOURS)
+        val safeHours = frequencyHours.coerceIn(1, 6).toLong()
+        val request = PeriodicWorkRequestBuilder<PendingTaskReminderWorker>(safeHours, TimeUnit.HOURS)
+            .setInitialDelay(safeHours, TimeUnit.HOURS)
             .build()
         wm.enqueueUniquePeriodicWork(
             WORK_NAME,
@@ -50,9 +117,9 @@ object TaskReminderScheduler {
         )
     }
 
-    fun clearReminderNotification(context: Context) {
+    fun clearReminderNotification(context: Context, notificationId: Int = NOTIFICATION_ID) {
         try {
-            NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+            NotificationManagerCompat.from(context).cancel(notificationId)
         } catch (_: Exception) {
         }
     }
@@ -92,10 +159,10 @@ object TaskReminderScheduler {
                 ?: return
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Pending Task Reminders",
+                "Smart Task Reminders",
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Gentle reminders every 2 hours while you have incomplete tasks."
+                description = "Gentle reminders for pending tasks with quick Complete, Snooze & Reschedule actions."
             }
             manager.createNotificationChannel(channel)
         }
@@ -105,7 +172,8 @@ object TaskReminderScheduler {
         context: Context,
         pendingCount: Int,
         topTaskTitle: String,
-        companionName: String
+        companionName: String,
+        topTaskId: Long = -1L
     ): Boolean {
         if (pendingCount <= 0) {
             clearReminderNotification(context)
@@ -126,37 +194,75 @@ object TaskReminderScheduler {
         )
 
         val title = if (pendingCount == 1) {
-            "1 task still waiting"
+            "Task still waiting: $topTaskTitle"
         } else {
-            "$pendingCount pending tasks waiting"
+            "$pendingCount tasks waiting · Next: $topTaskTitle"
         }
         val body = if (pendingCount == 1) {
-            "$companionName suggests tackling \"$topTaskTitle\" when you're ready."
+            "Tap to open Tasks or mark complete directly below."
         } else {
-            "Next up: \"$topTaskTitle\" (+${pendingCount - 1} more). Tap to view Tasks."
+            "Top priority: \"$topTaskTitle\" (+${pendingCount - 1} more). Tap an action below."
         }
 
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_widget_check)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
+            .setOnlyAlertOnce(true)
             .setAutoCancel(true)
-            .build()
+
+        if (topTaskId > 0L) {
+            builder
+                .addAction(
+                    R.drawable.ic_widget_check,
+                    "Complete",
+                    buildActionPendingIntent(context, ACTION_MARK_COMPLETE, topTaskId, 11)
+                )
+                .addAction(
+                    R.drawable.ic_widget_refresh,
+                    "Later (1h)",
+                    buildActionPendingIntent(context, ACTION_SNOOZE, topTaskId, 12)
+                )
+                .addAction(
+                    R.drawable.ic_widget_calendar,
+                    "Tomorrow",
+                    buildActionPendingIntent(context, ACTION_RESCHEDULE, topTaskId, 13)
+                )
+                .setDeleteIntent(buildActionPendingIntent(context, ACTION_DISMISS, topTaskId, 14))
+        }
 
         return try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
             true
         } catch (_: SecurityException) {
             false
         }
     }
 
+    private fun buildActionPendingIntent(
+        context: Context,
+        action: String,
+        taskId: Long,
+        requestOffset: Int
+    ): PendingIntent {
+        val actionIntent = Intent(context, TaskReminderActionReceiver::class.java).apply {
+            this.action = action
+            putExtra(EXTRA_TASK_ID, taskId)
+            putExtra(EXTRA_NOTIFICATION_ID, NOTIFICATION_ID)
+        }
+        return PendingIntent.getBroadcast(
+            context,
+            NOTIFICATION_ID + requestOffset,
+            actionIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     const val BRIEFING_WORK_NAME = "feelora_suru_daily_briefing"
     const val BRIEFING_NOTIFICATION_ID = 4202
-    private const val BRIEFING_PREFS = "feelora_briefing_guard"
 
     fun syncDailyBriefings(
         context: Context,
@@ -207,7 +313,10 @@ object TaskReminderScheduler {
             .setAutoCancel(true)
             .build()
         return try {
-            NotificationManagerCompat.from(context).notify(BRIEFING_NOTIFICATION_ID + if (isMorning) 0 else 1, notification)
+            NotificationManagerCompat.from(context).notify(
+                BRIEFING_NOTIFICATION_ID + if (isMorning) 0 else 1,
+                notification
+            )
             true
         } catch (_: SecurityException) {
             false
@@ -236,7 +345,9 @@ class PendingTaskReminderWorker(
             return Result.success()
         }
 
-        val currentHour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val cal = Calendar.getInstance()
+        val currentHour = cal.get(Calendar.HOUR_OF_DAY)
+        val minuteOfDay = currentHour * 60 + cal.get(Calendar.MINUTE)
         if (TaskReminderScheduler.isWithinQuietHours(
                 currentHour = currentHour,
                 quietHoursEnabled = prefs.quietHoursEnabled,
@@ -248,19 +359,46 @@ class PendingTaskReminderWorker(
         }
 
         val db = LifeOsDatabase.getInstance(applicationContext)
-        val pendingTasks = db.taskDao().getAllTasksOnce().filter { !it.isCompleted }
-        if (pendingTasks.isEmpty()) {
-            TaskReminderScheduler.clearReminderNotification(applicationContext)
+        val allTasks = db.taskDao().getAllTasksOnce()
+        val allEvents = db.calendarEventDao().getAllEventsOnce()
+        val today = DateTimeUtils.todayEpochDay()
+        val now = System.currentTimeMillis()
+
+        val eligible = TaskReminderPolicy.selectEligibleTasks(
+            tasks = allTasks,
+            events = allEvents,
+            todayEpochDay = today,
+            minuteOfDay = minuteOfDay,
+            nowMillis = now,
+            frequencyHours = prefs.reminderFrequencyHours,
+            maxRemindersPerTaskPerDay = prefs.maxRemindersPerTaskPerDay
+        )
+
+        if (eligible.isEmpty()) {
+            if (allTasks.none { !it.isCompleted }) {
+                TaskReminderScheduler.clearReminderNotification(applicationContext)
+            }
             return Result.success()
         }
 
-        val topTask = pendingTasks.first()
-        TaskReminderScheduler.postPendingTasksNotification(
+        val topTask = eligible.first()
+        val posted = TaskReminderScheduler.postPendingTasksNotification(
             context = applicationContext,
-            pendingCount = pendingTasks.size,
+            pendingCount = eligible.size,
             topTaskTitle = topTask.title,
-            companionName = prefs.petName
+            companionName = prefs.petName,
+            topTaskId = topTask.id
         )
+        if (posted) {
+            val nextCount = if (topTask.lastReminderEpochDay == today) topTask.reminderCountToday + 1 else 1
+            db.taskDao().updateTask(
+                topTask.copy(
+                    lastRemindedAtMillis = now,
+                    lastReminderEpochDay = today,
+                    reminderCountToday = nextCount
+                )
+            )
+        }
         return Result.success()
     }
 }
@@ -286,7 +424,7 @@ class SuruDailyBriefingWorker(
             return Result.success()
         }
 
-        val today = com.example.util.DateTimeUtils.todayEpochDay()
+        val today = DateTimeUtils.todayEpochDay()
         val guard = applicationContext.getSharedPreferences("feelora_briefing_guard", Context.MODE_PRIVATE)
         val db = LifeOsDatabase.getInstance(applicationContext)
         val tasks = db.taskDao().getAllTasksOnce()
@@ -322,4 +460,3 @@ class SuruDailyBriefingWorker(
         return Result.success()
     }
 }
-

@@ -86,7 +86,12 @@ data class TaskEntity(
     val xpAwarded: Boolean = false,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val distractionMinutes: Int = 0,
-    val focusMinutesSpent: Int = 0
+    val focusMinutesSpent: Int = 0,
+    val lastRemindedAtMillis: Long = 0L,
+    val snoozedUntilMillis: Long = 0L,
+    val reminderCountToday: Int = 0,
+    val lastReminderEpochDay: Long = -1L,
+    val remindersDismissed: Boolean = false
 ) {
     val priority: TaskPriority
         get() = TaskPriority.entries.firstOrNull { it.name == priorityName } ?: TaskPriority.MEDIUM
@@ -212,6 +217,7 @@ data class AiMessageEntity(
     val isFromUser: Boolean,
     val text: String,
     val actionBadge: String? = null,
+    val attachmentSummary: String? = null,
     val timestampMillis: Long = System.currentTimeMillis()
 )
 

@@ -94,7 +94,7 @@ class LifeAiRepository(private val appContext: Context) {
 
     private val structuredModel by lazy {
         Firebase.ai.generativeModel(
-            modelName = "gemini-3.8-flash",
+            modelName = "gemini-2.5-flash",
             generationConfig = generationConfig {
                 responseMimeType = "application/json"
                 responseSchema = actionSchema
@@ -103,11 +103,7 @@ class LifeAiRepository(private val appContext: Context) {
     }
 
     /**
-     * Local-first execution:
-     * 1) Deterministic local/on-device LIFE AI handles task creation, habit creation,
-     *    calendar scheduling, daily planning, and productivity insights instantly at ₹0 cost.
-     * 2) Only if the prompt is open-ended (unmatched locally) AND Firebase AI + network
-     *    are configured/online, it optionally queries cloud Gemini with graceful local fallback.
+     * Legacy fallback bridge used only when unified SURU cloud/NLU needs simple action matching.
      */
     suspend fun processPrompt(
         userPrompt: String,
@@ -118,7 +114,7 @@ class LifeAiRepository(private val appContext: Context) {
             return localMatch
         }
 
-        if (canAttemptCloudAi()) {
+        if (canAttemptCloudAi() && runCatching { FirebaseApp.getApps(appContext).isNotEmpty() }.getOrDefault(false)) {
             val cloudResult = tryCloudGemini(userPrompt, context)
             if (cloudResult != null) return cloudResult
         }
@@ -130,13 +126,19 @@ class LifeAiRepository(private val appContext: Context) {
 
     private fun canAttemptCloudAi(): Boolean {
         return try {
-            if (FirebaseApp.getApps(appContext).isEmpty()) return false
+            val hasFirebase = FirebaseApp.getApps(appContext).isNotEmpty()
+            val key = runCatching { com.example.BuildConfig.GEMINI_API_KEY.trim() }.getOrDefault("")
+            val hasKey = key.isNotBlank() && key != "your_api_key_here" && !key.startsWith("YOUR_")
+            if (!hasFirebase && !hasKey) return false
             val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
                 ?: return false
             val activeNetwork = cm.activeNetwork ?: return false
             val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
         } catch (_: Exception) {
             false
         }

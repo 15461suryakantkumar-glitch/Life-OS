@@ -28,10 +28,12 @@ import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.AlertDialog
@@ -44,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,8 +63,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.data.audio.LifeOsSoundCue
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.WidgetConfigEntity
+import com.example.notifications.AppPermissionStatus
 import com.example.suru.SuruVoiceLanguage
 import com.example.ui.components.GlanceWidgetPinningSection
 import com.example.ui.components.ObsidianCard
@@ -73,6 +78,7 @@ import com.example.ui.theme.LifeOsThemeMode
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,7 +102,22 @@ fun SettingsScreen(
     onToggleWidgetVisibility: (WidgetConfigEntity) -> Unit,
     onMoveWidget: (WidgetConfigEntity, Int) -> Unit,
     onSignOut: () -> Unit,
-    onResetData: () -> Unit
+    onResetData: () -> Unit,
+    onOpenPermissions: () -> Unit = {},
+    onUpdateSoundConfig: (
+        masterEnabled: Boolean,
+        volume: Float,
+        hapticsEnabled: Boolean,
+        navEnabled: Boolean,
+        interactionEnabled: Boolean,
+        taskEnabled: Boolean,
+        calendarEnabled: Boolean,
+        suruEnabled: Boolean,
+        gamificationEnabled: Boolean,
+        companionEnabled: Boolean
+    ) -> Unit = { _, _, _, _, _, _, _, _, _, _ -> },
+    onPreviewSoundCue: (LifeOsSoundCue) -> Unit = {},
+    onUpdateSmartReminderPolicy: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val prefs = state.prefs
@@ -122,7 +143,7 @@ fun SettingsScreen(
         item {
             Text("Settings", style = MaterialTheme.typography.headlineLarge, color = tokens.inkPrimary)
             Text(
-                "Themes, profile, 2-hour task reminders, widgets, and audio",
+                "Themes, permissions, smart reminders, widgets, and audio",
                 style = MaterialTheme.typography.bodySmall,
                 color = tokens.inkSecondary
             )
@@ -172,6 +193,47 @@ fun SettingsScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     StatusPill(text = "Lv.${prefs.level}", color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+        }
+
+        // Dedicated Permissions & Privacy Center Card
+        item {
+            val readyCount = state.appPermissions.count {
+                it.status == AppPermissionStatus.GRANTED || it.status == AppPermissionStatus.NOT_REQUIRED
+            }
+            val totalCount = state.appPermissions.size
+            ObsidianCard(
+                onClick = onOpenPermissions,
+                borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text("Permissions & Privacy Center", style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
+                            Text(
+                                text = if (totalCount > 0) {
+                                    "$readyCount of $totalCount access checks ready · manage Android permissions"
+                                } else {
+                                    "Inspect notifications, camera, mic, photos & usage access"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = tokens.inkSecondary
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = onOpenPermissions,
+                        modifier = Modifier.testTag("settings_open_permissions_btn")
+                    ) {
+                        Text("Manage", maxLines = 1, softWrap = false)
+                    }
                 }
             }
         }
@@ -533,35 +595,187 @@ fun SettingsScreen(
             }
         }
 
-        // Sound, 2-Hour Task Reminders & Quiet Hours
+        // Acoustic Sound Effects, Volume, Haptics & Category Toggles
+        item {
+            ObsidianCard {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Acoustic Soundscape & Haptics", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                        Text("Lavender-soft chimes with SURU speech protection", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                ToggleRow(
+                    label = "Master Sound Effects",
+                    checked = prefs.soundEffectsEnabled,
+                    onCheckedChange = onUpdateSoundEffects
+                )
+                ToggleRow(
+                    label = "Subtle Haptic Touch Feedback",
+                    checked = prefs.hapticsEnabled,
+                    onCheckedChange = { haptics ->
+                        onUpdateSoundConfig(
+                            prefs.soundEffectsEnabled,
+                            prefs.soundVolume,
+                            haptics,
+                            prefs.soundNavEnabled,
+                            prefs.soundInteractionEnabled,
+                            prefs.soundTaskEnabled,
+                            prefs.soundCalendarEnabled,
+                            prefs.soundSuruEnabled,
+                            prefs.soundGamificationEnabled,
+                            prefs.soundCompanionEnabled
+                        )
+                    }
+                )
+                if (prefs.soundEffectsEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Volume (${(prefs.soundVolume * 100).roundToInt()}%)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.inkSecondary
+                    )
+                    Slider(
+                        value = prefs.soundVolume,
+                        onValueChange = { vol ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled,
+                                vol,
+                                prefs.hapticsEnabled,
+                                prefs.soundNavEnabled,
+                                prefs.soundInteractionEnabled,
+                                prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled,
+                                prefs.soundSuruEnabled,
+                                prefs.soundGamificationEnabled,
+                                prefs.soundCompanionEnabled
+                            )
+                        },
+                        valueRange = 0.1f..1.0f,
+                        modifier = Modifier.testTag("sound_volume_slider")
+                    )
+                    Text("Sound Categories", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                    ToggleRow(
+                        label = "Navigation Switches",
+                        checked = prefs.soundNavEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                v, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "UI Interactions & Undo",
+                        checked = prefs.soundInteractionEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, v, prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "Tasks (Create, Complete & Reschedule)",
+                        checked = prefs.soundTaskEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, v,
+                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "Calendar & Schedule Saves",
+                        checked = prefs.soundCalendarEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
+                                v, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "SURU Chimes",
+                        checked = prefs.soundSuruEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled, v, prefs.soundGamificationEnabled, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "XP, Streaks & Level-Up",
+                        checked = prefs.soundGamificationEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, v, prefs.soundCompanionEnabled
+                            )
+                        }
+                    )
+                    ToggleRow(
+                        label = "KUTTA Companion Taps",
+                        checked = prefs.soundCompanionEnabled,
+                        onCheckedChange = { v ->
+                            onUpdateSoundConfig(
+                                prefs.soundEffectsEnabled, prefs.soundVolume, prefs.hapticsEnabled,
+                                prefs.soundNavEnabled, prefs.soundInteractionEnabled, prefs.soundTaskEnabled,
+                                prefs.soundCalendarEnabled, prefs.soundSuruEnabled, prefs.soundGamificationEnabled, v
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text("Preview Chimes", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            LifeOsSoundCue.TASK_COMPLETE to "Task Done",
+                            LifeOsSoundCue.SURU_SUCCESS to "SURU",
+                            LifeOsSoundCue.STREAK_ACTIVATE to "Streak",
+                            LifeOsSoundCue.LEVEL_UP to "Level Up"
+                        ).forEach { (cue, label) ->
+                            FilterChip(
+                                selected = false,
+                                onClick = { onPreviewSoundCue(cue) },
+                                label = { Text(label, maxLines = 1, softWrap = false) }
+                            )
+                        }
+                        TextButton(
+                            onClick = onTestSoundEffect,
+                            modifier = Modifier.testTag("test_sfx_btn")
+                        ) {
+                            Text("Preview", maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Smart 2-Hour Task Reminders & Quiet Hours
         item {
             ObsidianCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text("Notifications & 2h Task Nudges", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                        Text("Sound effects, 2-hour pending task repeats & quiet hours", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                        Text("Smart Task Reminders & Quiet Hours", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                        Text("Skips calendar blocks, completed tasks & quiet hours", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                ToggleRow(
-                    label = "Sound Effects (Tasks, Streaks & Level-Up)",
-                    checked = prefs.soundEffectsEnabled,
-                    onCheckedChange = onUpdateSoundEffects
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    TextButton(
-                        onClick = onTestSoundEffect,
-                        enabled = prefs.soundEffectsEnabled,
-                        modifier = Modifier.testTag("test_sfx_btn")
-                    ) {
-                        Text("Preview Chime", maxLines = 1, softWrap = false)
-                    }
-                }
                 ToggleRow(
                     label = "Master Notifications",
                     checked = prefs.notificationsEnabled,
@@ -578,7 +792,7 @@ fun SettingsScreen(
                     }
                 )
                 ToggleRow(
-                    label = "2-Hour Pending Task Reminders (repeats every 2h until completed)",
+                    label = "Smart Pending Task Reminders (Complete / Later / Tomorrow actions)",
                     checked = prefs.taskRemindersEnabled,
                     onCheckedChange = { reminders ->
                         if (reminders) onRequestNotificationPermission()
@@ -592,6 +806,48 @@ fun SettingsScreen(
                         )
                     }
                 )
+                if (prefs.taskRemindersEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Reminder Frequency (Every ${prefs.reminderFrequencyHours}h)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.inkSecondary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(1, 2, 3, 4).forEach { hrs ->
+                            FilterChip(
+                                selected = prefs.reminderFrequencyHours == hrs,
+                                onClick = { onUpdateSmartReminderPolicy(hrs, prefs.maxRemindersPerTaskPerDay) },
+                                label = { Text("${hrs}h", maxLines = 1, softWrap = false) },
+                                modifier = Modifier.testTag("reminder_freq_${hrs}h")
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "Daily Cap per Task (Max ${prefs.maxRemindersPerTaskPerDay} / day)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.inkSecondary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(2, 3, 5).forEach { cap ->
+                            FilterChip(
+                                selected = prefs.maxRemindersPerTaskPerDay == cap,
+                                onClick = { onUpdateSmartReminderPolicy(prefs.reminderFrequencyHours, cap) },
+                                label = { Text("${cap}/day", maxLines = 1, softWrap = false) },
+                                modifier = Modifier.testTag("reminder_cap_${cap}")
+                            )
+                        }
+                    }
+                }
                 ToggleRow(
                     label = "Digital Wellbeing Budget Alerts",
                     checked = prefs.wellnessAlertsEnabled,
@@ -654,6 +910,12 @@ fun SettingsScreen(
                         }
                     }
                 }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Background checks run via Android WorkManager; system Doze mode may delay exact timing when asleep.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.inkMuted
+                )
             }
         }
 

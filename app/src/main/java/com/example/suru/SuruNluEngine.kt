@@ -247,7 +247,108 @@ object SuruNluEngine {
             )
         }
 
-        // 7. Task Completion ("mark Physics done" / "complete ... " / "ho gaya")
+        // 7. Weekly Planning & Exam Next Week ("Plan my entire week" / "I have an examination next week")
+        if (lower.contains("plan my week") || lower.contains("plan my entire week") || lower.contains("weekly plan") || lower.contains("plan this week")) {
+            return SuruStructuredAction(
+                intent = SuruIntent.PLAN_WEEK,
+                reply = "Planned your priority tasks into conflict-free study blocks across the upcoming week.",
+                isOfflineEngine = true
+            )
+        }
+        if ((lower.contains("exam") || lower.contains("examination") || lower.contains("test")) &&
+            (lower.contains("next week") || lower.contains("in a week") || lower.contains("agle hafte"))
+        ) {
+            val subject = extractSubject(raw, lower) ?: inferSubjectFromMemories(memories) ?: "Exam Prep"
+            val chapters = extractChaptersList(raw)
+            if (chapters.isEmpty()) {
+                return SuruStructuredAction(
+                    intent = SuruIntent.ASK_CLARIFICATION,
+                    reply = "Let's get you ready for your $subject exam next week! Which chapters or topics are on the syllabus?",
+                    updatedPendingContext = SuruPendingContext(
+                        intent = SuruIntent.CREATE_STUDY_PLAN,
+                        subject = subject,
+                        chapters = emptyList(),
+                        deadlineDays = 7,
+                        dailyAvailableMinutes = extractDailyAvailableMinutes(lower),
+                        preferredWindow = extractPreferredWindow(lower),
+                        missingSlot = "CHAPTERS"
+                    ),
+                    isOfflineEngine = true
+                )
+            }
+        }
+
+        // 8. Log Completed Study Progress ("I completed two hours of Chemistry")
+        extractLoggedStudyProgress(raw, lower)?.let { (subjectLabel, mins) ->
+            return SuruStructuredAction(
+                intent = SuruIntent.LOG_STUDY_PROGRESS,
+                reply = "Logged ${DateTimeUtils.formatMinutesCompact(mins)} of focused $subjectLabel progress! (+${(mins / 2).coerceIn(10, 120)} XP)",
+                subject = subjectLabel,
+                title = subjectLabel,
+                loggedMinutes = mins,
+                isOfflineEngine = true
+            )
+        }
+
+        // 9. Bulk Move Today's Tasks to Tomorrow ("Move today's tasks to tomorrow")
+        if ((lower.contains("move") || lower.contains("shift") || lower.contains("push")) &&
+            (lower.contains("today's task") || lower.contains("todays task") || lower.contains("all today") || lower.contains("aaj ke task")) &&
+            (lower.contains("tomorrow") || lower.contains("kal") || lower.contains("next day"))
+        ) {
+            return SuruStructuredAction(
+                intent = SuruIntent.RESCHEDULE_TASK,
+                reply = "Moved today's open tasks to tomorrow and refreshed their reminder schedule.",
+                dateOffsetDays = 1,
+                rescheduleAllToday = true,
+                isOfflineEngine = true
+            )
+        }
+
+        // 10. Free Study Time / What to focus on today / Progress Summary / Overdue Check
+        if (lower.contains("free time") || lower.contains("free slot") || lower.contains("available study time") || lower.contains("when can i study")) {
+            return SuruStructuredAction(
+                intent = SuruIntent.FIND_FREE_SLOTS,
+                reply = "Checked your calendar for open study windows.",
+                isOfflineEngine = true
+            )
+        }
+        if (lower.contains("what should i focus") || lower.contains("focus on today") || lower.contains("what next")) {
+            val overdueCount = tasks.count { !it.isCompleted && it.deadlineEpochDay < todayEpochDay }
+            val top = tasks.filter { !it.isCompleted }
+                .sortedWith(compareByDescending<TaskEntity> { it.deadlineEpochDay < todayEpochDay }.thenByDescending { it.priority.ordinal }.thenBy { it.deadlineEpochDay })
+                .take(3)
+            val replyText = if (top.isEmpty()) {
+                "Your task queue is completely clear today! Start a 25-minute deep reading sprint or review your goals."
+            } else {
+                buildString {
+                    append("Top focus right now")
+                    if (overdueCount > 0) append(" ($overdueCount overdue)")
+                    appendLine(":")
+                    top.forEachIndexed { idx, t ->
+                        val tag = if (t.deadlineEpochDay < todayEpochDay) "Overdue" else t.priority.label
+                        appendLine("${idx + 1}. ${t.title} [$tag]")
+                    }
+                    append("Start with #1 for a focused 25-minute block!")
+                }
+            }
+            return SuruStructuredAction(
+                intent = SuruIntent.OVERDUE_CHECK,
+                reply = replyText,
+                isOfflineEngine = true
+            )
+        }
+        if (lower.contains("summarize my progress") || lower.contains("progress this month") || lower.contains("my progress") || lower.contains("weekly report")) {
+            return SuruStructuredAction(
+                intent = SuruIntent.PROGRESS_SUMMARY,
+                reply = "Prepared your progress summary.",
+                isOfflineEngine = true
+            )
+        }
+
+        // 11. Rename / Edit Task ("rename task X to Y" / "edit task X to Y")
+        extractEditTaskIntent(raw, lower, tasks)?.let { return it }
+
+        // 12. Task Completion ("mark Physics done" / "complete ... " / "ho gaya")
         if (looksLikeCompleteTask(lower)) {
             val matched = findMatchingTask(raw, lower, tasks.filter { !it.isCompleted })
             if (matched != null) {
@@ -261,7 +362,7 @@ object SuruNluEngine {
             }
         }
 
-        // 8. Task Deletion (requires explicit confirmation!)
+        // 13. Task Deletion (requires explicit confirmation!)
         if (looksLikeDeleteTask(lower)) {
             val matched = findMatchingTask(raw, lower, tasks)
             if (matched != null) {
@@ -278,7 +379,7 @@ object SuruNluEngine {
             }
         }
 
-        // 9. Break down task into subtasks
+        // 14. Break down task into subtasks
         if (lower.contains("break down") || lower.contains("subtask") || lower.contains("split task")) {
             val matched = findMatchingTask(raw, lower, tasks.filter { !it.isCompleted })
             val topic = matched?.title ?: extractCleanActionTitle(raw)
@@ -295,7 +396,7 @@ object SuruNluEngine {
             )
         }
 
-        // 10. Event Rescheduling ("move ... to 6 PM", "reschedule ... to tomorrow")
+        // 15. Event OR Task Rescheduling ("move ... to 6 PM", "reschedule ... to tomorrow")
         if (looksLikeRescheduleEvent(lower)) {
             val matchedEvent = findMatchingEvent(raw, lower, events)
             val newOffset = extractDateOffset(lower)
@@ -323,9 +424,20 @@ object SuruNluEngine {
                     isOfflineEngine = true
                 )
             }
+            val matchedTask = findMatchingTask(raw, lower, tasks.filter { !it.isCompleted })
+            if (matchedTask != null && newOffset > 0) {
+                return SuruStructuredAction(
+                    intent = SuruIntent.RESCHEDULE_TASK,
+                    reply = "Moved \"${matchedTask.title}\" to ${formatDateLabel(newOffset, todayEpochDay)}.",
+                    title = matchedTask.title,
+                    targetTaskId = matchedTask.id,
+                    dateOffsetDays = newOffset,
+                    isOfflineEngine = true
+                )
+            }
         }
 
-        // 11. Wellness Check / Support (Stress, Fatigue, Sleep, Water, Mood)
+        // 16. Wellness Check / Support (Stress, Fatigue, Sleep, Water, Mood)
         if (looksLikeWellnessIntent(lower)) {
             val wellnessReply = buildWellnessResponse(lower, context)
             return SuruStructuredAction(
@@ -858,6 +970,43 @@ object SuruNluEngine {
         0 -> "today"
         1 -> "tomorrow"
         else -> DateTimeUtils.formatFullDate(todayEpochDay + dateOffset)
+    }
+
+    private fun extractLoggedStudyProgress(raw: String, lower: String): Pair<String, Int>? {
+        val verbs = listOf("completed", "studied", "logged", "did", "finished", "padha", "padhai")
+        if (verbs.none { lower.contains(it) }) return null
+        val mins = extractDailyAvailableMinutes(lower) ?: extractDurationMinutesOrNull(lower) ?: return null
+        val subjectMatch = Regex("""(?i)\b(?:of|on|for|mein)\s+([A-Za-z][A-Za-z0-9 &]{1,28})""").find(raw)
+        val subj = subjectMatch?.groupValues?.getOrNull(1)?.trim()?.trimEnd('.', '!', '?')
+            ?: extractSubject(raw, lower)
+            ?: "Study"
+        return subj.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } to mins
+    }
+
+    private fun extractEditTaskIntent(
+        raw: String,
+        lower: String,
+        tasks: List<TaskEntity>
+    ): SuruStructuredAction? {
+        val renameMatch = Regex("""(?i)^(?:please\s+)?(?:rename|edit|update|change)\s+(?:the\s+)?task\s+["']?(.+?)["']?\s+to\s+["']?(.+?)["']?\s*$""").find(raw)
+            ?: return null
+        val oldQuery = renameMatch.groupValues[1].trim()
+        val newTitle = renameMatch.groupValues[2].trim().trimEnd('.', '!')
+        if (oldQuery.isBlank() || newTitle.isBlank()) return null
+        val matched = tasks.firstOrNull {
+            it.title.equals(oldQuery, ignoreCase = true) ||
+                it.title.contains(oldQuery, ignoreCase = true)
+        } ?: return null
+        return SuruStructuredAction(
+            intent = SuruIntent.UPDATE_TASK,
+            reply = "Updated \"${matched.title}\" to \"$newTitle\".",
+            title = matched.title,
+            newTitle = newTitle,
+            targetTaskId = matched.id,
+            category = matched.category,
+            priority = matched.priority,
+            isOfflineEngine = true
+        )
     }
 
     private fun buildWellnessResponse(lower: String, context: LifeContextSnapshot): String {

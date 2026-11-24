@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -54,6 +55,7 @@ import androidx.compose.material.icons.outlined.HealthAndSafety
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -91,6 +93,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.audio.LifeOsSoundCue
 import com.example.kutta.LocalReducedMotion
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.FriendsScreen
@@ -98,6 +101,8 @@ import com.example.ui.screens.GrowthScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LifeAiScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PermissionSetupScreen
+import com.example.ui.screens.PermissionsScreen
 import com.example.ui.screens.ProfileScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TasksScreen
@@ -120,7 +125,8 @@ enum class LifeOsSection(
     FRIENDS("friends", "Friends", Icons.Filled.Groups, Icons.Outlined.Groups),
     LIFE_AI("life_ai", "SURU", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome),
     PROFILE("profile", "Profile", Icons.Filled.Person, Icons.Outlined.Person),
-    SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings)
+    SETTINGS("settings", "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
+    PERMISSIONS("permissions", "Permissions", Icons.Filled.Shield, Icons.Outlined.Shield)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -158,11 +164,12 @@ fun LifeOsApp(
         }
     }
 
-    // Re-sync Android UsageStats & trigger KUTTA morning/night greeting when resuming
+    // Re-sync Android UsageStats, Permissions & trigger KUTTA morning/night greeting when resuming
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshUsageStatsStatusAndSync(showToast = false)
+                viewModel.refreshSystemPermissions()
                 viewModel.onAppForegrounded()
             }
         }
@@ -193,9 +200,15 @@ fun LifeOsApp(
         }
     }
 
+    var hasRenderedInitialSection by remember { mutableStateOf(false) }
     LaunchedEffect(currentSection) {
         if (currentSection != LifeOsSection.FRIENDS) {
             viewModel.stopNearbyPeerRadar()
+        }
+        if (hasRenderedInitialSection) {
+            viewModel.playUiCue(LifeOsSoundCue.NAV_SWITCH)
+        } else {
+            hasRenderedInitialSection = true
         }
     }
 
@@ -221,8 +234,12 @@ fun LifeOsApp(
         }
     }
 
-    BackHandler(enabled = state.prefs.isSignedIn && currentSection != LifeOsSection.HOME) {
-        currentSection = LifeOsSection.HOME
+    BackHandler(enabled = state.prefs.isSignedIn && state.prefs.hasCompletedPermissionSetup && currentSection != LifeOsSection.HOME) {
+        currentSection = if (currentSection == LifeOsSection.PERMISSIONS) {
+            LifeOsSection.SETTINGS
+        } else {
+            LifeOsSection.HOME
+        }
     }
 
     val navigateToRoute: (String) -> Unit = { route ->
@@ -237,7 +254,8 @@ fun LifeOsApp(
         val gateStage = when {
             !state.isPrefsLoaded -> 0
             !state.prefs.isSignedIn -> 1
-            else -> 2
+            !state.prefs.hasCompletedPermissionSetup -> 2
+            else -> 3
         }
 
         Crossfade(targetState = gateStage, label = "life_os_auth_gate") { stage ->
@@ -261,8 +279,14 @@ fun LifeOsApp(
                                 focusGoalMinutes = focusGoal,
                                 themeMode = mode
                             )
-                            requestNotificationPermissionIfNeeded()
                         }
+                    )
+                }
+                2 -> {
+                    PermissionSetupScreen(
+                        permissions = state.appPermissions,
+                        onRefreshPermissions = viewModel::refreshSystemPermissions,
+                        onContinue = viewModel::completePermissionSetup
                     )
                 }
                 else -> {
@@ -318,7 +342,8 @@ fun LifeOsApp(
                                             LifeOsSection.GROWTH,
                                             LifeOsSection.FRIENDS,
                                             LifeOsSection.PROFILE,
-                                            LifeOsSection.SETTINGS
+                                            LifeOsSection.SETTINGS,
+                                            LifeOsSection.PERMISSIONS
                                         )
                                         NavigationBarItem(
                                             selected = isSecondaryActive,
@@ -361,7 +386,9 @@ fun LifeOsApp(
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.padding(vertical = 8.dp)
                                         )
-                                        LifeOsSection.entries.forEach { sec ->
+                                        LifeOsSection.entries
+                                            .filter { it != LifeOsSection.PERMISSIONS }
+                                            .forEach { sec ->
                                             val selected = currentSection == sec
                                             NavigationRailItem(
                                                 selected = selected,
@@ -502,7 +529,10 @@ fun LifeOsApp(
                                                 onTogglePersonalization = viewModel::updateSuruMemoryPersonalization,
                                                 onAddMemory = viewModel::upsertSuruMemory,
                                                 onToggleMemory = viewModel::toggleSuruMemory,
-                                                onDeleteMemory = viewModel::deleteSuruMemory
+                                                onDeleteMemory = viewModel::deleteSuruMemory,
+                                                onAttachImageUri = viewModel::attachSuruImageFromUri,
+                                                onClearImage = viewModel::clearPendingSuruImage,
+                                                onPlayCue = viewModel::playUiCue
                                             )
                                             LifeOsSection.PROFILE -> ProfileScreen(
                                                 state = state,
@@ -533,7 +563,20 @@ fun LifeOsApp(
                                                 onToggleWidgetVisibility = viewModel::toggleWidgetVisibility,
                                                 onMoveWidget = viewModel::moveWidget,
                                                 onSignOut = viewModel::signOutLocalSession,
-                                                onResetData = viewModel::resetAllLocalData
+                                                onResetData = viewModel::resetAllLocalData,
+                                                onOpenPermissions = {
+                                                    viewModel.refreshSystemPermissions()
+                                                    currentSection = LifeOsSection.PERMISSIONS
+                                                },
+                                                onUpdateSoundConfig = viewModel::updateSoundConfiguration,
+                                                onPreviewSoundCue = viewModel::previewSoundCue,
+                                                onUpdateSmartReminderPolicy = viewModel::updateSmartReminderPolicy
+                                            )
+                                            LifeOsSection.PERMISSIONS -> PermissionsScreen(
+                                                permissions = state.appPermissions,
+                                                onBack = { currentSection = LifeOsSection.SETTINGS },
+                                                onRefresh = viewModel::refreshSystemPermissions,
+                                                onShowMessage = viewModel::showMessage
                                             )
                                         }
                                     }

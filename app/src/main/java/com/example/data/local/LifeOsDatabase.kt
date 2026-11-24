@@ -25,7 +25,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SuruMemoryEntity::class,
         SuruStudyPlanEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -104,6 +104,17 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `lastRemindedAtMillis` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `snoozedUntilMillis` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `reminderCountToday` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `lastReminderEpochDay` INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE `tasks` ADD COLUMN `remindersDismissed` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `ai_messages` ADD COLUMN `attachmentSummary` TEXT")
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -111,7 +122,14 @@ abstract class LifeOsDatabase : RoomDatabase() {
                     LifeOsDatabase::class.java,
                     "life_os_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
+                    )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }

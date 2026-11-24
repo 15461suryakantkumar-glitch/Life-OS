@@ -25,13 +25,15 @@ class SuruActionEngine(private val db: LifeOsDatabase) {
     ): SuruExecutionOutcome {
         return when (action.intent) {
             SuruIntent.CREATE_TASK -> executeCreateTask(action, todayEpochDay)
+            SuruIntent.UPDATE_TASK -> executeUpdateTask(action, todayEpochDay)
+            SuruIntent.RESCHEDULE_TASK -> executeRescheduleTask(action, todayEpochDay)
             SuruIntent.COMPLETE_TASK -> executeCompleteTask(action)
             SuruIntent.DELETE_TASK -> executeDeleteTask(action)
             SuruIntent.BREAKDOWN_TASK -> executeBreakdownTask(action, todayEpochDay)
             SuruIntent.CREATE_EVENT -> executeCreateEvent(action, todayEpochDay)
             SuruIntent.RESCHEDULE_EVENT -> executeRescheduleEvent(action, todayEpochDay)
             SuruIntent.CREATE_HABIT -> executeCreateHabit(action)
-            SuruIntent.ORGANIZE_TOMORROW -> executeOrganizeTomorrow(todayEpochDay)
+            SuruIntent.ORGANIZE_TOMORROW, SuruIntent.PLAN_WEEK -> executePlanSchedule(action.intent == SuruIntent.PLAN_WEEK, todayEpochDay)
             SuruIntent.SAVE_MEMORY -> executeSaveMemory(action)
             SuruIntent.CREATE_STUDY_PLAN -> {
                 val draft = action.studyPlanDraft
@@ -200,10 +202,88 @@ class SuruActionEngine(private val db: LifeOsDatabase) {
         )
     }
 
+    private suspend fun executeUpdateTask(action: SuruStructuredAction, todayEpochDay: Long): SuruExecutionOutcome {
+        val allTasks = db.taskDao().getAllTasksOnce()
+        val target = resolveTargetTask(action, allTasks)
+            ?: return SuruExecutionOutcome(null, null, "No matching task found to edit.")
+        val updatedTitle = action.newTitle?.trim()?.takeIf { it.isNotBlank() } ?: target.title
+        val nextDeadline = if (action.dateOffsetDays != 0) todayEpochDay + action.dateOffsetDays else target.deadlineEpochDay
+        val updated = target.copy(
+            title = updatedTitle,
+            priorityName = action.priority.name,
+            categoryName = action.category.name,
+            deadlineEpochDay = nextDeadline,
+            xpReward = action.priority.xpValue,
+            snoozedUntilMillis = 0L,
+            reminderCountToday = 0,
+            remindersDismissed = false
+        )
+        db.taskDao().updateTask(updated)
+        return SuruExecutionOutcome(
+            actionBadge = "Updated · $updatedTitle",
+            undoRecord = SuruUndoRecord(label = "Undo edit \"${target.title}\"", previousTasks = listOf(target)),
+            feedbackMessage = "Updated task \"$updatedTitle\""
+        )
+    }
+
+    private suspend fun executeRescheduleTask(action: SuruStructuredAction, todayEpochDay: Long): SuruExecutionOutcome {
+        val allTasks = db.taskDao().getAllTasksOnce()
+        if (action.rescheduleAllToday) {
+            val todayOpen = allTasks.filter { !it.isCompleted && it.deadlineEpochDay <= todayEpochDay }
+            if (todayOpen.isEmpty()) {
+                return SuruExecutionOutcome(null, null, "No open tasks due today to move.")
+            }
+            val newDay = todayEpochDay + action.dateOffsetDays.coerceAtLeast(1)
+            todayOpen.forEach { t ->
+                db.taskDao().updateTask(
+                    t.copy(
+                        deadlineEpochDay = newDay,
+                        snoozedUntilMillis = 0L,
+                        reminderCountToday = 0,
+                        lastReminderEpochDay = todayEpochDay,
+                        remindersDismissed = false
+                    )
+                )
+            }
+            return SuruExecutionOutcome(
+                actionBadge = "Moved ${todayOpen.size} task(s)",
+                undoRecord = SuruUndoRecord(label = "Undo move today's tasks", previousTasks = todayOpen),
+                feedbackMessage = "Moved ${todayOpen.size} task(s) to ${DateTimeUtils.formatFullDate(newDay)}"
+            )
+        }
+
+        val target = resolveTargetTask(action, allTasks.filter { !it.isCompleted })
+            ?: return SuruExecutionOutcome(null, null, "Matching pending task not found to reschedule.")
+        val newDay = todayEpochDay + action.dateOffsetDays.coerceAtLeast(1)
+        db.taskDao().updateTask(
+            target.copy(
+                deadlineEpochDay = newDay,
+                snoozedUntilMillis = 0L,
+                reminderCountToday = 0,
+                lastReminderEpochDay = todayEpochDay,
+                remindersDismissed = false
+            )
+        )
+        return SuruExecutionOutcome(
+            actionBadge = "Rescheduled · ${target.title}",
+            undoRecord = SuruUndoRecord(label = "Undo reschedule \"${target.title}\"", previousTasks = listOf(target)),
+            feedbackMessage = "Moved \"${target.title}\" to ${DateTimeUtils.formatFullDate(newDay)}"
+        )
+    }
+
+    private fun resolveTargetTask(action: SuruStructuredAction, candidates: List<TaskEntity>): TaskEntity? {
+        action.targetTaskId?.let { id ->
+            candidates.firstOrNull { it.id == id }?.let { return it }
+        }
+        val query = action.title?.trim()?.lowercase().orEmpty()
+        if (query.isBlank()) return null
+        return candidates.firstOrNull { it.title.equals(query, ignoreCase = true) }
+            ?: candidates.firstOrNull { it.title.lowercase().contains(query) || query.contains(it.title.lowercase()) }
+    }
+
     private suspend fun executeCompleteTask(action: SuruStructuredAction): SuruExecutionOutcome {
         val allTasks = db.taskDao().getAllTasksOnce()
-        val target = action.targetTaskId?.let { id -> allTasks.firstOrNull { it.id == id } }
-            ?: allTasks.firstOrNull { !it.isCompleted && it.title.equals(action.title, ignoreCase = true) }
+        val target = resolveTargetTask(action, allTasks.filter { !it.isCompleted })
             ?: return SuruExecutionOutcome(null, null, "Matching pending task not found.")
 
         val updated = target.copy(
@@ -221,7 +301,7 @@ class SuruActionEngine(private val db: LifeOsDatabase) {
 
     private suspend fun executeDeleteTask(action: SuruStructuredAction): SuruExecutionOutcome {
         val allTasks = db.taskDao().getAllTasksOnce()
-        val target = action.targetTaskId?.let { id -> allTasks.firstOrNull { it.id == id } }
+        val target = resolveTargetTask(action, allTasks)
             ?: return SuruExecutionOutcome(null, null, "Task not found.")
         db.taskDao().deleteTask(target)
         return SuruExecutionOutcome(
@@ -319,29 +399,36 @@ class SuruActionEngine(private val db: LifeOsDatabase) {
         )
     }
 
-    private suspend fun executeOrganizeTomorrow(todayEpochDay: Long): SuruExecutionOutcome {
+    private suspend fun executePlanSchedule(isFullWeek: Boolean, todayEpochDay: Long): SuruExecutionOutcome {
         val existingEvents = db.calendarEventDao().getAllEventsOnce()
-        val pending = db.taskDao().getAllTasksOnce().filter { !it.isCompleted }.take(3)
+        val maxItems = if (isFullWeek) 7 else 3
+        val pending = db.taskDao().getAllTasksOnce()
+            .filter { !it.isCompleted }
+            .sortedWith(compareByDescending<TaskEntity> { it.priority.ordinal }.thenBy { it.deadlineEpochDay })
+            .take(maxItems)
         if (pending.isEmpty()) {
-            return SuruExecutionOutcome(null, null, "No pending tasks to organize for tomorrow.")
+            return SuruExecutionOutcome(null, null, "No pending tasks to schedule.")
         }
         val insertedIds = mutableListOf<Long>()
-        val booked = mutableListOf<Pair<Int, Int>>()
+        val bookedByDay = HashMap<Long, MutableList<Pair<Int, Int>>>()
         pending.forEachIndexed { idx, task ->
+            val offset = if (isFullWeek) (idx % 7) + 1 else 1
+            val dayBooked = bookedByDay.getOrPut(todayEpochDay + offset) { mutableListOf() }
+            val preferredMin = if (isFullWeek) 540 + (idx / 7) * 120 else 540 + idx * 120
             val (slot, _) = CalendarIntelligence.findConflictFreeStartMinute(
-                dateEpochDay = 1,
+                dateEpochDay = offset,
                 todayEpochDay = todayEpochDay,
-                preferredStartMinute = 540 + idx * 120,
+                preferredStartMinute = preferredMin,
                 durationMinutes = 60,
                 existingEvents = existingEvents,
-                additionalBooked = booked
+                additionalBooked = dayBooked
             )
-            booked.add(slot to 60)
+            dayBooked.add(slot to 60)
             val id = db.calendarEventDao().insertEvent(
                 CalendarEventEntity(
                     title = task.title,
-                    notes = "Organized by SURU",
-                    dateEpochDay = todayEpochDay + 1,
+                    notes = if (isFullWeek) "Weekly Plan by SURU" else "Organized by SURU",
+                    dateEpochDay = todayEpochDay + offset,
                     startMinuteOfDay = slot,
                     durationMinutes = 60,
                     categoryName = task.categoryName,
@@ -350,10 +437,12 @@ class SuruActionEngine(private val db: LifeOsDatabase) {
             )
             insertedIds.add(id)
         }
+        val badge = if (isFullWeek) "Week Planned · ${insertedIds.size} Blocks" else "Tomorrow Planned · ${insertedIds.size} Blocks"
+        val undoLabel = if (isFullWeek) "Undo weekly plan" else "Undo tomorrow's plan"
         return SuruExecutionOutcome(
-            actionBadge = "Tomorrow Planned · ${insertedIds.size} Blocks",
-            undoRecord = SuruUndoRecord(label = "Undo tomorrow's plan", insertedEventIds = insertedIds),
-            feedbackMessage = "Planned ${insertedIds.size} conflict-aware blocks for tomorrow"
+            actionBadge = badge,
+            undoRecord = SuruUndoRecord(label = undoLabel, insertedEventIds = insertedIds),
+            feedbackMessage = "Scheduled ${insertedIds.size} conflict-aware session(s) on your Calendar"
         )
     }
 

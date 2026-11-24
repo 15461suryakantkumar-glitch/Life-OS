@@ -4,6 +4,11 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.SoundPool
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import com.example.data.local.UserPreferencesState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,28 +20,60 @@ import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.sin
 
-enum class LifeOsSoundCue(val rawResourceName: String) {
-    TASK_COMPLETE("sfx_task_complete"),
-    STREAK_ACTIVATE("sfx_streak_activate"),
-    LEVEL_UP("sfx_level_up"),
-    FOCUS_COMPLETE("sfx_focus_complete")
+enum class SoundCategory(val label: String) {
+    NAVIGATION("Navigation"),
+    INTERACTIONS("UI Interactions"),
+    TASKS("Tasks"),
+    CALENDAR("Calendar"),
+    SURU("SURU Assistant"),
+    GAMIFICATION("XP & Streaks"),
+    COMPANION("KUTTA Companion")
+}
+
+enum class LifeOsSoundCue(
+    val rawResourceName: String,
+    val category: SoundCategory,
+    val baseGain: Float = 0.65f
+) {
+    NAV_SWITCH("sfx_nav_switch", SoundCategory.NAVIGATION, 0.36f),
+    UI_TAP("sfx_ui_tap", SoundCategory.INTERACTIONS, 0.32f),
+    UI_TOGGLE("sfx_ui_toggle", SoundCategory.INTERACTIONS, 0.40f),
+    UI_CONFIRM("sfx_ui_confirm", SoundCategory.INTERACTIONS, 0.50f),
+    UI_UNDO("sfx_ui_undo", SoundCategory.INTERACTIONS, 0.44f),
+    TASK_CREATE("sfx_task_create", SoundCategory.TASKS, 0.50f),
+    TASK_COMPLETE("sfx_task_complete", SoundCategory.TASKS, 0.62f),
+    TASK_RESCHEDULE("sfx_task_reschedule", SoundCategory.TASKS, 0.48f),
+    CALENDAR_CREATE("sfx_calendar_create", SoundCategory.CALENDAR, 0.52f),
+    SCHEDULE_SAVED("sfx_schedule_saved", SoundCategory.CALENDAR, 0.58f),
+    SURU_ACTIVATE("sfx_suru_activate", SoundCategory.SURU, 0.52f),
+    SURU_LISTENING("sfx_suru_listen", SoundCategory.SURU, 0.48f),
+    SURU_SUCCESS("sfx_suru_success", SoundCategory.SURU, 0.58f),
+    SURU_ERROR("sfx_suru_error", SoundCategory.SURU, 0.46f),
+    SURU_PLAN_COMPLETE("sfx_suru_plan", SoundCategory.SURU, 0.65f),
+    STREAK_ACTIVATE("sfx_streak_activate", SoundCategory.GAMIFICATION, 0.68f),
+    LEVEL_UP("sfx_level_up", SoundCategory.GAMIFICATION, 0.74f),
+    FOCUS_COMPLETE("sfx_focus_complete", SoundCategory.GAMIFICATION, 0.68f),
+    COMPANION_INTERACT("sfx_companion_tap", SoundCategory.COMPANION, 0.52f)
 }
 
 /**
- * Lightweight, 100% offline SoundPool helper for LIFE OS tactile audio feedback.
+ * Soft, lavender-inspired acoustic sound & haptic manager for FEELORA.
  *
- * - Prefers local res/raw resources (`sfx_task_complete`, `sfx_streak_activate`,
- *   `sfx_level_up`, `sfx_focus_complete`) if provided.
- * - Falls back safely to cached procedural PCM .wav chimes in `cacheDir/lifeos_sfx`
- *   when raw audio files are not bundled, and no-ops gracefully if muted or on
- *   headless/test environments.
+ * - Generates clean, warm harmonic PCM chimes with smooth exponential attack/decay envelopes.
+ * - Guards against interrupting active SURU speech.
+ * - Respects master sound toggle, per-category toggles, volume scale, haptic toggle, and device ringer mode.
+ * - Throttles rapid repeated cues so fast scrolling or tapping never distorts.
  */
-class LifeOsSoundManager(private val appContext: Context) {
+class LifeOsSoundManager(
+    private val appContext: Context,
+    private val isSuruSpeakingProvider: () -> Boolean = { false }
+) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var soundPool: SoundPool? = null
     private val sampleIds = LinkedHashMap<LifeOsSoundCue, Int>()
     private val loadedSampleIds = HashSet<Int>()
+    private val lastPlayedAt = HashMap<LifeOsSoundCue, Long>()
     @Volatile
     private var isInitialized = false
     @Volatile
@@ -52,7 +89,7 @@ class LifeOsSoundManager(private val appContext: Context) {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
                 val pool = SoundPool.Builder()
-                    .setMaxStreams(3)
+                    .setMaxStreams(4)
                     .setAudioAttributes(attrs)
                     .build()
                 pool.setOnLoadCompleteListener { _, sampleId, status ->
@@ -84,18 +121,60 @@ class LifeOsSoundManager(private val appContext: Context) {
         }
     }
 
-    fun playTaskComplete(enabled: Boolean) = playCue(LifeOsSoundCue.TASK_COMPLETE, enabled, volume = 0.55f)
+    fun playCue(
+        cue: LifeOsSoundCue,
+        prefs: UserPreferencesState,
+        bypassSpeechGuard: Boolean = false
+    ): Boolean {
+        if (!shouldPlayForPrefs(cue, prefs)) return false
+        if (!bypassSpeechGuard && isSuruSpeakingProvider()) return false
 
-    fun playStreakActivate(enabled: Boolean) = playCue(LifeOsSoundCue.STREAK_ACTIVATE, enabled, volume = 0.65f)
+        if (prefs.hapticsEnabled && cue.category != SoundCategory.NAVIGATION) {
+            triggerSubtleHaptic()
+        }
 
-    fun playLevelUp(enabled: Boolean) = playCue(LifeOsSoundCue.LEVEL_UP, enabled, volume = 0.72f)
+        val now = System.currentTimeMillis()
+        val cooldown = if (cue.category == SoundCategory.NAVIGATION) 110L else 45L
+        val last = synchronized(lastPlayedAt) {
+            val prev = lastPlayedAt[cue] ?: 0L
+            if (now - prev < cooldown) return false
+            lastPlayedAt[cue] = now
+            prev
+        }
+        if (now - last < cooldown) return false
 
-    fun playFocusComplete(enabled: Boolean) = playCue(LifeOsSoundCue.FOCUS_COMPLETE, enabled, volume = 0.65f)
-
-    private fun playCue(cue: LifeOsSoundCue, enabled: Boolean, volume: Float) {
-        if (!enabled || isReleased) return
         if (!isInitialized) preload()
 
+        return runCatching {
+            val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (audioManager != null && audioManager.ringerMode != AudioManager.RINGER_MODE_NORMAL) {
+                return@runCatching false
+            }
+            val pool = soundPool ?: return@runCatching false
+            val sampleId = sampleIds[cue] ?: return@runCatching false
+            val ready = synchronized(loadedSampleIds) { loadedSampleIds.contains(sampleId) }
+            if (!ready) return@runCatching false
+            val vol = (cue.baseGain * prefs.soundVolume).coerceIn(0.05f, 1.0f)
+            pool.play(sampleId, vol, vol, 1, 0, 1.0f)
+            true
+        }.getOrDefault(false)
+    }
+
+    fun playTaskComplete(enabled: Boolean, volume: Float = 0.72f) =
+        playLegacy(LifeOsSoundCue.TASK_COMPLETE, enabled, volume)
+
+    fun playStreakActivate(enabled: Boolean, volume: Float = 0.72f) =
+        playLegacy(LifeOsSoundCue.STREAK_ACTIVATE, enabled, volume)
+
+    fun playLevelUp(enabled: Boolean, volume: Float = 0.72f) =
+        playLegacy(LifeOsSoundCue.LEVEL_UP, enabled, volume)
+
+    fun playFocusComplete(enabled: Boolean, volume: Float = 0.72f) =
+        playLegacy(LifeOsSoundCue.FOCUS_COMPLETE, enabled, volume)
+
+    private fun playLegacy(cue: LifeOsSoundCue, enabled: Boolean, volume: Float) {
+        if (!enabled || isReleased || isSuruSpeakingProvider()) return
+        if (!isInitialized) preload()
         runCatching {
             val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             if (audioManager != null && audioManager.ringerMode != AudioManager.RINGER_MODE_NORMAL) {
@@ -105,7 +184,26 @@ class LifeOsSoundManager(private val appContext: Context) {
             val sampleId = sampleIds[cue] ?: return
             val ready = synchronized(loadedSampleIds) { loadedSampleIds.contains(sampleId) }
             if (ready) {
-                pool.play(sampleId, volume, volume, 1, 0, 1.0f)
+                val vol = (cue.baseGain * volume).coerceIn(0.05f, 1.0f)
+                pool.play(sampleId, vol, vol, 1, 0, 1.0f)
+            }
+        }
+    }
+
+    private fun triggerSubtleHaptic() {
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                val vib = vm?.defaultVibrator
+                if (vib?.hasVibrator() == true) {
+                    vib.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK))
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val vib = appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+                if (vib?.hasVibrator() == true && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vib.vibrate(VibrationEffect.createOneShot(12L, 60))
+                }
             }
         }
     }
@@ -134,7 +232,7 @@ class LifeOsSoundManager(private val appContext: Context) {
         return runCatching {
             val dir = File(appContext.cacheDir, "lifeos_sfx")
             if (!dir.exists()) dir.mkdirs()
-            val file = File(dir, "${cue.rawResourceName}_v1.wav")
+            val file = File(dir, "${cue.rawResourceName}_v2.wav")
             if (!file.exists() || file.length() < 44L) {
                 val bytes = buildWavForCue(cue)
                 FileOutputStream(file).use { it.write(bytes) }
@@ -146,26 +244,101 @@ class LifeOsSoundManager(private val appContext: Context) {
     companion object {
         private const val SAMPLE_RATE = 22050
 
+        fun shouldPlayForPrefs(cue: LifeOsSoundCue, prefs: UserPreferencesState): Boolean {
+            if (!prefs.soundEffectsEnabled) return false
+            return when (cue.category) {
+                SoundCategory.NAVIGATION -> prefs.soundNavEnabled
+                SoundCategory.INTERACTIONS -> prefs.soundInteractionEnabled
+                SoundCategory.TASKS -> prefs.soundTaskEnabled
+                SoundCategory.CALENDAR -> prefs.soundCalendarEnabled
+                SoundCategory.SURU -> prefs.soundSuruEnabled
+                SoundCategory.GAMIFICATION -> prefs.soundGamificationEnabled
+                SoundCategory.COMPANION -> prefs.soundCompanionEnabled
+            }
+        }
+
         fun buildWavForCue(cue: LifeOsSoundCue): ByteArray {
             val tones = when (cue) {
+                LifeOsSoundCue.NAV_SWITCH -> listOf(
+                    ToneNote(freqHz = 440.0, durationMs = 38, gain = 0.14)
+                )
+                LifeOsSoundCue.UI_TAP -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 32, gain = 0.14)
+                )
+                LifeOsSoundCue.UI_TOGGLE -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 45, gain = 0.18),
+                    ToneNote(freqHz = 783.99, durationMs = 55, gain = 0.16)
+                )
+                LifeOsSoundCue.UI_CONFIRM -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 55, gain = 0.22),
+                    ToneNote(freqHz = 659.25, durationMs = 70, gain = 0.24),
+                    ToneNote(freqHz = 783.99, durationMs = 110, gain = 0.22)
+                )
+                LifeOsSoundCue.UI_UNDO -> listOf(
+                    ToneNote(freqHz = 659.25, durationMs = 55, gain = 0.20),
+                    ToneNote(freqHz = 493.88, durationMs = 95, gain = 0.20)
+                )
+                LifeOsSoundCue.TASK_CREATE -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 55, gain = 0.22),
+                    ToneNote(freqHz = 880.00, durationMs = 95, gain = 0.22)
+                )
                 LifeOsSoundCue.TASK_COMPLETE -> listOf(
-                    ToneNote(freqHz = 659.25, durationMs = 70, gain = 0.32),
-                    ToneNote(freqHz = 987.77, durationMs = 130, gain = 0.28)
+                    ToneNote(freqHz = 659.25, durationMs = 70, gain = 0.28),
+                    ToneNote(freqHz = 987.77, durationMs = 130, gain = 0.26)
+                )
+                LifeOsSoundCue.TASK_RESCHEDULE -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 60, gain = 0.20),
+                    ToneNote(freqHz = 659.25, durationMs = 100, gain = 0.22)
+                )
+                LifeOsSoundCue.CALENDAR_CREATE -> listOf(
+                    ToneNote(freqHz = 493.88, durationMs = 65, gain = 0.22),
+                    ToneNote(freqHz = 739.99, durationMs = 115, gain = 0.24)
+                )
+                LifeOsSoundCue.SCHEDULE_SAVED -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 65, gain = 0.24),
+                    ToneNote(freqHz = 659.25, durationMs = 75, gain = 0.24),
+                    ToneNote(freqHz = 987.77, durationMs = 140, gain = 0.26)
+                )
+                LifeOsSoundCue.SURU_ACTIVATE -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 60, gain = 0.22),
+                    ToneNote(freqHz = 880.00, durationMs = 110, gain = 0.24)
+                )
+                LifeOsSoundCue.SURU_LISTENING -> listOf(
+                    ToneNote(freqHz = 659.25, durationMs = 75, gain = 0.22)
+                )
+                LifeOsSoundCue.SURU_SUCCESS -> listOf(
+                    ToneNote(freqHz = 587.33, durationMs = 60, gain = 0.24),
+                    ToneNote(freqHz = 783.99, durationMs = 70, gain = 0.26),
+                    ToneNote(freqHz = 1046.50, durationMs = 140, gain = 0.26)
+                )
+                LifeOsSoundCue.SURU_ERROR -> listOf(
+                    ToneNote(freqHz = 392.00, durationMs = 80, gain = 0.22),
+                    ToneNote(freqHz = 329.63, durationMs = 120, gain = 0.20)
+                )
+                LifeOsSoundCue.SURU_PLAN_COMPLETE -> listOf(
+                    ToneNote(freqHz = 523.25, durationMs = 70, gain = 0.26),
+                    ToneNote(freqHz = 659.25, durationMs = 70, gain = 0.26),
+                    ToneNote(freqHz = 783.99, durationMs = 80, gain = 0.28),
+                    ToneNote(freqHz = 1046.50, durationMs = 180, gain = 0.30)
                 )
                 LifeOsSoundCue.STREAK_ACTIVATE -> listOf(
-                    ToneNote(freqHz = 523.25, durationMs = 65, gain = 0.30),
-                    ToneNote(freqHz = 659.25, durationMs = 65, gain = 0.32),
-                    ToneNote(freqHz = 1046.50, durationMs = 160, gain = 0.34)
+                    ToneNote(freqHz = 523.25, durationMs = 65, gain = 0.28),
+                    ToneNote(freqHz = 659.25, durationMs = 65, gain = 0.30),
+                    ToneNote(freqHz = 1046.50, durationMs = 160, gain = 0.32)
                 )
                 LifeOsSoundCue.LEVEL_UP -> listOf(
-                    ToneNote(freqHz = 523.25, durationMs = 75, gain = 0.30),
-                    ToneNote(freqHz = 659.25, durationMs = 75, gain = 0.32),
-                    ToneNote(freqHz = 783.99, durationMs = 80, gain = 0.34),
-                    ToneNote(freqHz = 1046.50, durationMs = 210, gain = 0.38)
+                    ToneNote(freqHz = 523.25, durationMs = 75, gain = 0.28),
+                    ToneNote(freqHz = 659.25, durationMs = 75, gain = 0.30),
+                    ToneNote(freqHz = 783.99, durationMs = 80, gain = 0.32),
+                    ToneNote(freqHz = 1046.50, durationMs = 210, gain = 0.35)
                 )
                 LifeOsSoundCue.FOCUS_COMPLETE -> listOf(
-                    ToneNote(freqHz = 587.33, durationMs = 110, gain = 0.30),
-                    ToneNote(freqHz = 880.00, durationMs = 180, gain = 0.32)
+                    ToneNote(freqHz = 587.33, durationMs = 110, gain = 0.28),
+                    ToneNote(freqHz = 880.00, durationMs = 180, gain = 0.30)
+                )
+                LifeOsSoundCue.COMPANION_INTERACT -> listOf(
+                    ToneNote(freqHz = 659.25, durationMs = 55, gain = 0.22),
+                    ToneNote(freqHz = 783.99, durationMs = 95, gain = 0.22)
                 )
             }
             return buildToneWavBytes(tones)
@@ -180,14 +353,14 @@ class LifeOsSoundManager(private val appContext: Context) {
 
             notes.forEach { note ->
                 val count = (SAMPLE_RATE * note.durationMs) / 1000
-                val attackSamples = (count * 0.12).coerceAtLeast(1.0)
+                val attackSamples = (count * 0.16).coerceAtLeast(1.0)
                 for (i in 0 until count) {
                     val t = i.toDouble() / SAMPLE_RATE
                     val attack = (i / attackSamples).coerceAtMost(1.0)
-                    val decay = exp(-4.2 * (i.toDouble() / count.coerceAtLeast(1)))
+                    val decay = exp(-4.5 * (i.toDouble() / count.coerceAtLeast(1)))
                     val fundamental = sin(2.0 * PI * note.freqHz * t)
-                    val shimmer = 0.22 * sin(2.0 * PI * (note.freqHz * 2.0) * t)
-                    val value = ((fundamental + shimmer) * attack * decay * note.gain).coerceIn(-0.98, 0.98)
+                    val warmOctave = 0.18 * sin(2.0 * PI * (note.freqHz * 2.0) * t)
+                    val value = ((fundamental + warmOctave) * attack * decay * note.gain).coerceIn(-0.98, 0.98)
                     val pcm16 = (value * Short.MAX_VALUE).toInt().toShort()
                     val byteIdx = (sampleOffset + i) * 2
                     pcmData[byteIdx] = (pcm16.toInt() and 0xFF).toByte()
@@ -200,25 +373,22 @@ class LifeOsSoundManager(private val appContext: Context) {
             val chunkSize = 36 + dataSize
             val wav = ByteArray(44 + dataSize)
 
-            // RIFF header
             wav[0] = 'R'.code.toByte(); wav[1] = 'I'.code.toByte()
             wav[2] = 'F'.code.toByte(); wav[3] = 'F'.code.toByte()
             writeIntLe(wav, 4, chunkSize)
             wav[8] = 'W'.code.toByte(); wav[9] = 'A'.code.toByte()
             wav[10] = 'V'.code.toByte(); wav[11] = 'E'.code.toByte()
 
-            // fmt subchunk
             wav[12] = 'f'.code.toByte(); wav[13] = 'm'.code.toByte()
             wav[14] = 't'.code.toByte(); wav[15] = ' '.code.toByte()
-            writeIntLe(wav, 16, 16) // PCM subchunk size
-            writeShortLe(wav, 20, 1) // AudioFormat = PCM (1)
-            writeShortLe(wav, 22, 1) // Mono
+            writeIntLe(wav, 16, 16)
+            writeShortLe(wav, 20, 1)
+            writeShortLe(wav, 22, 1)
             writeIntLe(wav, 24, SAMPLE_RATE)
-            writeIntLe(wav, 28, SAMPLE_RATE * 2) // ByteRate
-            writeShortLe(wav, 32, 2) // BlockAlign
-            writeShortLe(wav, 34, 16) // BitsPerSample
+            writeIntLe(wav, 28, SAMPLE_RATE * 2)
+            writeShortLe(wav, 32, 2)
+            writeShortLe(wav, 34, 16)
 
-            // data subchunk
             wav[36] = 'd'.code.toByte(); wav[37] = 'a'.code.toByte()
             wav[38] = 't'.code.toByte(); wav[39] = 'a'.code.toByte()
             writeIntLe(wav, 40, dataSize)
