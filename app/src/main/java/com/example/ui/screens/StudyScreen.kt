@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
@@ -170,6 +171,7 @@ fun StudyScreen(
                     avatarPreset = state.prefs.avatarPreset,
                     avatarUri = state.prefs.avatarPhotoUri,
                     unreadNotifications = state.unreadNotificationsCount,
+                    streakDays = state.prefs.dailyStreak,
                     onOpenDrawer = onOpenDrawer,
                     onOpenNotifications = onOpenNotifications,
                     onOpenProfile = onOpenProfile,
@@ -217,12 +219,12 @@ fun StudyScreen(
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = DateTimeUtils.formatMinutesCompact(state.prefs.focusMinutesLoggedToday),
-                                        style = FeeloraTypeHelpers.statNumber,
+                                        style = FeeloraTypeHelpers.statNumber.copy(fontFeatureSettings = "tnum"),
                                         color = tokens.inkPrimary
                                     )
                                     Text(
                                         text = "of ${DateTimeUtils.formatMinutesCompact(state.prefs.dailyFocusGoalMinutes)} daily goal",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                         color = tokens.inkSecondary
                                     )
                                 }
@@ -327,6 +329,16 @@ fun StudyScreen(
                                 onDelete = { onDeleteChapter(chapter) }
                             )
                         }
+                    }
+
+                    item {
+                        QuickFocusTimerCard(
+                            remainingSeconds = state.studyTimer.remainingSeconds,
+                            isRunning = state.studyTimer.isRunning,
+                            isBreakPhase = state.studyTimer.isBreakPhase,
+                            onToggleTimer = onToggleTimer,
+                            onOpenFocusTab = { activeTab = StudySubTab.FOCUS }
+                        )
                     }
                 }
 
@@ -488,6 +500,16 @@ fun StudyScreen(
                                 }
                             }
                         }
+
+                        item {
+                            QuickFocusTimerCard(
+                                remainingSeconds = state.studyTimer.remainingSeconds,
+                                isRunning = state.studyTimer.isRunning,
+                                isBreakPhase = state.studyTimer.isBreakPhase,
+                                onToggleTimer = onToggleTimer,
+                                onOpenFocusTab = { activeTab = StudySubTab.FOCUS }
+                            )
+                        }
                     }
                 }
 
@@ -642,7 +664,7 @@ fun StudyScreen(
                                     val secs = timer.remainingSeconds % 60
                                     Text(
                                         text = "%02d:%02d".format(mins, secs),
-                                        style = FeeloraTypeHelpers.timerDisplay,
+                                        style = FeeloraTypeHelpers.timerDisplay.copy(fontFeatureSettings = "tnum"),
                                         color = tokens.inkPrimary
                                     )
                                     Text(
@@ -934,6 +956,61 @@ fun StudyScreen(
 }
 
 @Composable
+private fun QuickFocusTimerCard(
+    remainingSeconds: Int,
+    isRunning: Boolean,
+    isBreakPhase: Boolean,
+    onToggleTimer: () -> Unit,
+    onOpenFocusTab: () -> Unit
+) {
+    val tokens = LifeOsThemeTokensProvider.current
+    val mins = remainingSeconds / 60
+    val secs = remainingSeconds % 60
+    ObsidianCard(
+        onClick = onOpenFocusTab,
+        elevated = true,
+        borderColor = tokens.borderAccent
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isBreakPhase) "Break Timer" else "Focus Timer",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = tokens.inkPrimary
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "%02d:%02d".format(mins, secs),
+                    style = FeeloraTypeHelpers.timerDisplay.copy(fontFeatureSettings = "tnum"),
+                    color = tokens.inkPrimary
+                )
+            }
+            Surface(
+                onClick = onToggleTimer,
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                contentColor = Color.White,
+                modifier = Modifier
+                    .size(54.dp)
+                    .testTag("study_quick_timer_play_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isRunning) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (isRunning) "Pause timer" else "Start timer",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SubjectOverviewCard(
     subject: SubjectEntity,
     chapters: List<StudyChapterEntity>,
@@ -943,7 +1020,6 @@ private fun SubjectOverviewCard(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val accent = parseHexColor(subject.colorHex, MaterialTheme.colorScheme.primary)
-    val done = chapters.count { it.isCompleted }
     ObsidianCard(onClick = onOpenSubject) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -951,7 +1027,7 @@ private fun SubjectOverviewCard(
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(accent.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
@@ -962,8 +1038,8 @@ private fun SubjectOverviewCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(subject.name, style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                 Text(
-                    "$done/${chapters.size} chapters · ${(progress * 100).toInt()}% mastery",
-                    style = MaterialTheme.typography.bodySmall,
+                    "${(progress * 100).toInt()}% · ${chapters.size} Chapters",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                     color = tokens.inkSecondary
                 )
             }
@@ -974,9 +1050,15 @@ private fun SubjectOverviewCard(
             ) {
                 Text("Focus", maxLines = 1, softWrap = false)
             }
+            Spacer(Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = tokens.inkMuted
+            )
         }
         Spacer(Modifier.height(10.dp))
-        NeonProgressBar(progress = progress, heightDp = 6)
+        NeonProgressBar(progress = progress, heightDp = 7)
     }
 }
 

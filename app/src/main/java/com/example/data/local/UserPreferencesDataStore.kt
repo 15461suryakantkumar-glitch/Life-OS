@@ -590,7 +590,7 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.HAS_COMPLETED_ONBOARDING] = true
             prefs[Keys.USER_NAME] = cleanName
             prefs[Keys.USER_HANDLE] = derivedHandle
-            if (derivedEmail.isNotBlank()) prefs[Keys.USER_EMAIL] = derivedEmail
+            prefs[Keys.USER_EMAIL] = derivedEmail
             prefs[Keys.USER_BIO] = bio.trim().take(160)
             prefs[Keys.PREFERRED_LANGUAGE] = preferredLanguage
             prefs[Keys.AVATAR_PRESET] = avatarPreset.name

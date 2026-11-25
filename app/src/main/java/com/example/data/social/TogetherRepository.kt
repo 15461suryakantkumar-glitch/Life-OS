@@ -679,11 +679,13 @@ class TogetherRepository(
             JSONObject().put("p_friend_code", cleanCode).toString()
         )
         for (body in rpcCandidates) {
-            val rpcRes = supabase.restRpc("lookup_profile_by_friend_code", body, accessToken)
-            if (rpcRes is SupabaseResult.Success) {
-                parseProfileFromRpcOrArray(rpcRes.value)?.let { profile ->
-                    return SupabaseResult.Success(profile)
+            when (val rpcRes = supabase.restRpc("lookup_profile_by_friend_code", body, accessToken)) {
+                is SupabaseResult.Success -> {
+                    parseProfileFromRpcOrArray(rpcRes.value)?.let { profile ->
+                        return SupabaseResult.Success(profile)
+                    }
                 }
+                is SupabaseResult.Failure -> Unit
             }
         }
 

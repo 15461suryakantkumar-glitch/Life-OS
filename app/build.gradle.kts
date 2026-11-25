@@ -108,11 +108,6 @@ android {
       "GEMINI_API_KEY",
       "\"${resolveSecretValue("GEMINI_API_KEY", "GOOGLE_API_KEY").escapeBuildConfig()}\""
     )
-    buildConfigField(
-      "String",
-      "GOOGLE_WEB_CLIENT_ID",
-      "\"${resolveSecretValue("GOOGLE_WEB_CLIENT_ID").escapeBuildConfig()}\""
-    )
   }
 
   // Do not remove or modify these signingConfigs. They are necessary for building, installing,
@@ -171,7 +166,6 @@ secrets {
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
   ignoreList.add("OPENROUTER_API_KEY")
   ignoreList.add("GEMINI_API_KEY")
-  ignoreList.add("GOOGLE_WEB_CLIENT_ID")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
@@ -211,12 +205,11 @@ dependencies {
   // Uncomment to use Firestore:
   // implementation(libs.firebase.firestore)
 
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
+  // Google Sign-In & Credential Manager intentionally disabled (strictly offline local profile login):
   // implementation(libs.firebase.auth)
-  implementation(libs.androidx.credentials)
-  implementation(libs.androidx.credentials.play.services)
-  implementation(libs.googleid)
+  // implementation(libs.androidx.credentials)
+  // implementation(libs.androidx.credentials.play.services)
+  // implementation(libs.googleid)
   implementation(libs.firebase.appcheck.recaptcha)
   implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)

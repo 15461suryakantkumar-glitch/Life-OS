@@ -30,6 +30,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DashboardCustomize
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Groups
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.Button
@@ -54,7 +57,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,6 +74,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.local.DashboardWidgetType
 import com.example.data.local.HabitEntity
@@ -81,7 +84,6 @@ import com.example.kutta.KuttaDashboardCard
 import com.example.suru.SuruMascot
 import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.DashboardWidgetCard
-import com.example.ui.components.FeeloraBrandMark
 import com.example.ui.components.FeeloraScreenBackdrop
 import com.example.ui.components.FeeloraTopHeader
 import com.example.ui.components.GlanceWidgetPinningSection
@@ -89,9 +91,11 @@ import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.LevelUpBanner
 import com.example.ui.components.NeonProgressBar
 import com.example.ui.components.ObsidianCard
+import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.components.WidgetCustomizerList
 import com.example.ui.theme.AmberWarning
+import com.example.ui.theme.CaveatFontFamily
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeTokensProvider
@@ -176,16 +180,19 @@ fun HomeScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // 1. Calm Lavender Editorial Header
+            // 1. Clean Feelora Top Header
             item {
                 FeeloraTopHeader(
-                    title = "FEELORA",
+                    title = "Feelora",
                     subtitle = "${DateTimeUtils.formatFullDate(state.todayEpochDay)} · ${DateTimeUtils.formatLiveTime(currentTimeMillis)}",
                     userName = state.prefs.userName,
                     avatarPreset = state.prefs.avatarPreset,
                     avatarUri = state.prefs.avatarPhotoUri,
                     unreadNotifications = state.unreadNotificationsCount,
+                    streakDays = state.prefs.dailyStreak,
                     onOpenDrawer = onOpenDrawer,
+                    onOpenKutta = { onNavigateToSection("growth") },
+                    onOpenWellness = { onNavigateToSection("wellness") },
                     onOpenNotifications = onOpenNotifications,
                     onOpenProfile = { onNavigateToSection("profile") },
                     trailingAction = {
@@ -194,7 +201,7 @@ fun HomeScreen(
                                 widgetsSheetTab = 1
                                 showWidgetsSheet = true
                             },
-                            modifier = Modifier.size(48.dp).testTag("customize_widgets_btn")
+                            modifier = Modifier.size(44.dp).testTag("customize_widgets_btn")
                         ) {
                             Icon(
                                 Icons.Filled.DashboardCustomize,
@@ -206,8 +213,9 @@ fun HomeScreen(
                 )
             }
 
-            // 2. Editorial Greeting Hero
+            // 2. Greeting & Your Daily Progress Card (18894.png)
             item {
+                val progressPct = state.productivityScore.coerceIn(0, 100)
                 GradientGlowCard(contentPadding = PaddingValues(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -216,46 +224,48 @@ fun HomeScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "CALM CLARITY",
-                                style = FeeloraTypeHelpers.editorialTag,
-                                color = tokens.deepPrimary
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = "${DateTimeUtils.formatGreeting()}, ${state.prefs.userName.ifBlank { "Explorer" }}",
-                                style = MaterialTheme.typography.headlineMedium,
+                                text = "Hello, ${state.prefs.userName.ifBlank { "Friend" }}!",
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Bold,
                                 color = tokens.inkPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            if (state.prefs.userHandle.isNotBlank()) {
-                                Text(
-                                    text = state.prefs.userHandle,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.secondary
-                                )
-                            }
+                            Text(
+                                text = "${DateTimeUtils.formatGreeting()} · calm & focused",
+                                fontFamily = CaveatFontFamily,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 20.sp,
+                                color = tokens.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        FeeloraBrandMark(size = 44.dp, withSoftFrame = false)
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        StatusPill(
-                            text = "Lv.${state.prefs.level} · ${state.prefs.totalXp} XP",
-                            color = MaterialTheme.colorScheme.primary
-                        )
                         AnimatedStreakPill(streakDays = state.prefs.dailyStreak)
-                        StatusPill(
-                            text = "${state.productivityScore}% Flow",
-                            color = MaterialTheme.colorScheme.secondary
-                        )
                     }
 
                     Spacer(Modifier.height(14.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Your Daily Progress",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = tokens.inkPrimary
+                        )
+                        Text(
+                            text = "$progressPct% Complete",
+                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                            color = tokens.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    NeonProgressBar(progress = progressPct / 100f, heightDp = 8)
+
+                    Spacer(Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -294,37 +304,37 @@ fun HomeScreen(
                 }
             }
 
-            // 3. Daily Overview 4-Stat Strip
+            // 3. 3-Stat Overview Strip (Tasks / Study / Streak)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     EditorialStatTile(
-                        label = "Open Tasks",
+                        label = "Tasks",
                         value = "${state.pendingTasksCount}",
-                        accent = MaterialTheme.colorScheme.primary,
+                        accent = tokens.primary,
                         onClick = { onNavigateToSection("tasks") },
                         modifier = Modifier.weight(1f)
                     )
                     EditorialStatTile(
-                        label = "Focus Today",
-                        value = DateTimeUtils.formatMinutesCompact(state.prefs.focusMinutesLoggedToday),
+                        label = "Study",
+                        value = "${state.studySubjects.size}",
                         accent = tokens.deepPrimary,
                         onClick = { onNavigateToSection("study") },
                         modifier = Modifier.weight(1f)
                     )
                     EditorialStatTile(
-                        label = "Chapters",
-                        value = "${state.completedChaptersCount}/${state.studyChapters.size}",
+                        label = "Streak",
+                        value = "${state.prefs.dailyStreak}d",
                         accent = EmeraldSuccess,
-                        onClick = { onNavigateToSection("study") },
+                        onClick = { onNavigateToSection("growth") },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // 4. Next Up + Quick Study Summary
+            // 4. Next Study Session / Next Up Card
             item {
                 ObsidianCard(
                     onClick = {
@@ -337,15 +347,15 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Schedule, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Schedule, contentDescription = null, tint = tokens.primary, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Next Up", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                            Text("Next Study Session", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                         }
                         if (state.studySubjects.isNotEmpty()) {
                             Text(
-                                "${state.studySubjects.size} Study Subject(s)",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = tokens.deepPrimary
+                                text = "${state.studySubjects.size} Subjects",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                                color = tokens.primary
                             )
                         }
                     }
@@ -355,7 +365,7 @@ fun HomeScreen(
                             Text(nextEvent.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                             Text(
                                 "${DateTimeUtils.formatRelativeDeadline(nextEvent.dateEpochDay)} · ${DateTimeUtils.formatTimeOfDay(nextEvent.startMinuteOfDay)}",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = tokens.inkSecondary
                             )
                         }
@@ -363,7 +373,7 @@ fun HomeScreen(
                             Text(nextTask.title, style = MaterialTheme.typography.titleSmall, color = tokens.inkPrimary)
                             Text(
                                 "${nextTask.priority.label} priority · ${DateTimeUtils.formatRelativeDeadline(nextTask.deadlineEpochDay)}",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = tokens.inkSecondary
                             )
                         }
@@ -380,10 +390,55 @@ fun HomeScreen(
                         Spacer(Modifier.height(10.dp))
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(leadSubj.name, style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
-                            Text("${(state.progressForSubject(leadSubj.id) * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = tokens.deepPrimary)
+                            Text(
+                                "${(state.progressForSubject(leadSubj.id) * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                                color = tokens.primary
+                            )
                         }
                         Spacer(Modifier.height(4.dp))
                         NeonProgressBar(progress = state.progressForSubject(leadSubj.id), heightDp = 6)
+                    }
+                }
+            }
+
+            // 4b. Quick Actions 4x2 Grid (18894.png)
+            item {
+                ObsidianCard(contentPadding = PaddingValues(14.dp)) {
+                    SectionHeader(title = "Quick Actions", subtitle = "Jump anywhere in Feelora")
+                    Spacer(Modifier.height(10.dp))
+                    val actionsRow1 = listOf(
+                        Triple("Focus", Icons.Filled.Timer) { onNavigateToSection("study") },
+                        Triple("Task", Icons.Filled.CheckCircle, onQuickAddTaskClick),
+                        Triple("Study", Icons.Filled.MenuBook) { onNavigateToSection("study") },
+                        Triple("Calendar", Icons.Filled.CalendarMonth) { onNavigateToSection("calendar") }
+                    )
+                    val actionsRow2 = listOf(
+                        Triple("Wellness", Icons.Filled.HealthAndSafety) { onNavigateToSection("wellness") },
+                        Triple("SURU", Icons.Filled.AutoAwesome) { onNavigateToSection("life_ai") },
+                        Triple("KUTTA", Icons.Filled.Pets) { onNavigateToSection("growth") },
+                        Triple("Together", Icons.Filled.Groups) { onNavigateToSection("together") }
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        actionsRow1.forEach { (lbl, ic, act) ->
+                            QuickActionTile(
+                                label = lbl,
+                                icon = ic,
+                                onClick = act,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        actionsRow2.forEach { (lbl, ic, act) ->
+                            QuickActionTile(
+                                label = lbl,
+                                icon = ic,
+                                onClick = act,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
@@ -697,10 +752,13 @@ private fun EditorialStatTile(
         color = tokens.surfaceCard,
         border = BorderStroke(tokens.cardBorderWidth, tokens.borderSubtle)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.titleLarge,
+                style = FeeloraTypeHelpers.statNumber,
                 color = accent,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1
@@ -711,6 +769,40 @@ private fun EditorialStatTile(
                 style = MaterialTheme.typography.labelSmall,
                 color = tokens.inkSecondary,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickActionTile(
+    label: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tokens = LifeOsThemeTokensProvider.current
+    Surface(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 56.dp),
+        shape = RoundedCornerShape(tokens.smallRadius),
+        color = tokens.surfaceElevated,
+        border = BorderStroke(1.dp, tokens.borderSubtle)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(icon, contentDescription = label, tint = tokens.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.inkPrimary,
+                maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
         }

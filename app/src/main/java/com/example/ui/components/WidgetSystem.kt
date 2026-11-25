@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -883,7 +884,7 @@ fun GlanceWidgetPinningSection(
             GlancePinTarget(
                 key = "tasks",
                 title = "Tasks",
-                description = "Interactive task checklist & XP sync",
+                description = "Checklist & XP sync",
                 icon = Icons.Filled.CheckCircle,
                 accent = EmeraldSuccess,
                 receiverClass = TasksWidgetReceiver::class.java
@@ -891,7 +892,7 @@ fun GlanceWidgetPinningSection(
             GlancePinTarget(
                 key = "countdown",
                 title = "Countdown",
-                description = "Upcoming milestone days left",
+                description = "Milestone days left",
                 icon = Icons.Filled.Flag,
                 accent = AmberWarning,
                 receiverClass = CountdownWidgetReceiver::class.java
@@ -899,31 +900,31 @@ fun GlanceWidgetPinningSection(
             GlancePinTarget(
                 key = "xp",
                 title = "XP & Level",
-                description = "Level progress & productivity score",
+                description = "Daily level progress",
                 icon = Icons.Filled.Bolt,
-                accent = Color(0xFF8B5CF6),
+                accent = Color(0xFF6C3CE9),
                 receiverClass = XpLevelWidgetReceiver::class.java
             ),
             GlancePinTarget(
                 key = "streak",
                 title = "Streaks",
-                description = "Daily streak & habit check-ins",
+                description = "Daily habit momentum",
                 icon = Icons.Outlined.LocalFireDepartment,
                 accent = AmberWarning,
                 receiverClass = StreakWidgetReceiver::class.java
             ),
             GlancePinTarget(
                 key = "pet",
-                title = "KUTTA Widget",
-                description = "Live KUTTA mood & water tracker",
+                title = "KUTTA",
+                description = "Mood & hydration buddy",
                 icon = Icons.Filled.Pets,
-                accent = Color(0xFF06B6D4),
+                accent = Color(0xFF7C4DFF),
                 receiverClass = DigitalPetWidgetReceiver::class.java
             ),
             GlancePinTarget(
                 key = "calendar",
                 title = "Calendar",
-                description = "Today's schedule & time blocks",
+                description = "Today's time blocks",
                 icon = Icons.Filled.CalendarMonth,
                 accent = Color(0xFF38BDF8),
                 receiverClass = CalendarWidgetReceiver::class.java
@@ -931,61 +932,97 @@ fun GlanceWidgetPinningSection(
         )
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        pinTargets.forEach { target ->
+    var selectedKey by remember { mutableStateOf(pinTargets.first().key) }
+    val selectedTarget = pinTargets.firstOrNull { it.key == selectedKey } ?: pinTargets.first()
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        pinTargets.chunked(2).forEach { pair ->
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(tokens.smallRadius))
-                    .background(tokens.surfaceElevated)
-                    .border(1.dp, tokens.borderSubtle, RoundedCornerShape(tokens.smallRadius))
-                    .padding(horizontal = 12.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(target.accent.copy(alpha = 0.16f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = target.icon,
-                        contentDescription = null,
-                        tint = target.accent,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = target.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = tokens.inkPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = target.description,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = tokens.inkSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                FilledTonalButton(
-                    onClick = {
-                        val msg = requestPinGlanceWidget(context, target.title, target.receiverClass)
-                        inlineFeedback = msg
-                        onNotice(msg)
-                    },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                    modifier = Modifier.height(36.dp).testTag("pin_widget_${target.key}")
-                ) {
-                    Text("Pin", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                pair.forEach { target ->
+                    val isSelected = target.key == selectedKey
+                    Surface(
+                        onClick = { selectedKey = target.key },
+                        shape = RoundedCornerShape(tokens.cardRadius),
+                        color = if (isSelected) tokens.surfaceHighlight else tokens.surfaceElevated,
+                        border = BorderStroke(
+                            width = if (isSelected) 1.5.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else tokens.borderSubtle
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(target.accent.copy(alpha = 0.16f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = target.icon,
+                                    contentDescription = null,
+                                    tint = target.accent,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = target.title,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = tokens.inkPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = target.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.inkSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            FilledTonalButton(
+                                onClick = {
+                                    selectedKey = target.key
+                                    val msg = requestPinGlanceWidget(context, target.title, target.receiverClass)
+                                    inlineFeedback = msg
+                                    onNotice(msg)
+                                },
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp)
+                                    .testTag("pin_widget_${target.key}")
+                            ) {
+                                Text("Pin", style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        androidx.compose.material3.Button(
+            onClick = {
+                val msg = requestPinGlanceWidget(context, selectedTarget.title, selectedTarget.receiverClass)
+                inlineFeedback = msg
+                onNotice(msg)
+            },
+            shape = CircleShape,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("widgets_add_selected_btn")
+        ) {
+            Text("Add ${selectedTarget.title} Widget", maxLines = 1, softWrap = false)
         }
 
         Surface(

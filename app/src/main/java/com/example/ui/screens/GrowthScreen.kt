@@ -149,6 +149,14 @@ fun GrowthScreen(
                         }
                     }
 
+                    Spacer(Modifier.height(10.dp))
+
+                    KuttaDialogueBubble(
+                        message = displayedKutta.dialogue,
+                        emotion = displayedKutta.emotion,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     Spacer(Modifier.height(8.dp))
 
                     Box(
@@ -165,13 +173,31 @@ fun GrowthScreen(
                         )
                     }
 
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Lv. ${prefs.level}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "${prefs.xpIntoCurrentLevel} / ${prefs.xpPerLevel} XP",
+                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
+                            color = tokens.inkSecondary
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
-                    KuttaDialogueBubble(
-                        message = displayedKutta.dialogue,
-                        emotion = displayedKutta.emotion,
-                        modifier = Modifier.fillMaxWidth()
+                    NeonProgressBar(
+                        progress = (prefs.xpIntoCurrentLevel.toFloat() / prefs.xpPerLevel.coerceAtLeast(1)).coerceIn(0f, 1f),
+                        heightDp = 8
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
                         text = prefs.petStage.description,
                         style = MaterialTheme.typography.bodySmall,
@@ -228,12 +254,12 @@ fun GrowthScreen(
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Mood · $animatedHappiness%", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                            Text("Mood · $animatedHappiness%", style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = tokens.inkSecondary)
                             Spacer(Modifier.height(4.dp))
                             NeonProgressBar(progress = prefs.petHappiness / 100f, heightDp = 6)
                         }
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Energy · $animatedEnergy%", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                            Text("Energy · $animatedEnergy%", style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = tokens.inkSecondary)
                             Spacer(Modifier.height(4.dp))
                             NeonProgressBar(progress = prefs.petEnergy / 100f, heightDp = 6)
                         }
@@ -373,7 +399,7 @@ fun GrowthScreen(
                             Text("XP Progress", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                             Text(
                                 "$animatedXp Total XP · ${prefs.xpIntoCurrentLevel}/${prefs.xpPerLevel} to Lv.${prefs.level + 1}",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                 color = tokens.inkSecondary
                             )
                         }

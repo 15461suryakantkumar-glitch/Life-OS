@@ -401,28 +401,15 @@ fun LifeOsApp(
                                     }
                                 )
                                 FeeloraEntryRoute.AUTH -> AuthScreen(
-                                    initialEmail = state.prefs.userEmail,
+                                    initialDisplayName = state.prefs.userName,
                                     authUiState = state.authUiState,
                                     onBack = {
                                         viewModel.clearAuthFeedback()
                                         entryRoute = FeeloraEntryRoute.SPLASH
                                     },
                                     onClearAuthFeedback = viewModel::clearAuthFeedback,
-                                    onGoogleSignIn = { email, displayName, idToken ->
-                                        viewModel.signInWithGoogleCredential(
-                                            email = email,
-                                            displayName = displayName,
-                                            idToken = idToken
-                                        ) {
-                                            currentSection = LifeOsSection.HOME
-                                        }
-                                    },
-                                    onEmailAuthSubmit = { email, password, isCreateAccount ->
-                                        viewModel.continueWithEmail(
-                                            email = email,
-                                            password = password,
-                                            isCreateAccount = isCreateAccount
-                                        ) {
+                                    onContinueOffline = { displayName ->
+                                        viewModel.continueOfflineLocalProfile(displayName) {
                                             currentSection = LifeOsSection.HOME
                                         }
                                     }
@@ -892,14 +879,14 @@ fun LifeOsApp(
                                 containerColor = tokens.surfaceBase,
                                 title = {
                                     Text(
-                                        "Cloud Session Expired",
+                                        "Together Sync Paused",
                                         style = MaterialTheme.typography.titleLarge,
                                         color = tokens.inkPrimary
                                     )
                                 },
                                 text = {
                                     Text(
-                                        "Your Supabase cloud session expired. All your local tasks, quick notes, Cycle Care, and SURU memories stay safe on this device. Sign in again to resume Together sync, or stay offline.",
+                                        "Your optional Together sync token refreshed offline. All your local tasks, quick notes, Cycle Care, and SURU memories stay safe on this device.",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = tokens.inkSecondary
                                     )
@@ -908,10 +895,10 @@ fun LifeOsApp(
                                     Button(
                                         onClick = {
                                             viewModel.dismissSessionExpiredPrompt()
-                                            viewModel.signOutLocalSession()
+                                            viewModel.refreshTogetherData()
                                         }
                                     ) {
-                                        Text("Sign In Again")
+                                        Text("Reconnect Together")
                                     }
                                 },
                                 dismissButton = {

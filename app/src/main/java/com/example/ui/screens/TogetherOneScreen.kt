@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +64,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -91,6 +97,7 @@ import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
+import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
@@ -267,7 +274,7 @@ fun TogetherOneScreen(
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 text = myCode,
-                                style = MaterialTheme.typography.headlineSmall,
+                                style = MaterialTheme.typography.headlineSmall.copy(fontFeatureSettings = "tnum"),
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.testTag("together_my_friend_code")
@@ -535,6 +542,91 @@ fun TogetherOneScreen(
                     }
                 }
             } else {
+                val featuredFriend = mergedFriends.first()
+                item {
+                    val myProgressPct = state.productivityScore.coerceIn(10, 100)
+                    val friendProgressPct = ((featuredFriend.consistencyScore.takeIf { it > 0 } ?: (featuredFriend.dailyStreak * 12 + 36))).coerceIn(12, 100)
+                    GradientGlowCard(
+                        modifier = Modifier.testTag("together_shared_progress_card")
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(tokens.smallRadius),
+                            color = tokens.surfaceCard.copy(alpha = 0.9f),
+                            border = BorderStroke(1.dp, tokens.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Connected with ${featuredFriend.displayName} ♡",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = tokens.inkPrimary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Text(
+                            text = "Shared Progress",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = tokens.inkPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            SharedProgressRing(
+                                label = "You",
+                                percent = myProgressPct,
+                                ringColor = MaterialTheme.colorScheme.primary,
+                                trackColor = tokens.borderSubtle
+                            )
+                            SharedProgressRing(
+                                label = featuredFriend.displayName,
+                                percent = friendProgressPct,
+                                ringColor = MaterialTheme.colorScheme.secondary,
+                                trackColor = tokens.borderSubtle
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Button(
+                            onClick = { onOpenChat(featuredFriend) },
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .testTag("together_featured_chat_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Chat,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text("Chat Together", maxLines = 1, softWrap = false)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(tokens.smallRadius),
+                            color = tokens.surfaceCard.copy(alpha = 0.9f),
+                            border = BorderStroke(1.dp, tokens.borderSubtle),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                Text(
+                                    text = "Shared Goals",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = tokens.inkPrimary
+                                )
+                                Text(
+                                    text = "Study 5 hours this week · ${(state.prefs.focusMinutesLoggedToday / 60)}h ${state.prefs.focusMinutesLoggedToday % 60}m logged today",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                    color = tokens.inkSecondary
+                                )
+                            }
+                        }
+                    }
+                }
                 items(mergedFriends, key = { it.userId }) { friend ->
                     ConnectedFriendLiveCard(
                         friend = friend,
@@ -928,6 +1020,57 @@ private fun ConnectedFriendLiveCard(
                 Text("Chat", maxLines = 1, softWrap = false)
             }
         }
+    }
+}
+
+@Composable
+private fun SharedProgressRing(
+    label: String,
+    percent: Int,
+    ringColor: Color,
+    trackColor: Color
+) {
+    val tokens = LifeOsThemeTokensProvider.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(96.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Canvas(modifier = Modifier.size(88.dp)) {
+                val stroke = 9.dp.toPx()
+                drawArc(
+                    color = trackColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+                drawArc(
+                    color = ringColor,
+                    startAngle = -90f,
+                    sweepAngle = (percent.coerceIn(0, 100) / 100f) * 360f,
+                    useCenter = false,
+                    topLeft = Offset(stroke / 2, stroke / 2),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                )
+            }
+            Text(
+                text = "$percent%",
+                style = FeeloraTypeHelpers.statNumber.copy(fontFeatureSettings = "tnum"),
+                color = tokens.inkPrimary
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = tokens.inkSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

@@ -655,23 +655,23 @@ fun SettingsScreen(
                 }
             }
 
-            // Account & Reset
+            // Local Profile & Storage
             item {
                 ObsidianCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.CloudOff, contentDescription = null, tint = tokens.inkSecondary)
                         Spacer(Modifier.width(8.dp))
-                        Text("Account & Storage", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                        Text("Local Profile & Storage", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Signed in as ${prefs.userName.ifBlank { "Member" }} (${prefs.userHandle})" + if (prefs.hasValidRemoteSession) " · Cloud Synced" else " · Device Local",
+                        text = "${prefs.userName.ifBlank { "Friend" }} (${prefs.userHandle}) · Offline Local Profile",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = tokens.primary
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Signing out keeps all tasks, XP, habits, Cycle Care, and SURU memories preserved on your device.",
+                        "Stored privately on this device. Switching local profile keeps all tasks, XP, habits, Cycle Care, and SURU memories safe.",
                         style = MaterialTheme.typography.bodySmall,
                         color = tokens.inkSecondary
                     )
@@ -679,7 +679,7 @@ fun SettingsScreen(
                     OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth().testTag("sign_out_btn")) {
                         Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Switch Account / Sign Out")
+                        Text("Switch Local Profile")
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(

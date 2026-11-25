@@ -103,13 +103,13 @@ class SupabaseAuthAndSyncClient(
             return SupabaseResult.Success(
                 SupabaseSession(
                     userId = currentPrefs.supabaseUserId,
-                    email = currentPrefs.userEmail,
+                    email = "",
                     accessToken = currentPrefs.supabaseAccessToken,
                     refreshToken = currentPrefs.supabaseRefreshToken,
                     expiresAtMillis = currentPrefs.supabaseSessionExpiresAt,
-                    emailVerified = currentPrefs.emailVerified,
+                    emailVerified = false,
                     displayName = currentPrefs.userName,
-                    isAnonymous = currentPrefs.userEmail.isBlank()
+                    isAnonymous = true
                 )
             )
         }
@@ -122,80 +122,11 @@ class SupabaseAuthAndSyncClient(
         return signInAnonymously()
     }
 
-    suspend fun signUp(
-        email: String,
-        password: String,
-        displayName: String
-    ): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-
-        val payload = JSONObject().apply {
-            put("email", email.trim())
-            put("password", password)
-            put("data", JSONObject().put("display_name", displayName.trim()))
-        }
-
-        val req = Request.Builder()
-            .url("$baseUrl/auth/v1/signup")
-            .header("apikey", anonKey)
-            .header("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody(JSON_MEDIA))
-            .build()
-
-        executeAuthRequest(req, fallbackEmail = email.trim(), fallbackName = displayName.trim())
-    }
-
-    suspend fun signIn(
-        email: String,
-        password: String
-    ): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-
-        val payload = JSONObject().apply {
-            put("email", email.trim())
-            put("password", password)
-        }
-
-        val req = Request.Builder()
-            .url("$baseUrl/auth/v1/token?grant_type=password")
-            .header("apikey", anonKey)
-            .header("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody(JSON_MEDIA))
-            .build()
-
-        executeAuthRequest(req, fallbackEmail = email.trim(), fallbackName = "")
-    }
-
-    suspend fun signInWithGoogleIdToken(
-        idToken: String,
-        fallbackEmail: String = "",
-        fallbackName: String = ""
-    ): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-
-        val payload = JSONObject().apply {
-            put("provider", "google")
-            put("id_token", idToken)
-        }
-
-        val req = Request.Builder()
-            .url("$baseUrl/auth/v1/token?grant_type=id_token")
-            .header("apikey", anonKey)
-            .header("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody(JSON_MEDIA))
-            .build()
-
-        executeAuthRequest(req, fallbackEmail = fallbackEmail, fallbackName = fallbackName)
-    }
-
     suspend fun refreshSession(refreshToken: String): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
         val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
         val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
         if (refreshToken.isBlank()) {
-            return@withContext SupabaseResult.Failure("Your cloud session expired. Please sign in again.", isUnauthorized = true)
+            return@withContext SupabaseResult.Failure("Your Together sync token expired. Reconnecting anonymously.", isUnauthorized = true)
         }
 
         val payload = JSONObject().put("refresh_token", refreshToken)
@@ -207,53 +138,6 @@ class SupabaseAuthAndSyncClient(
             .build()
 
         executeAuthRequest(req, fallbackEmail = "", fallbackName = "")
-    }
-
-    suspend fun sendPasswordReset(email: String): SupabaseResult<String> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-        val payload = JSONObject().put("email", email.trim())
-        val req = Request.Builder()
-            .url("$baseUrl/auth/v1/recover")
-            .header("apikey", anonKey)
-            .header("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody(JSON_MEDIA))
-            .build()
-
-        runCatching {
-            httpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    SupabaseResult.Success("Password reset link sent to ${email.trim()}.")
-                } else {
-                    SupabaseResult.Failure(parseSupabaseError(resp.body?.string(), "Could not send password reset email."))
-                }
-            }
-        }.getOrElse { SupabaseResult.Failure(it.message ?: "Network error while sending reset email.") }
-    }
-
-    suspend fun resendVerification(email: String): SupabaseResult<String> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-        val payload = JSONObject().apply {
-            put("type", "signup")
-            put("email", email.trim())
-        }
-        val req = Request.Builder()
-            .url("$baseUrl/auth/v1/resend")
-            .header("apikey", anonKey)
-            .header("Content-Type", "application/json")
-            .post(payload.toString().toRequestBody(JSON_MEDIA))
-            .build()
-
-        runCatching {
-            httpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    SupabaseResult.Success("Verification email resent to ${email.trim()}.")
-                } else {
-                    SupabaseResult.Failure(parseSupabaseError(resp.body?.string(), "Could not resend verification email."))
-                }
-            }
-        }.getOrElse { SupabaseResult.Failure(it.message ?: "Network error while resending email.") }
     }
 
     suspend fun fetchCurrentUser(accessToken: String): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
@@ -370,38 +254,6 @@ class SupabaseAuthAndSyncClient(
                 SupabaseResult.Success("$baseUrl/storage/v1/object/public/$bucket/$objectPath")
             }
         }.getOrElse { SupabaseResult.Failure(it.message ?: "Upload failed.") }
-    }
-
-    suspend fun restRpc(
-        functionName: String,
-        paramsJson: String,
-        accessToken: String
-    ): SupabaseResult<String> = withContext(Dispatchers.IO) {
-        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
-        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
-        if (accessToken.isBlank()) {
-            return@withContext SupabaseResult.Failure("Cloud session required.", isUnauthorized = true)
-        }
-        val req = Request.Builder()
-            .url("$baseUrl/rest/v1/rpc/$functionName")
-            .header("apikey", anonKey)
-            .header("Authorization", "Bearer $accessToken")
-            .header("Content-Type", "application/json")
-            .post(paramsJson.toRequestBody(JSON_MEDIA))
-            .build()
-
-        runCatching {
-            httpClient.newCall(req).execute().use { resp ->
-                val raw = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) {
-                    return@use SupabaseResult.Failure(
-                        message = parseSupabaseError(raw, "Cloud RPC failed (HTTP ${resp.code})."),
-                        isUnauthorized = resp.code == 401 || resp.code == 403
-                    )
-                }
-                SupabaseResult.Success(raw)
-            }
-        }.getOrElse { SupabaseResult.Failure(it.message ?: "Network connection unavailable.") }
     }
 
     suspend fun restGet(pathWithQuery: String, accessToken: String): SupabaseResult<String> =

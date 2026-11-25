@@ -28,12 +28,12 @@ enum class LifeOsThemeMode(
     val previewSurface: Color
 ) {
     LIGHT(
-        displayName = "Lavender Editorial",
-        subtitle = "Warm cream, pure white cards & calm lavender",
+        displayName = "Lavender Mist",
+        subtitle = "Soft lavender mist, bright white cards & vibrant violet",
         isDark = false,
-        previewPrimary = PrimaryLavender,
-        previewSecondary = SoftPeach,
-        previewSurface = CreamBackground
+        previewPrimary = VioletPrimaryCta,
+        previewSecondary = VioletBrightAccent,
+        previewSurface = LavenderMistBg
     ),
     DARK(
         displayName = "Velvet Plum",
@@ -47,9 +47,9 @@ enum class LifeOsThemeMode(
         displayName = "System",
         subtitle = "Follows your Android Light & Dark appearance",
         isDark = false,
-        previewPrimary = DeepLavender,
-        previewSecondary = MutedRose,
-        previewSurface = SoftLavenderSurface
+        previewPrimary = VioletPrimaryCta,
+        previewSecondary = DeepLavender,
+        previewSurface = LavenderMistBase
     );
 
     fun resolvesToDark(systemDark: Boolean): Boolean = when (this) {
@@ -104,19 +104,19 @@ data class LifeOsThemeTokens(
 private val LavenderLightTokens = LifeOsThemeTokens(
     mode = LifeOsThemeMode.LIGHT,
     isDark = false,
-    background = CreamBackground,
-    surfaceBase = CreamSurfaceBase,
+    background = LavenderMistBg,
+    surfaceBase = LavenderMistBase,
     surfaceCard = PureWhiteCard,
-    surfaceElevated = LightLavenderSurface,
-    surfaceHighlight = SoftLavenderSurface,
-    borderSubtle = EditorialBorderSubtle,
-    borderAccent = EditorialBorderAccent,
-    inkPrimary = EditorialInkPrimary,
-    inkSecondary = EditorialInkSecondary,
-    inkMuted = EditorialInkMuted,
-    primary = PrimaryLavender,
-    deepPrimary = DeepLavender,
-    secondary = DeepLavender,
+    surfaceElevated = LavenderCardElevated,
+    surfaceHighlight = LavenderCardHighlight,
+    borderSubtle = LavenderBorderSubtle,
+    borderAccent = LavenderBorderAccent,
+    inkPrimary = LavenderHeadingPlum,
+    inkSecondary = LavenderSlateSecondary,
+    inkMuted = LavenderSlateMuted,
+    primary = VioletPrimaryCta,
+    deepPrimary = FeeloraPrimaryCtaDark,
+    secondary = VioletBrightAccent,
     tertiary = MutedRose,
     peach = SoftPeach,
     rose = MutedRose,
@@ -126,7 +126,7 @@ private val LavenderLightTokens = LifeOsThemeTokens(
     pillRadius = 50.dp,
     cardBorderWidth = 1.dp,
     cardElevation = 0.dp,
-    typographyLabel = "Lavender Editorial"
+    typographyLabel = "Lavender Mist"
 )
 
 private val VelvetDarkTokens = LifeOsThemeTokens(
@@ -220,29 +220,29 @@ fun LifeOsTheme(
         )
     } else {
         lightColorScheme(
-            primary = PrimaryLavender,
+            primary = VioletPrimaryCta,
             onPrimary = Color.White,
-            primaryContainer = SoftLavenderSurface,
-            onPrimaryContainer = EditorialInkPrimary,
-            secondary = DeepLavender,
+            primaryContainer = LavenderCardHighlight,
+            onPrimaryContainer = LavenderHeadingPlum,
+            secondary = VioletBrightAccent,
             onSecondary = Color.White,
-            secondaryContainer = SoftPeach.copy(alpha = 0.45f),
-            onSecondaryContainer = EditorialInkPrimary,
+            secondaryContainer = LavenderCardElevated,
+            onSecondaryContainer = LavenderHeadingPlum,
             tertiary = MutedRose,
-            onTertiary = EditorialInkPrimary,
-            background = CreamBackground,
-            onBackground = EditorialInkPrimary,
-            surface = CreamSurfaceBase,
-            onSurface = EditorialInkPrimary,
-            surfaceVariant = LightLavenderSurface,
-            onSurfaceVariant = EditorialInkSecondary,
-            surfaceContainerLowest = CreamBackground,
-            surfaceContainerLow = CreamSurfaceBase,
+            onTertiary = LavenderHeadingPlum,
+            background = LavenderMistBg,
+            onBackground = LavenderHeadingPlum,
+            surface = LavenderMistBase,
+            onSurface = LavenderHeadingPlum,
+            surfaceVariant = LavenderCardElevated,
+            onSurfaceVariant = LavenderSlateSecondary,
+            surfaceContainerLowest = LavenderMistBg,
+            surfaceContainerLow = LavenderMistBase,
             surfaceContainer = PureWhiteCard,
-            surfaceContainerHigh = LightLavenderSurface,
-            surfaceContainerHighest = SoftLavenderSurface,
-            outline = EditorialBorderSubtle,
-            outlineVariant = EditorialBorderAccent,
+            surfaceContainerHigh = LavenderCardElevated,
+            surfaceContainerHighest = LavenderCardHighlight,
+            outline = LavenderBorderSubtle,
+            outlineVariant = LavenderBorderAccent,
             error = RoseAlert,
             onError = Color.White
         )

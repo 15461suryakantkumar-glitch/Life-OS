@@ -391,26 +391,30 @@ class FeeloraUpgradeTest {
             }
         }
         composeRule.onNodeWithTag("opening_splash_screen").assertIsDisplayed()
-        composeRule.onNodeWithText("Feel · Heal · Grow").assertIsDisplayed()
-        composeRule.onNodeWithTag("splash_get_started_btn").assertIsDisplayed()
-        composeRule.onNodeWithTag("splash_sign_in_btn").assertIsDisplayed()
+        composeRule.onNodeWithText("Feel  ·  Heal  ·  Grow").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("splash_get_started_btn").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("splash_sign_in_btn").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun authScreen_showsOnlyGoogleAndEmailOptions() {
+    fun authScreen_showsOfflineLocalProfileEntryOnly() {
+        var submittedName = ""
         composeRule.setContent {
             LifeOsTheme {
                 AuthScreen(
-                    onGoogleSignIn = { _, _, _ -> },
-                    onEmailAuthSubmit = { _, _, _ -> }
+                    initialDisplayName = "Aria",
+                    onContinueOffline = { submittedName = it }
                 )
             }
         }
         composeRule.onNodeWithTag("auth_screen").assertIsDisplayed()
-        composeRule.onNodeWithTag("auth_google_btn").assertIsDisplayed()
-        composeRule.onNodeWithTag("auth_email_toggle_btn").assertIsDisplayed()
-        composeRule.onNodeWithText("Continue with Google").assertIsDisplayed()
-        composeRule.onNodeWithText("Continue with Email").assertIsDisplayed()
+        composeRule.onNodeWithTag("auth_name_input").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("auth_enter_btn").performScrollTo().assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesWithText("Continue with Google").fetchSemanticsNodes().size)
+        assertEquals(0, composeRule.onAllNodesWithText("Continue with Email").fetchSemanticsNodes().size)
+
+        composeRule.onNodeWithTag("auth_enter_btn").performClick()
+        assertEquals("Aria", submittedName)
     }
 
     @Test

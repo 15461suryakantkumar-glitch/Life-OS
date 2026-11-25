@@ -157,7 +157,7 @@ fun NotificationsHistoryScreen(
                                 Spacer(Modifier.height(6.dp))
                                 Text(
                                     text = "${category.channelTitle.removePrefix("Feelora · ")} · ${DateTimeUtils.formatLiveTime(item.createdAtMillis)}",
-                                    style = MaterialTheme.typography.labelSmall,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
                                     color = tokens.inkMuted
                                 )
                             }

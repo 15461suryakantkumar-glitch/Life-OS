@@ -185,6 +185,8 @@ data class LifeOsUiState(
     val kuttaEventOverride: KuttaVisualState? = null,
     val studyTimer: StudyTimerState = StudyTimerState(),
     val isAiLoading: Boolean = false,
+    val aiStreamingReply: String? = null,
+    val aiStreamingProviderLabel: String? = null,
     val aiErrorMessage: String? = null,
     val petReactionBanner: String? = null,
     val levelUpBanner: Int? = null,
@@ -903,115 +905,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signUpWithSupabase(email: String, password: String, displayName: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-            when (val res = supabaseClient.signUp(email, password, displayName)) {
-                is SupabaseResult.Success -> {
-                    val s = res.value
-                    if (s.accessToken.isNotBlank()) {
-                        prefsRepo.saveSupabaseSession(
-                            userId = s.userId,
-                            email = s.email,
-                            accessToken = s.accessToken,
-                            refreshToken = s.refreshToken,
-                            expiresAtMillis = s.expiresAtMillis,
-                            emailVerified = s.emailVerified
-                        )
-                        authUiStateFlow.update {
-                            it.copy(
-                                isLoading = false,
-                                verificationEmailPending = if (!s.emailVerified) s.email else null,
-                                infoMessage = if (s.emailVerified) "Account created!" else "Account created! Check ${s.email} for verification."
-                            )
-                        }
-                        onSuccess()
-                    } else {
-                        authUiStateFlow.update {
-                            it.copy(
-                                isLoading = false,
-                                verificationEmailPending = email.trim(),
-                                infoMessage = "Verification link sent to ${email.trim()}. Confirm your email, then sign in or continue setup."
-                            )
-                        }
-                    }
-                }
-                is SupabaseResult.Failure -> {
-                    authUiStateFlow.update { it.copy(isLoading = false, errorMessage = res.message) }
-                }
-            }
-        }
-    }
-
-    fun signInWithSupabase(email: String, password: String, onSuccess: () -> Unit) {
-        viewModelScope.launch {
-            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-            when (val res = supabaseClient.signIn(email, password)) {
-                is SupabaseResult.Success -> {
-                    val s = res.value
-                    prefsRepo.saveSupabaseSession(
-                        userId = s.userId,
-                        email = s.email,
-                        accessToken = s.accessToken,
-                        refreshToken = s.refreshToken,
-                        expiresAtMillis = s.expiresAtMillis,
-                        emailVerified = s.emailVerified
-                    )
-                    if (s.displayName.isNotBlank() && uiState.value.prefs.userName.isBlank()) {
-                        prefsRepo.completeOnboardingSignIn(
-                            name = s.displayName,
-                            identityOrEmail = s.email,
-                            focusGoal = uiState.value.prefs.dailyFocusGoalMinutes,
-                            themeMode = uiState.value.prefs.themeMode
-                        )
-                    }
-                    togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
-                    syncSafeProfileToTogether()
-                    authUiStateFlow.update {
-                        it.copy(
-                            isLoading = false,
-                            sessionExpiredPrompt = false,
-                            verificationEmailPending = if (!s.emailVerified) s.email else null,
-                            infoMessage = "Signed in as ${s.email}"
-                        )
-                    }
-                    onSuccess()
-                }
-                is SupabaseResult.Failure -> {
-                    authUiStateFlow.update { it.copy(isLoading = false, errorMessage = res.message) }
-                }
-            }
-        }
-    }
-
-    fun sendPasswordReset(email: String) {
-        viewModelScope.launch {
-            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null, isResetSent = false) }
-            when (val res = supabaseClient.sendPasswordReset(email)) {
-                is SupabaseResult.Success -> authUiStateFlow.update {
-                    it.copy(isLoading = false, isResetSent = true, infoMessage = res.value)
-                }
-                is SupabaseResult.Failure -> authUiStateFlow.update {
-                    it.copy(isLoading = false, errorMessage = res.message)
-                }
-            }
-        }
-    }
-
-    fun resendVerificationEmail(email: String) {
-        viewModelScope.launch {
-            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null) }
-            when (val res = supabaseClient.resendVerification(email)) {
-                is SupabaseResult.Success -> authUiStateFlow.update {
-                    it.copy(isLoading = false, infoMessage = res.value)
-                }
-                is SupabaseResult.Failure -> authUiStateFlow.update {
-                    it.copy(isLoading = false, errorMessage = res.message)
-                }
-            }
-        }
-    }
-
     fun checkUsernameAvailability(username: String) {
         val clean = SupabaseAuthAndSyncClient.normalizeHandle(username)
         if (clean.length < 3) {
@@ -1032,52 +925,20 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun signInWithGoogleCredential(
-        email: String,
+    fun continueOfflineLocalProfile(
         displayName: String,
-        idToken: String,
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
             authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-            val cleanEmail = email.trim()
-            val derivedName = displayName.trim()
-                .ifBlank { deriveDisplayNameFromEmail(cleanEmail) }
+            val resolvedName = displayName.trim()
+                .ifBlank { uiState.value.prefs.userName }
                 .ifBlank { "Friend" }
 
-            var cloudSynced = false
-            if (supabaseClient.isConfigured() && idToken.isNotBlank()) {
-                when (val res = supabaseClient.signInWithGoogleIdToken(
-                    idToken = idToken,
-                    fallbackEmail = cleanEmail,
-                    fallbackName = derivedName
-                )) {
-                    is SupabaseResult.Success -> {
-                        val s = res.value
-                        if (s.accessToken.isNotBlank()) {
-                            prefsRepo.saveSupabaseSession(
-                                userId = s.userId,
-                                email = s.email.ifBlank { cleanEmail },
-                                accessToken = s.accessToken,
-                                refreshToken = s.refreshToken,
-                                expiresAtMillis = s.expiresAtMillis,
-                                emailVerified = true
-                            )
-                            togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
-                            cloudSynced = true
-                        }
-                    }
-                    is SupabaseResult.Failure -> {
-                        // Google Credential Manager already verified the account on-device;
-                        // proceed with local Feelora session if cloud provider is unavailable.
-                    }
-                }
-            }
-
             finalizeAuthSignIn(
-                name = derivedName,
-                email = cleanEmail,
-                syncToCloud = cloudSynced
+                name = resolvedName,
+                email = "",
+                syncToCloud = false
             )
             authUiStateFlow.update {
                 it.copy(
@@ -1090,109 +951,13 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun continueWithEmail(
-        email: String,
-        password: String,
-        isCreateAccount: Boolean,
-        onSuccess: () -> Unit
-    ) {
-        viewModelScope.launch {
-            val cleanEmail = email.trim()
-            val derivedName = uiState.value.prefs.userName
-                .ifBlank { deriveDisplayNameFromEmail(cleanEmail) }
-                .ifBlank { "Friend" }
-
-            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
-
-            if (!supabaseClient.isConfigured()) {
-                finalizeAuthSignIn(
-                    name = derivedName,
-                    email = cleanEmail,
-                    syncToCloud = false
-                )
-                authUiStateFlow.update {
-                    it.copy(
-                        isLoading = false,
-                        sessionExpiredPrompt = false,
-                        infoMessage = null
-                    )
-                }
-                onSuccess()
-                return@launch
-            }
-
-            val result = if (isCreateAccount) {
-                supabaseClient.signUp(cleanEmail, password, derivedName)
-            } else {
-                supabaseClient.signIn(cleanEmail, password)
-            }
-
-            when (result) {
-                is SupabaseResult.Success -> {
-                    val s = result.value
-                    if (s.accessToken.isNotBlank()) {
-                        prefsRepo.saveSupabaseSession(
-                            userId = s.userId,
-                            email = s.email.ifBlank { cleanEmail },
-                            accessToken = s.accessToken,
-                            refreshToken = s.refreshToken,
-                            expiresAtMillis = s.expiresAtMillis,
-                            emailVerified = s.emailVerified
-                        )
-                        togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
-                        finalizeAuthSignIn(
-                            name = s.displayName.ifBlank { derivedName },
-                            email = s.email.ifBlank { cleanEmail },
-                            syncToCloud = true
-                        )
-                        authUiStateFlow.update {
-                            it.copy(
-                                isLoading = false,
-                                sessionExpiredPrompt = false,
-                                verificationEmailPending = if (!s.emailVerified) s.email else null,
-                                infoMessage = null
-                            )
-                        }
-                        onSuccess()
-                    } else {
-                        authUiStateFlow.update {
-                            it.copy(
-                                isLoading = false,
-                                verificationEmailPending = cleanEmail,
-                                infoMessage = "Verification link sent to $cleanEmail. Confirm your email, then sign in."
-                            )
-                        }
-                    }
-                }
-                is SupabaseResult.Failure -> {
-                    authUiStateFlow.update {
-                        it.copy(isLoading = false, errorMessage = result.message)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun deriveDisplayNameFromEmail(email: String): String {
-        val prefix = email.substringBefore("@").trim()
-        if (prefix.isBlank()) return "Friend"
-        return prefix
-            .split('.', '_', '-', '+')
-            .filter { it.isNotBlank() }
-            .take(2)
-            .joinToString(" ") { part ->
-                part.replaceFirstChar { ch -> if (ch.isLowerCase()) ch.titlecase() else ch.toString() }
-            }
-            .ifBlank { "Friend" }
-    }
-
     private suspend fun finalizeAuthSignIn(
         name: String,
         email: String,
         syncToCloud: Boolean
     ) {
         val current = uiState.value.prefs
-        val finalName = current.userName.ifBlank { name }
+        val finalName = name.trim().ifBlank { current.userName }.ifBlank { "Friend" }
         prefsRepo.completeOnboardingSignIn(
             name = finalName,
             identityOrEmail = email,

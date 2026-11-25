@@ -927,14 +927,12 @@ class ExampleUnitTest {
 
     @Test
     fun feeloraAuthValidator_andOpeningChimeWav_workCleanly() {
-        assertNotNull(FeeloraAuthValidator.validateEmail(""))
-        assertNotNull(FeeloraAuthValidator.validateEmail("invalid-email"))
-        assertEquals(null, FeeloraAuthValidator.validateEmail("aria@feelora.app"))
+        assertEquals(null, FeeloraAuthValidator.validateDisplayName("Aria"))
+        assertNotNull(FeeloraAuthValidator.validateDisplayName("A".repeat(40)))
+        assertNotNull(FeeloraAuthValidator.validateDisplayName("Line\nBreak"))
 
-        assertNotNull(FeeloraAuthValidator.validatePassword("", isCreateAccount = false))
-        assertNotNull(FeeloraAuthValidator.validatePassword("12345", isCreateAccount = true))
-        assertEquals(null, FeeloraAuthValidator.validatePassword("123456", isCreateAccount = true))
-        assertEquals(null, FeeloraAuthValidator.validatePassword("pass", isCreateAccount = false))
+        assertEquals("Friend", FeeloraAuthValidator.resolveDisplayName("   "))
+        assertEquals("Malkin", FeeloraAuthValidator.resolveDisplayName("  Malkin  "))
 
         val chime = FeeloraOpeningChimePlayer.buildAmbientChimeWav()
         val sparkle = FeeloraOpeningChimePlayer.buildSparkleTapWav()

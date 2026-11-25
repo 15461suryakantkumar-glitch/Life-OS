@@ -542,7 +542,7 @@ fun FeeloraBrandMark(
                     colors = if (tokens.isDark) {
                         listOf(tokens.surfaceElevated, tokens.surfaceCard)
                     } else {
-                        listOf(Color(0xFFFAF7F0), tokens.surfaceHighlight)
+                        listOf(Color.White, tokens.surfaceHighlight)
                     }
                 )
             )
@@ -587,11 +587,11 @@ fun FeeloraBrandLockup(
         ) {
             FeeloraBrandMark(size = emblemSize, withSoftFrame = true)
             Text(
-                text = "FEELORA",
-                fontFamily = CormorantGaramondFamily,
+                text = "Feelora",
+                fontFamily = OutfitFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 30.sp,
-                letterSpacing = 3.2.sp,
+                letterSpacing = (-0.3).sp,
                 color = tokens.inkPrimary
             )
             if (showTagline) {
@@ -611,11 +611,11 @@ fun FeeloraBrandLockup(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
-                    text = "FEELORA",
-                    fontFamily = CormorantGaramondFamily,
+                    text = "Feelora",
+                    fontFamily = OutfitFontFamily,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
-                    letterSpacing = 2.2.sp,
+                    letterSpacing = (-0.2).sp,
                     color = tokens.inkPrimary
                 )
                 if (showTagline) {

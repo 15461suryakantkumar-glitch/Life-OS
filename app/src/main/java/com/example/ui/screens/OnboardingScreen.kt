@@ -190,7 +190,24 @@ fun OnboardingScreen(
                         .testTag("onboarding_page_$pageIdx"),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(Modifier.weight(0.28f))
+                    Spacer(Modifier.weight(0.14f))
+
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.14f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        modifier = Modifier.testTag("onboarding_step_badge")
+                    ) {
+                        Text(
+                            text = "${slide.pageNumber} / ${FeeloraOnboardingSlides.size}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.weight(0.14f))
 
                     OnboardingSlidePedestalIllustration(
                         pageIndex = pageIdx,

@@ -8,33 +8,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val CormorantGaramondFamily = FontFamily(
-    Font(R.font.cormorant_garamond, FontWeight.Normal),
-    Font(R.font.cormorant_garamond, FontWeight.Medium),
-    Font(R.font.cormorant_garamond, FontWeight.SemiBold),
-    Font(R.font.cormorant_garamond, FontWeight.Bold)
-)
-
-val PlusJakartaSansFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
-)
-
-val SpaceGroteskFamily = FontFamily(
-    Font(R.font.space_grotesk, FontWeight.Normal),
-    Font(R.font.space_grotesk, FontWeight.Medium),
-    Font(R.font.space_grotesk, FontWeight.SemiBold),
-    Font(R.font.space_grotesk, FontWeight.Bold)
-)
-
-val ManropeFamily = FontFamily(
-    Font(R.font.manrope, FontWeight.Normal),
-    Font(R.font.manrope, FontWeight.Medium),
-    Font(R.font.manrope, FontWeight.SemiBold),
-    Font(R.font.manrope, FontWeight.Bold)
-)
+// Kept for backward compatibility across any secondary references; primary UI hierarchy uses clean SansSerif + tabular numerals
+val CormorantGaramondFamily = FontFamily.SansSerif
+val PlusJakartaSansFamily = FontFamily.SansSerif
+val SpaceGroteskFamily = FontFamily.SansSerif
+val ManropeFamily = FontFamily.SansSerif
+val OutfitFontFamily = FontFamily.SansSerif
 
 val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Normal),
@@ -42,14 +21,7 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
-val OutfitFontFamily = FontFamily(
-    Font(R.font.outfit, FontWeight.Normal),
-    Font(R.font.outfit, FontWeight.Medium),
-    Font(R.font.outfit, FontWeight.SemiBold),
-    Font(R.font.outfit, FontWeight.Bold),
-    Font(R.font.outfit, FontWeight.ExtraBold)
-)
-
+// Expressive handwritten/script accent reserved strictly for emotional taglines and warm greetings
 val CaveatFontFamily = FontFamily(
     Font(R.font.caveat, FontWeight.Normal),
     Font(R.font.caveat, FontWeight.Medium),
@@ -59,126 +31,130 @@ val CaveatFontFamily = FontFamily(
 
 val FeeloraTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = CormorantGaramondFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 36.sp,
-        lineHeight = 42.sp,
+        fontSize = 34.sp,
+        lineHeight = 40.sp,
         letterSpacing = (-0.5).sp
     ),
     displayMedium = TextStyle(
-        fontFamily = CormorantGaramondFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 30.sp,
-        lineHeight = 36.sp,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         letterSpacing = (-0.3).sp
     ),
     headlineLarge = TextStyle(
-        fontFamily = CormorantGaramondFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
         letterSpacing = (-0.2).sp
     ),
     headlineMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 19.sp,
         lineHeight = 25.sp,
         letterSpacing = (-0.15).sp
     ),
     titleLarge = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 17.sp,
         lineHeight = 23.sp,
         letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 15.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.05.sp
     ),
     titleSmall = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.5.sp,
         lineHeight = 18.sp,
         letterSpacing = 0.1.sp
     ),
     bodyLarge = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 15.sp,
         lineHeight = 22.sp,
         letterSpacing = 0.1.sp
     ),
     bodyMedium = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 13.5.sp,
         lineHeight = 20.sp,
         letterSpacing = 0.12.sp
     ),
     bodySmall = TextStyle(
-        fontFamily = ManropeFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 17.sp,
-        letterSpacing = 0.18.sp
+        letterSpacing = 0.15.sp
     ),
     labelLarge = TextStyle(
-        fontFamily = PlusJakartaSansFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 12.5.sp,
+        fontSize = 13.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.3.sp
+        letterSpacing = 0.2.sp
     ),
     labelMedium = TextStyle(
-        fontFamily = ManropeFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 11.5.sp,
         lineHeight = 15.sp,
-        letterSpacing = 0.35.sp
+        letterSpacing = 0.25.sp
     ),
     labelSmall = TextStyle(
-        fontFamily = JetBrainsMonoFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 10.5.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.35.sp
+        letterSpacing = 0.25.sp,
+        fontFeatureSettings = "tnum"
     )
 )
 
 object FeeloraTypeHelpers {
     val editorialDisplay = TextStyle(
-        fontFamily = CormorantGaramondFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 33.sp,
+        fontSize = 26.sp,
+        lineHeight = 32.sp,
         letterSpacing = (-0.25).sp
     )
     val statNumber = TextStyle(
-        fontFamily = SpaceGroteskFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         lineHeight = 26.sp,
-        letterSpacing = (-0.4).sp
+        letterSpacing = (-0.3).sp,
+        fontFeatureSettings = "tnum"
     )
     val timerDisplay = TextStyle(
-        fontFamily = JetBrainsMonoFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
         fontSize = 36.sp,
         lineHeight = 42.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.2.sp,
+        fontFeatureSettings = "tnum"
     )
     val editorialTag = TextStyle(
-        fontFamily = SpaceGroteskFamily,
+        fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
         fontSize = 11.sp,
         lineHeight = 14.sp,
-        letterSpacing = 0.9.sp
+        letterSpacing = 0.8.sp,
+        fontFeatureSettings = "tnum"
     )
     val editorialEyebrow = editorialTag
     val numericDisplay = statNumber

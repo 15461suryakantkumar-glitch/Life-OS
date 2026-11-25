@@ -77,6 +77,7 @@ import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
+import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
@@ -216,21 +217,27 @@ fun ProfileScreen(
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = prefs.userName.ifBlank { "Explorer" },
+                                text = prefs.userName.ifBlank { "Friend" },
                                 style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
                                 color = tokens.inkPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${prefs.userHandle.ifBlank { "@explorer" }} · Level ${prefs.level} (${prefs.totalXp} XP)",
+                                text = "${prefs.userHandle.ifBlank { "@friend" }} · Offline Local Profile",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary,
+                                color = tokens.primary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            Spacer(Modifier.height(4.dp))
+                            StatusPill(
+                                text = "Stored locally on device",
+                                color = EmeraldSuccess
+                            )
                             if (prefs.userBio.isNotBlank()) {
-                                Spacer(Modifier.height(2.dp))
+                                Spacer(Modifier.height(4.dp))
                                 Text(
                                     text = prefs.userBio,
                                     style = MaterialTheme.typography.bodySmall,
@@ -239,6 +246,30 @@ fun ProfileScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(tokens.smallRadius))
+                            .background(tokens.surfaceBase.copy(alpha = 0.72f))
+                            .border(1.dp, tokens.borderSubtle, RoundedCornerShape(tokens.smallRadius))
+                            .padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${prefs.level}", style = FeeloraTypeHelpers.statNumber, color = tokens.inkPrimary)
+                            Text("Level", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${prefs.dailyStreak}d", style = FeeloraTypeHelpers.statNumber, color = tokens.primary)
+                            Text("Streak", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${prefs.totalXp}", style = FeeloraTypeHelpers.statNumber, color = EmeraldSuccess)
+                            Text("XP", style = MaterialTheme.typography.labelSmall, color = tokens.inkSecondary)
                         }
                     }
 

@@ -24,9 +24,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.NotificationsNone
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -94,7 +96,10 @@ fun FeeloraTopHeader(
     avatarPreset: UserAvatarPreset = UserAvatarPreset.STAR_BUNNY,
     avatarUri: String? = null,
     unreadNotifications: Int = 0,
+    streakDays: Int = 0,
     onOpenDrawer: (() -> Unit)? = null,
+    onOpenKutta: (() -> Unit)? = null,
+    onOpenWellness: (() -> Unit)? = null,
     onOpenNotifications: (() -> Unit)? = null,
     onOpenProfile: (() -> Unit)? = null,
     trailingAction: (@Composable () -> Unit)? = null
@@ -119,15 +124,35 @@ fun FeeloraTopHeader(
                     tint = tokens.inkPrimary
                 )
             }
+        } else {
+            Spacer(Modifier.width(4.dp))
         }
-        Column(modifier = Modifier.weight(1f).padding(start = if (onOpenDrawer == null) 4.dp else 2.dp)) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge,
-                color = tokens.inkPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        FeeloraHeartEmblem(
+            size = 28.dp,
+            glowIntensity = 0.7f
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = tokens.inkPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (streakDays > 0) {
+                    AnimatedStreakPill(
+                        streakDays = streakDays,
+                        label = "${streakDays}d"
+                    )
+                }
+            }
             if (!subtitle.isNullOrBlank()) {
                 Text(
                     text = subtitle,
@@ -136,6 +161,48 @@ fun FeeloraTopHeader(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+        }
+        if (onOpenKutta != null) {
+            Surface(
+                onClick = onOpenKutta,
+                shape = CircleShape,
+                color = tokens.surfaceHighlight.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, tokens.borderSubtle),
+                modifier = Modifier
+                    .padding(end = 4.dp)
+                    .size(38.dp)
+                    .testTag("top_bar_kutta_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.Pets,
+                        contentDescription = "Open KUTTA Companion",
+                        tint = tokens.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+        if (onOpenWellness != null) {
+            Surface(
+                onClick = onOpenWellness,
+                shape = CircleShape,
+                color = tokens.surfaceHighlight.copy(alpha = 0.75f),
+                border = BorderStroke(1.dp, tokens.borderSubtle),
+                modifier = Modifier
+                    .padding(end = 2.dp)
+                    .size(38.dp)
+                    .testTag("top_bar_wellness_btn")
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Filled.FavoriteBorder,
+                        contentDescription = "Open Wellness",
+                        tint = tokens.secondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
         if (trailingAction != null) {
@@ -161,7 +228,7 @@ fun FeeloraTopHeader(
                             .padding(top = 8.dp, end = 8.dp)
                             .size(16.dp)
                             .clip(CircleShape)
-                            .background(tokens.deepPrimary),
+                            .background(tokens.primary),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(

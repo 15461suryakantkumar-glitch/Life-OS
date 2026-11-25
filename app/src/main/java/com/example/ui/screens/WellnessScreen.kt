@@ -67,11 +67,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.local.AndroidUsageStatsBridge
 import com.example.data.local.AppUsageCategory
 import com.example.data.local.AppUsageLogEntity
@@ -94,11 +97,19 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusPill
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
+import com.example.ui.theme.FeeloraTypeHelpers
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import com.example.ui.viewmodel.LifeOsUiState
 import com.example.util.CycleCareAnalyzer
 import com.example.util.DateTimeUtils
+
+private enum class WellnessFocusTab(val label: String) {
+    ALL("All"),
+    WATER("Water"),
+    MOOD("Mood"),
+    SCREEN("Screen")
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -124,6 +135,7 @@ fun WellnessScreen(
     val tokens = LifeOsThemeTokensProvider.current
     val context = LocalContext.current
     var showLogDialog by remember { mutableStateOf(false) }
+    var activeTab by remember { mutableStateOf(WellnessFocusTab.ALL) }
 
     val today = state.todayEpochDay
     val todayLogs = state.todayUsageLogs
@@ -171,12 +183,13 @@ fun WellnessScreen(
             ) {
                 item {
                     FeeloraTopHeader(
-                        title = "Wellness OS",
-                        subtitle = "Hydration, Check-Ins, Digital Wellbeing & Cycle Care",
+                        title = "Wellness",
+                        subtitle = "Hydration, Mood, Screen Time & Private Cycle Care",
                         userName = state.prefs.userName,
                         avatarPreset = state.prefs.avatarPreset,
                         avatarUri = state.prefs.avatarPhotoUri,
                         unreadNotifications = state.unreadNotificationsCount,
+                        streakDays = state.prefs.dailyStreak,
                         onOpenDrawer = onOpenDrawer,
                         onOpenNotifications = onOpenNotifications,
                         onOpenProfile = onOpenProfile,
@@ -194,19 +207,33 @@ fun WellnessScreen(
                     )
                 }
 
-                // 1. Water Tracker
+                item {
+                    FeeloraSegmentedRow(
+                        items = WellnessFocusTab.entries,
+                        selectedItem = activeTab,
+                        labelFor = { it.label },
+                        onSelect = { activeTab = it },
+                        tagPrefix = "wellness_focus_tab"
+                    )
+                }
+
+                // 1. Water Tracker (Circular Progress Gauge matching 18894.png)
+                if (activeTab == WellnessFocusTab.ALL || activeTab == WellnessFocusTab.WATER) {
                 item {
                     val waterMl = state.prefs.waterIntakeMlToday
                     val waterGoal = state.prefs.dailyWaterGoalMl.coerceAtLeast(500)
                     val waterRatio = (waterMl.toFloat() / waterGoal).coerceIn(0f, 1f)
+                    val goalDisplay = if (waterGoal % 1000 == 0) "${waterGoal / 1000}L" else "${waterGoal}ml"
+                    val trackColor = tokens.borderSubtle
+                    val ringPrimary = MaterialTheme.colorScheme.primary
+                    val ringSecondary = MaterialTheme.colorScheme.secondary
                     val waterVisual = remember(state.kuttaState, waterMl, waterGoal) {
                         if (state.kuttaState.isWaterHighlight) state.kuttaState
                         else if (waterMl >= waterGoal) KuttaEventHandler.stateForEvent(KuttaEvent.WaterLogged(waterMl, waterGoal), dialogueIndex = 0)
                         else KuttaEventHandler.stateForEvent(KuttaEvent.WaterReminder, dialogueIndex = 0)
                     }
-                    ObsidianCard(
-                        modifier = Modifier.testTag("wellness_water_card"),
-                        borderColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.45f)
+                    GradientGlowCard(
+                        modifier = Modifier.testTag("wellness_water_card")
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -214,20 +241,73 @@ fun WellnessScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                                Icon(Icons.Filled.WaterDrop, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(8.dp))
                                 Column {
                                     Text("Water Tracker", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                                    Text("$waterMl / $waterGoal ml today", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    Text(
+                                        "$waterMl / $waterGoal ml today",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                        color = tokens.inkSecondary
+                                    )
                                 }
                             }
-                            StatusPill(text = "${(waterRatio * 100).toInt()}%", color = MaterialTheme.colorScheme.secondary)
+                            StatusPill(text = "${(waterRatio * 100).toInt()}%", color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier.size(154.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Canvas(modifier = Modifier.size(148.dp)) {
+                                    val stroke = 13.dp.toPx()
+                                    drawArc(
+                                        color = trackColor,
+                                        startAngle = -90f,
+                                        sweepAngle = 360f,
+                                        useCenter = false,
+                                        topLeft = Offset(stroke / 2, stroke / 2),
+                                        size = Size(size.width - stroke, size.height - stroke),
+                                        style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                    )
+                                    drawArc(
+                                        brush = Brush.sweepGradient(listOf(ringPrimary, ringSecondary, ringPrimary)),
+                                        startAngle = -90f,
+                                        sweepAngle = (waterRatio * 360f).coerceAtLeast(8f),
+                                        useCenter = false,
+                                        topLeft = Offset(stroke / 2, stroke / 2),
+                                        size = Size(size.width - stroke, size.height - stroke),
+                                        style = Stroke(width = stroke, cap = StrokeCap.Round)
+                                    )
+                                }
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "$waterMl ml",
+                                        style = FeeloraTypeHelpers.statNumber.copy(fontFeatureSettings = "tnum"),
+                                        color = tokens.inkPrimary
+                                    )
+                                    Text(
+                                        text = "of $goalDisplay",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                        color = tokens.inkSecondary
+                                    )
+                                }
+                            }
                         }
                         Spacer(Modifier.height(8.dp))
-                        NeonProgressBar(progress = waterRatio, heightDp = 7)
+                        Text(
+                            text = if (waterMl >= waterGoal) "Hydration goal reached!" else "Keep going!",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
+                        )
                         Spacer(Modifier.height(10.dp))
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            KuttaMascot(visualState = waterVisual, size = 70.dp)
+                            KuttaMascot(visualState = waterVisual, size = 66.dp)
                             Spacer(Modifier.width(8.dp))
                             KuttaDialogueBubble(message = waterVisual.dialogue, emotion = waterVisual.emotion, modifier = Modifier.weight(1f))
                         }
@@ -236,17 +316,17 @@ fun WellnessScreen(
                             FilledTonalButton(
                                 onClick = { onLogWater(250) },
                                 contentPadding = PaddingValues(horizontal = 10.dp),
-                                modifier = Modifier.weight(1f).height(40.dp).testTag("water_add_250_btn")
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("water_add_250_btn")
                             ) { Text("+250ml", maxLines = 1, softWrap = false) }
                             FilledTonalButton(
                                 onClick = { onLogWater(500) },
                                 contentPadding = PaddingValues(horizontal = 10.dp),
-                                modifier = Modifier.weight(1f).height(40.dp).testTag("water_add_500_btn")
+                                modifier = Modifier.weight(1f).height(44.dp).testTag("water_add_500_btn")
                             ) { Text("+500ml", maxLines = 1, softWrap = false) }
                             OutlinedButton(
                                 onClick = onTriggerWaterReminder,
                                 contentPadding = PaddingValues(horizontal = 10.dp),
-                                modifier = Modifier.height(40.dp).testTag("water_remind_btn")
+                                modifier = Modifier.height(44.dp).testTag("water_remind_btn")
                             ) {
                                 Icon(Icons.Filled.NotificationsActive, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(Modifier.width(4.dp))
@@ -255,8 +335,10 @@ fun WellnessScreen(
                         }
                     }
                 }
+                }
 
-                // 2. Daily Check-In
+                // 2. Daily Check-In (Mood Today)
+                if (activeTab == WellnessFocusTab.ALL || activeTab == WellnessFocusTab.MOOD) {
                 item {
                     val existingCheckIn = state.todayCheckIn
                     var selectedMood by remember(existingCheckIn?.moodScore) { mutableIntStateOf(existingCheckIn?.moodScore ?: 4) }
@@ -269,17 +351,49 @@ fun WellnessScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text("Daily Check-In", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                Text("Mood Today", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
                                 Text("Private mood & energy check-in (device only)", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                             }
                             if (existingCheckIn != null) StatusPill(text = "Logged", color = EmeraldSuccess)
                         }
                         Spacer(Modifier.height(10.dp))
-                        Text("Mood", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
-                        Spacer(Modifier.height(4.dp))
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(1 to "Low", 2 to "Tired", 3 to "Okay", 4 to "Good", 5 to "Great").forEach { (score, label) ->
-                                FilterChip(selected = selectedMood == score, onClick = { selectedMood = score }, label = { Text(label, maxLines = 1, softWrap = false) })
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                Triple(1, "😞", "Low"),
+                                Triple(2, "😴", "Tired"),
+                                Triple(3, "😐", "Okay"),
+                                Triple(4, "🙂", "Good"),
+                                Triple(5, "😄", "Great")
+                            ).forEach { (score, emoji, label) ->
+                                val selected = selectedMood == score
+                                Surface(
+                                    onClick = { selectedMood = score },
+                                    shape = RoundedCornerShape(tokens.smallRadius),
+                                    color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else tokens.surfaceElevated,
+                                    border = BorderStroke(
+                                        1.dp,
+                                        if (selected) MaterialTheme.colorScheme.primary else tokens.borderSubtle
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(emoji, fontSize = 20.sp)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (selected) MaterialTheme.colorScheme.primary else tokens.inkSecondary,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                }
                             }
                         }
                         Spacer(Modifier.height(8.dp))
@@ -301,15 +415,16 @@ fun WellnessScreen(
                         Spacer(Modifier.height(10.dp))
                         Button(
                             onClick = { onSubmitCheckIn(selectedMood, selectedEnergy, checkInNote) },
-                            modifier = Modifier.fillMaxWidth().height(42.dp).testTag("checkin_submit_btn")
+                            modifier = Modifier.fillMaxWidth().height(44.dp).testTag("checkin_submit_btn")
                         ) {
                             Text(if (existingCheckIn == null) "Save Daily Check-In" else "Update Check-In", maxLines = 1, softWrap = false)
                         }
                     }
                 }
+                }
 
                 // 3. Strictly Local Private Cycle Care Card
-                if (state.prefs.cycleCareEnabled) {
+                if (state.prefs.cycleCareEnabled && (activeTab == WellnessFocusTab.ALL || activeTab == WellnessFocusTab.MOOD)) {
                     item {
                         val summary = state.cycleSummary
                         var selectedFlow by remember { mutableStateOf(summary.latestCycleLog?.flowLevel ?: "Medium") }
@@ -454,6 +569,7 @@ fun WellnessScreen(
                 }
 
                 // 4. Authentic Digital Wellbeing Section (Range Switcher + 4 Explicit Telemetry States)
+                if (activeTab == WellnessFocusTab.ALL || activeTab == WellnessFocusTab.SCREEN) {
                 item {
                     SectionHeader(title = "Digital Wellbeing", subtitle = "Authentic UsageStatsManager telemetry")
                 }
@@ -524,7 +640,7 @@ fun WellnessScreen(
                                 Text("${state.wellbeingRange.label} Screen Time", style = MaterialTheme.typography.labelMedium, color = tokens.inkSecondary)
                                 Text(
                                     text = DateTimeUtils.formatMinutesCompact(displayTotal),
-                                    style = MaterialTheme.typography.displayMedium,
+                                    style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"),
                                     color = tokens.inkPrimary
                                 )
                             }
@@ -695,6 +811,8 @@ fun WellnessScreen(
                             }
                         }
                     }
+                }
+
                 }
 
                 item { Spacer(Modifier.height(72.dp)) }

@@ -486,7 +486,7 @@ fun OpeningSplashScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            // Subtle "Sign in" button below
+            // Subtle "Local Profile" button below
             Box(
                 modifier = Modifier
                     .minimumInteractiveComponentSize()
@@ -500,7 +500,7 @@ fun OpeningSplashScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Sign in",
+                    text = "Local Profile",
                     fontFamily = OutfitFontFamily,
                     fontWeight = FontWeight.Medium,
                     fontSize = 15.sp,

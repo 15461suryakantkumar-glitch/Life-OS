@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -123,6 +124,8 @@ fun TasksScreen(
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     var viewMode by remember { mutableStateOf("ALL") } // ALL | DAILY | WEEKLY
+    var showSearchBar by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var showSectionCreator by remember { mutableStateOf(false) }
     var newSectionName by remember { mutableStateOf("") }
     var activeInlineSectionId by remember { mutableStateOf<Long?>(null) }
@@ -151,13 +154,18 @@ fun TasksScreen(
     }
 
     val today = state.todayEpochDay
-    val filteredTasks = remember(state.tasks, viewMode, today) {
+    val filteredTasks = remember(state.tasks, viewMode, today, searchQuery) {
+        val q = searchQuery.trim().lowercase()
         state.tasks.filter { task ->
-            when (viewMode) {
+            val modeOk = when (viewMode) {
                 "DAILY" -> task.deadlineEpochDay <= today
                 "WEEKLY" -> task.deadlineEpochDay <= today + 7
                 else -> true
             }
+            val queryOk = q.isEmpty() ||
+                task.title.lowercase().contains(q) ||
+                task.description.lowercase().contains(q)
+            modeOk && queryOk
         }
     }
 
@@ -194,10 +202,50 @@ fun TasksScreen(
                     avatarPreset = state.prefs.avatarPreset,
                     avatarUri = state.prefs.avatarPhotoUri,
                     unreadNotifications = state.unreadNotificationsCount,
+                    streakDays = state.prefs.dailyStreak,
                     onOpenDrawer = onOpenDrawer,
                     onOpenNotifications = onOpenNotifications,
-                    onOpenProfile = onOpenProfile
+                    onOpenProfile = onOpenProfile,
+                    trailingAction = {
+                        IconButton(
+                            onClick = {
+                                showSearchBar = !showSearchBar
+                                if (!showSearchBar) searchQuery = ""
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("tasks_search_btn")
+                        ) {
+                            Icon(
+                                imageVector = if (showSearchBar) Icons.Filled.Close else Icons.Filled.Search,
+                                contentDescription = if (showSearchBar) "Close search" else "Search tasks",
+                                tint = tokens.inkPrimary
+                            )
+                        }
+                    }
                 )
+            }
+
+            item {
+                AnimatedVisibility(visible = showSearchBar) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = { Text("Search tasks...") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("tasks_search_input")
+                    )
+                }
             }
 
             // Action Bar: SURU Backlog Recovery & New Section Trigger
@@ -357,7 +405,7 @@ fun TasksScreen(
                         }
                         Text(
                             text = "${(progress * 100).toInt()}%",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
                             color = MaterialTheme.colorScheme.secondary,
                             fontWeight = FontWeight.Bold
                         )
@@ -377,8 +425,8 @@ fun TasksScreen(
                         labelFor = {
                             when (it) {
                                 "DAILY" -> "Today"
-                                "WEEKLY" -> "7 Days"
-                                else -> "All Tasks"
+                                "WEEKLY" -> "Upcoming"
+                                else -> "All"
                             }
                         },
                         onSelect = { viewMode = it },
@@ -405,6 +453,7 @@ fun TasksScreen(
                     TaskSectionCard(
                         title = section.name,
                         tasks = sectionTasks,
+                        todayEpochDay = today,
                         isInlineAdding = activeInlineSectionId == section.id,
                         onStartInlineAdd = { activeInlineSectionId = section.id },
                         onCloseInlineAdd = { activeInlineSectionId = null },
@@ -430,6 +479,7 @@ fun TasksScreen(
                         TaskSectionCard(
                             title = "General",
                             tasks = ungroupedTasks,
+                            todayEpochDay = today,
                             isInlineAdding = activeInlineSectionId == 0L,
                             onStartInlineAdd = { activeInlineSectionId = 0L },
                             onCloseInlineAdd = { activeInlineSectionId = null },
@@ -442,6 +492,30 @@ fun TasksScreen(
                             sectionTag = "section_card_general"
                         )
                     }
+                }
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        val targetId = state.taskSections.firstOrNull()?.id
+                        if (targetId != null) {
+                            activeInlineSectionId = targetId
+                        } else if (ungroupedTasks.isNotEmpty()) {
+                            activeInlineSectionId = 0L
+                        } else {
+                            showSectionCreator = true
+                        }
+                    },
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 50.dp)
+                        .testTag("tasks_add_task_pill_btn")
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Add Task", style = MaterialTheme.typography.titleSmall)
                 }
             }
 
@@ -530,6 +604,7 @@ fun TasksScreen(
 private fun TaskSectionCard(
     title: String,
     tasks: List<TaskEntity>,
+    todayEpochDay: Long,
     isInlineAdding: Boolean,
     onStartInlineAdd: () -> Unit,
     onCloseInlineAdd: () -> Unit,
@@ -617,6 +692,7 @@ private fun TaskSectionCard(
                 tasks.forEach { task ->
                     SectionTaskRow(
                         task = task,
+                        todayEpochDay = todayEpochDay,
                         onToggle = { onToggleTask(task) },
                         onEdit = { onEditTask(task) },
                         onDelete = { onDeleteTask(task) }
@@ -712,6 +788,7 @@ private fun TaskSectionCard(
 @Composable
 private fun SectionTaskRow(
     task: TaskEntity,
+    todayEpochDay: Long,
     onToggle: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
@@ -735,6 +812,13 @@ private fun SectionTaskRow(
         animationSpec = tween(220),
         label = "sec_task_alpha"
     )
+
+    val dayLabel = when {
+        task.deadlineEpochDay < todayEpochDay -> "Overdue"
+        task.deadlineEpochDay == todayEpochDay -> "Today"
+        task.deadlineEpochDay == todayEpochDay + 1 -> "Tomorrow"
+        else -> "Upcoming"
+    }
 
     Row(
         modifier = Modifier
@@ -769,25 +853,28 @@ private fun SectionTaskRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            if (task.description.isNotBlank() || task.distractionMinutes > 0 || task.focusMinutesSpent > 0) {
-                val meta = buildList {
-                    if (task.description.isNotBlank()) add(task.description)
-                    if (task.focusMinutesSpent > 0) add("${task.focusMinutesSpent}m focused")
-                    if (task.distractionMinutes > 0) add("${task.distractionMinutes}m distracted")
-                }.joinToString(" · ")
-                Text(
-                    text = meta,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (task.distractionMinutes > 0) RoseAlert else tokens.inkSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            val meta = buildList {
+                add("$dayLabel · ${task.priority.label}")
+                if (task.description.isNotBlank()) add(task.description)
+                if (task.focusMinutesSpent > 0) add("${task.focusMinutesSpent}m focused")
+                if (task.distractionMinutes > 0) add("${task.distractionMinutes}m distracted")
+            }.joinToString(" · ")
+            Text(
+                text = meta,
+                style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                color = when {
+                    task.distractionMinutes > 0 || task.deadlineEpochDay < todayEpochDay && !task.isCompleted -> RoseAlert
+                    task.priority == TaskPriority.HIGH && !task.isCompleted -> MaterialTheme.colorScheme.primary
+                    else -> tokens.inkSecondary
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         Spacer(Modifier.width(4.dp))
         Text(
             text = if (task.xpAwarded) "Claimed" else "+${task.xpReward}XP",
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
             color = if (task.xpAwarded) tokens.inkMuted else EmeraldSuccess,
             maxLines = 1,
             softWrap = false

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -76,6 +79,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.local.SuruMemoryEntity
@@ -93,6 +97,7 @@ import com.example.ui.components.FeeloraScreenBackdrop
 import com.example.ui.components.GradientGlowCard
 import com.example.ui.components.ObsidianCard
 import com.example.ui.components.StatusPill
+import com.example.ui.theme.CaveatFontFamily
 import com.example.ui.theme.EmeraldSuccess
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
@@ -195,11 +200,18 @@ fun LifeAiScreen(
     }
 
     val quickPrompts = listOf(
+        "Create a study plan",
+        "Add a task",
+        "Plan my day",
+        "Explain this topic",
         "Suru, mujhe agle 5 din mein Physics ke 3 chapters complete karne hain",
-        "Plan my entire week",
-        "Move today's tasks to tomorrow",
-        "Summarize my progress this month",
-        "What should I focus on today?"
+        "Summarize my progress this month"
+    )
+    val boardHeroPrompts = listOf(
+        "Create a study plan",
+        "Add a task",
+        "Plan my day",
+        "Explain this topic"
     )
 
     LaunchedEffect(state.aiMessages.size) {
@@ -370,18 +382,60 @@ fun LifeAiScreen(
                         if (state.aiMessages.isEmpty()) {
                             item {
                                 GradientGlowCard(modifier = Modifier.testTag("ai_empty_hero")) {
-                                    Text("Hi ${state.prefs.userName.ifBlank { "Friend" }}, I'm SURU", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(
-                                        text = "Speak or type naturally in English, Hindi, or Hinglish to plan your day, organize tasks, or study calmly.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = tokens.inkSecondary
-                                    )
-                                    Spacer(Modifier.height(10.dp))
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        quickPrompts.take(3).forEach { cmd ->
-                                            OutlinedButton(onClick = { onSendPrompt(cmd) }, modifier = Modifier.fillMaxWidth()) {
-                                                Text(cmd, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        SuruMascot(
+                                            state = state.suruMascotState,
+                                            size = 86.dp,
+                                            onClick = { if (state.suruVoiceState == SuruVoiceState.SPEAKING) onStopSpeaking() }
+                                        )
+                                        Spacer(Modifier.height(10.dp))
+                                        Text(
+                                            text = "How can I help you today?",
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = tokens.inkPrimary
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = "Hi ${state.prefs.userName.ifBlank { "Friend" }} · English, Hindi & Hinglish ♡",
+                                            fontFamily = CaveatFontFamily,
+                                            fontSize = 19.sp,
+                                            color = tokens.primary
+                                        )
+                                    }
+                                    Spacer(Modifier.height(14.dp))
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        boardHeroPrompts.forEach { cmd ->
+                                            Surface(
+                                                onClick = { onSendPrompt(cmd) },
+                                                enabled = !state.isAiLoading,
+                                                shape = RoundedCornerShape(tokens.smallRadius),
+                                                color = tokens.surfaceCard,
+                                                border = BorderStroke(1.dp, tokens.borderSubtle),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.AutoAwesome,
+                                                        contentDescription = null,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(Modifier.width(10.dp))
+                                                    Text(
+                                                        text = cmd,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = tokens.inkPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -577,7 +631,8 @@ fun LifeAiScreen(
                             value = input,
                             onValueChange = { input = it },
                             modifier = Modifier.weight(1f).testTag("ai_prompt_input"),
-                            placeholder = { Text(if (state.pendingSuruImage != null) "Ask about this photo..." else "Ask SURU (English / Hinglish)...") },
+                            placeholder = { Text(if (state.pendingSuruImage != null) "Ask about this photo..." else "Ask anything...") },
+                            shape = RoundedCornerShape(24.dp),
                             maxLines = 3,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedContainerColor = tokens.surfaceCard,
@@ -598,6 +653,7 @@ fun LifeAiScreen(
                                 }
                             },
                             enabled = (input.isNotBlank() || state.pendingSuruImage != null) && !state.isAiLoading,
+                            shape = CircleShape,
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = MaterialTheme.colorScheme.onPrimary

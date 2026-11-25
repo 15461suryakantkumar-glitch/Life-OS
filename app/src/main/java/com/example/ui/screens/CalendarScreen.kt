@@ -38,8 +38,8 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -122,14 +122,15 @@ fun CalendarScreen(
     Scaffold(
         containerColor = Color.Transparent,
         floatingActionButton = {
-            FloatingActionButton(
+            ExtendedFloatingActionButton(
                 onClick = { showCreateDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.White,
+                shape = CircleShape,
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Add Event") },
                 modifier = Modifier.testTag("add_event_fab")
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "Create Event or Countdown")
-            }
+            )
         }
     ) { innerPadding ->
         FeeloraScreenBackdrop(
@@ -152,6 +153,7 @@ fun CalendarScreen(
                         avatarPreset = state.prefs.avatarPreset,
                         avatarUri = state.prefs.avatarPhotoUri,
                         unreadNotifications = state.unreadNotificationsCount,
+                        streakDays = state.prefs.dailyStreak,
                         onOpenDrawer = onOpenDrawer,
                         onOpenNotifications = onOpenNotifications,
                         onOpenProfile = onOpenProfile,
@@ -287,7 +289,7 @@ fun CalendarScreen(
                 // Selected Day Agenda
                 item {
                     SectionHeader(
-                        title = "Agenda · ${DateTimeUtils.formatFullDate(selectedEpochDay)}",
+                        title = if (selectedEpochDay == today) "Today's Events" else "Agenda · ${DateTimeUtils.formatFullDate(selectedEpochDay)}",
                         subtitle = "${selectedDayEvents.size} events · ${selectedDayTasks.size} task deadlines"
                     )
                 }
@@ -309,17 +311,18 @@ fun CalendarScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.width(68.dp)) {
+                                Column(modifier = Modifier.width(74.dp)) {
                                     Text(
                                         text = DateTimeUtils.formatTimeOfDay(event.startMinuteOfDay),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.secondary,
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         softWrap = false
                                     )
                                     Text(
                                         text = "${event.durationMinutes}m",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
                                         color = tokens.inkMuted
                                     )
                                 }
@@ -462,7 +465,7 @@ private fun MonthlyCalendarGrid(
             }
             Text(
                 text = DateTimeUtils.formatMonthYear(year, monthZeroBased),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(fontFeatureSettings = "tnum"),
                 color = tokens.inkPrimary,
                 maxLines = 1,
                 softWrap = false
@@ -500,7 +503,7 @@ private fun MonthlyCalendarGrid(
                             modifier = Modifier
                                 .weight(1f)
                                 .height(42.dp)
-                                .clip(RoundedCornerShape(tokens.smallRadius))
+                                .clip(CircleShape)
                                 .background(
                                     when {
                                         isSelected -> MaterialTheme.colorScheme.primary
@@ -510,7 +513,7 @@ private fun MonthlyCalendarGrid(
                                 )
                                 .then(
                                     if (isToday && !isSelected) {
-                                        Modifier.border(1.dp, MaterialTheme.colorScheme.secondary, RoundedCornerShape(tokens.smallRadius))
+                                        Modifier.border(1.dp, MaterialTheme.colorScheme.primary, CircleShape)
                                     } else Modifier
                                 )
                                 .clickable { onSelectDay(epoch) },
@@ -519,7 +522,7 @@ private fun MonthlyCalendarGrid(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(
                                     text = dayNum.toString(),
-                                    style = MaterialTheme.typography.labelMedium,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = "tnum"),
                                     color = if (isSelected) Color.White else tokens.inkPrimary,
                                     fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -573,7 +576,7 @@ private fun WeeklyCalendarStrip(
             ) {
                 Text(shortDay, style = MaterialTheme.typography.labelSmall, color = if (isSelected) Color.White else tokens.inkSecondary, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
-                Text(num, style = MaterialTheme.typography.titleMedium, color = if (isSelected) Color.White else tokens.inkPrimary)
+                Text(num, style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"), color = if (isSelected) Color.White else tokens.inkPrimary)
                 Spacer(Modifier.height(4.dp))
                 if (eventDays.contains(day)) {
                     Box(

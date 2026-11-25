@@ -199,10 +199,15 @@ fun CommandCenterScreen(
                 )
             }
 
-            // 1. Streak, XP & Level Hero
+            // 1. Streak, XP & Level Hero (18894.png)
             item {
                 val prefs = state.prefs
                 val xpRatio = (prefs.xpIntoCurrentLevel.toFloat() / prefs.xpPerLevel.coerceAtLeast(1)).coerceIn(0f, 1f)
+                val studyMasteryPct = if (state.studyChapters.isEmpty()) {
+                    state.productivityScore
+                } else {
+                    ((state.completedChaptersCount * 100f) / state.studyChapters.size).toInt().coerceIn(0, 100)
+                }
                 GradientGlowCard(contentPadding = PaddingValues(16.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -210,12 +215,25 @@ fun CommandCenterScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("MASTERY & STREAK", style = FeeloraTypeHelpers.editorialTag, color = tokens.deepPrimary)
+                            Text("YOU'RE ON FIRE!", style = FeeloraTypeHelpers.editorialTag, color = tokens.primary)
                             Spacer(Modifier.height(4.dp))
                             Text("Level ${prefs.level}", style = FeeloraTypeHelpers.statNumber, color = tokens.inkPrimary)
-                            Text("${prefs.totalXp} XP total · ${state.productivityScore}% consistency", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                            Text(
+                                "${prefs.dailyStreak} day streak · ${prefs.totalXp} XP total",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                                color = tokens.inkSecondary
+                            )
                         }
                         AnimatedStreakPill(streakDays = prefs.dailyStreak)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TrackStatPill("Study", "$studyMasteryPct%")
+                        TrackStatPill("Tasks", "${state.completedTasksCount}/${state.tasks.size}")
+                        TrackStatPill("XP", "${prefs.totalXp}")
                     }
                     Spacer(Modifier.height(10.dp))
                     NeonProgressBar(progress = xpRatio, heightDp = 8)
