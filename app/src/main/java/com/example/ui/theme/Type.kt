@@ -165,6 +165,8 @@ object FeeloraTypeHelpers {
         lineHeight = 14.sp,
         letterSpacing = 0.9.sp
     )
+    val editorialEyebrow = editorialTag
+    val numericDisplay = statNumber
 }
 
 val LifeOsTypography = FeeloraTypography

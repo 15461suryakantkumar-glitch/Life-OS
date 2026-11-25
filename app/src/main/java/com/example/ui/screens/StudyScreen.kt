@@ -134,6 +134,7 @@ fun StudyScreen(
     onOpenProfile: () -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
+    val defaultSubjectColor = MaterialTheme.colorScheme.primary
     var activeTab by remember { mutableStateOf(StudySubTab.OVERVIEW) }
     var selectedSubjectId by remember(state.studySubjects) {
         mutableLongStateOf(state.studySubjects.firstOrNull()?.id ?: -1L)
@@ -400,7 +401,7 @@ fun StudyScreen(
                         selectedSubject?.let { subject ->
                             val chapters = state.studyChapters.filter { it.subjectId == subject.id }
                             val progress = state.progressForSubject(subject.id)
-                            val accent = parseHexColor(subject.colorHex, MaterialTheme.colorScheme.primary)
+                            val accent = parseHexColor(subject.colorHex, defaultSubjectColor)
                             item {
                                 ObsidianCard(elevated = true, borderColor = accent.copy(alpha = 0.45f)) {
                                     Row(

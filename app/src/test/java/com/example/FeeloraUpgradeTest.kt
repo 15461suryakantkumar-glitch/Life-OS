@@ -344,7 +344,7 @@ class FeeloraUpgradeTest {
     }
 
     @Test
-    fun onboardingScreen_renders7StepFlowCleanlyWithoutKutta() {
+    fun onboardingScreen_renders7StepFlowCleanlyAcrossAllFeaturePages() {
         composeRule.setContent {
             LifeOsTheme {
                 OnboardingScreen(
@@ -353,20 +353,26 @@ class FeeloraUpgradeTest {
                 )
             }
         }
-        // Step 1: Welcome
+        // Page 0: Tasks
         composeRule.onNodeWithText("FEELORA").assertIsDisplayed()
         composeRule.onNodeWithTag("onboarding_get_started_btn").performScrollTo().assertIsDisplayed()
         assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
 
-        // Advance to Step 2: Discover FEELORA
+        // Advance through Pages 1..5 (Study, Calendar, Wellness, SURU AI, KUTTA Companion)
         composeRule.onNodeWithTag("onboarding_get_started_btn").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("onboarding_next_btn").performScrollTo().assertIsDisplayed()
-        assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+        for (pageIdx in 1..5) {
+            composeRule.onNodeWithTag("onboarding_next_btn").performScrollTo().assertIsDisplayed()
+            if (pageIdx < 5) {
+                assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+            } else {
+                composeRule.onNodeWithText("KUTTA Companion").assertIsDisplayed()
+            }
+            composeRule.onNodeWithTag("onboarding_next_btn").performClick()
+            composeRule.waitForIdle()
+        }
 
-        // Advance to Step 3: Together Introduction
-        composeRule.onNodeWithTag("onboarding_next_btn").performClick()
-        composeRule.waitForIdle()
+        // Page 6: Together One
         composeRule.onNodeWithTag("onboarding_together_next_btn").performScrollTo().assertIsDisplayed()
         assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
     }

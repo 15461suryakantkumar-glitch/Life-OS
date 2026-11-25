@@ -591,13 +591,15 @@ class ExampleUnitTest {
     }
 
     @Test
-    fun themeModes_includeThreeDistinctFeeloraThemes_withHybridLavenderDefault() {
+    fun themeModes_includeThreeDistinctFeeloraThemes_withLightEditorialDefault() {
         assertEquals(3, LifeOsThemeMode.entries.size)
-        assertEquals(2, LifeOsThemeMode.entries.count { it.isDark })
-        assertEquals(1, LifeOsThemeMode.entries.count { !it.isDark })
-        assertEquals(LifeOsThemeMode.HYBRID_LAVENDER, UserPreferencesState().themeMode)
-        assertTrue(LifeOsThemeMode.HYBRID_LAVENDER in LifeOsThemeMode.entries)
-        assertTrue(LifeOsThemeMode.MIDNIGHT_AURORA in LifeOsThemeMode.entries)
-        assertTrue(LifeOsThemeMode.MATCHA_MIST in LifeOsThemeMode.entries)
+        assertEquals(1, LifeOsThemeMode.entries.count { it.isDark })
+        assertEquals(2, LifeOsThemeMode.entries.count { !it.isDark })
+        assertEquals(LifeOsThemeMode.LIGHT, UserPreferencesState().themeMode)
+        assertTrue(LifeOsThemeMode.LIGHT in LifeOsThemeMode.entries)
+        assertTrue(LifeOsThemeMode.DARK in LifeOsThemeMode.entries)
+        assertTrue(LifeOsThemeMode.SYSTEM in LifeOsThemeMode.entries)
+        assertEquals(LifeOsThemeMode.DARK, LifeOsThemeMode.fromStored("MIDNIGHT_AURORA"))
+        assertEquals(LifeOsThemeMode.LIGHT, LifeOsThemeMode.fromStored("HYBRID_LAVENDER"))
     }
 }

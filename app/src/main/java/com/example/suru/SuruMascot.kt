@@ -43,8 +43,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.kutta.LocalReducedMotion
 import com.example.ui.theme.AmberWarning
 import com.example.ui.theme.EmeraldSuccess
-import com.example.ui.theme.HybridLavenderPrimary
-import com.example.ui.theme.HybridLavenderSecondary
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.theme.RoseAlert
 import kotlin.math.PI
@@ -132,8 +130,8 @@ fun SuruMascot(
 
     val auraColor by animateColorAsState(
         targetValue = when (state) {
-            SuruMascotState.LISTENING -> HybridLavenderSecondary
-            SuruMascotState.THINKING -> HybridLavenderPrimary
+            SuruMascotState.LISTENING -> tokens.secondary
+            SuruMascotState.THINKING -> tokens.primary
             SuruMascotState.SPEAKING -> tokens.primary
             SuruMascotState.WORKING -> tokens.secondary
             SuruMascotState.SUCCESS -> EmeraldSuccess
@@ -539,7 +537,7 @@ fun SuruMascot(
                         val dotX = cx + r * 0.56f + cos(theta) * r * 0.08f
                         val dotY = cy - r * 0.55f + sin(theta) * r * 0.06f
                         drawCircle(
-                            color = HybridLavenderPrimary.copy(alpha = 0.85f),
+                            color = tokens.primary.copy(alpha = 0.85f),
                             radius = r * (0.035f + i * 0.008f),
                             center = Offset(dotX, dotY)
                         )
@@ -563,12 +561,12 @@ fun SuruMascot(
                 SuruMascotState.SLEEPING -> {
                     val drift = sin(breathPhase) * r * 0.05f
                     drawCircle(
-                        color = HybridLavenderPrimary.copy(alpha = 0.55f),
+                        color = tokens.primary.copy(alpha = 0.55f),
                         radius = r * 0.035f,
                         center = Offset(cx + r * 0.45f, cy - r * 0.36f + drift)
                     )
                     drawCircle(
-                        color = HybridLavenderPrimary.copy(alpha = 0.75f),
+                        color = tokens.primary.copy(alpha = 0.75f),
                         radius = r * 0.052f,
                         center = Offset(cx + r * 0.58f, cy - r * 0.52f + drift)
                     )

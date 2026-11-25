@@ -109,6 +109,18 @@ object DateTimeUtils {
         return fmt.format(Date(millis))
     }
 
+    fun formatRelativeDeadline(epochDay: Long): String {
+        val diff = epochDay - todayEpochDay()
+        return when {
+            diff < -1L -> "${-diff}d overdue"
+            diff == -1L -> "Yesterday"
+            diff == 0L -> "Today"
+            diff == 1L -> "Tomorrow"
+            diff in 2L..6L -> "In ${diff}d"
+            else -> formatFullDate(epochDay)
+        }
+    }
+
     fun daysBetween(fromEpochDay: Long, toEpochDay: Long): Long = toEpochDay - fromEpochDay
 
     fun formatMinutesCompact(minutes: Int): String {

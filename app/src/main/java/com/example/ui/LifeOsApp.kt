@@ -845,6 +845,9 @@ fun LifeOsApp(
                                 state = state,
                                 onDismiss = { showSuruAiSettingsSheet = false },
                                 onUpdateGateway = viewModel::updateSuruAiGatewaySettings,
+                                onSelectProviderModel = viewModel::selectAiProviderModel,
+                                onTestConnection = viewModel::testAiProviderConnection,
+                                onRefreshModels = viewModel::refreshAiProviderModels,
                                 onUpdateVoice = viewModel::updateSuruVoiceSettings
                             )
                         }

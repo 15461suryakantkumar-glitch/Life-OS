@@ -1,7 +1,6 @@
 package com.example.suru
 
 import android.content.Context
-import com.example.BuildConfig
 import com.example.data.local.AiProviderUsageEntity
 import com.example.data.local.LifeOsDatabase
 import com.example.data.local.UserPreferencesState
@@ -11,6 +10,16 @@ import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.content
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okhttp3.MediaType.Companion.toMediaType
@@ -21,126 +30,159 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-enum class SuruAiProvider(
-    val displayName: String,
-    val shortName: String,
-    val models: List<String>,
-    val supportsVision: Boolean
+class SuruAiGateway(
+    private val appContext: Context,
+    private val httpClient: OkHttpClient = defaultOkHttpClient(),
+    private val credentialProvider: AiCredentialProvider = BuildConfigAiCredentialProvider(),
+    private val endpointConfig: AiProviderEndpointConfig = AiProviderEndpointConfig(),
+    private val modelRegistry: AiModelRegistry = AiModelRegistry(),
+    private val clockMillis: () -> Long = { System.currentTimeMillis() },
+    private val baseRetryDelayMs: Long = 350L,
+    private val maxRetryAttempts: Int = 2
 ) {
-    OPENAI(
-        displayName = "OpenAI (GPT)",
-        shortName = "GPT",
-        models = listOf("gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "o4-mini"),
-        supportsVision = true
-    ),
-    ANTHROPIC(
-        displayName = "Anthropic (Claude)",
-        shortName = "Claude",
-        models = listOf("claude-3-5-haiku-latest", "claude-sonnet-4-20250514", "claude-3-7-sonnet-latest"),
-        supportsVision = true
-    ),
-    GEMINI(
-        displayName = "Google (Gemini)",
-        shortName = "Gemini",
-        models = listOf("gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"),
-        supportsVision = true
-    ),
-    XAI(
-        displayName = "xAI (Grok)",
-        shortName = "Grok",
-        models = listOf("grok-3-mini", "grok-3"),
-        supportsVision = false
-    ),
-    DEEPSEEK(
-        displayName = "DeepSeek",
-        shortName = "DeepSeek",
-        models = listOf("deepseek-chat", "deepseek-reasoner"),
-        supportsVision = false
-    );
 
-    companion object {
-        fun fromStored(raw: String?): SuruAiProvider {
-            return entries.firstOrNull { it.name == raw } ?: GEMINI
+    private data class ProviderRuntimeRecord(
+        val liveVerifiedConnected: Boolean = false,
+        val isTesting: Boolean = false,
+        val lastConnectedAtMillis: Long? = null,
+        val lastErrorMessage: String? = null,
+        val lastErrorCategory: AiErrorCategory = AiErrorCategory.NONE
+    )
+
+    private val runtimeRecords = MutableStateFlow(
+        SuruAiProvider.entries.associateWith { ProviderRuntimeRecord() }
+    )
+    private var lastSyncedPrefs: UserPreferencesState = UserPreferencesState()
+
+    private val _diagnosticsFlow = MutableStateFlow(buildDiagnosticsSnapshot())
+    val diagnosticsFlow: StateFlow<List<ProviderDiagnostic>> = _diagnosticsFlow.asStateFlow()
+
+    fun syncPreferences(prefs: UserPreferencesState) {
+        if (lastSyncedPrefs != prefs) {
+            lastSyncedPrefs = prefs
+            refreshDiagnosticsSnapshot()
         }
     }
-}
 
-enum class ProviderConnectionStatus(val label: String, val isReady: Boolean) {
-    CONFIGURED_DIRECT("Configured", true),
-    CONFIGURED_FIREBASE("Configured (Firebase)", true),
-    CONFIGURED_PROXY("Configured (Proxy)", true),
-    CONFIGURATION_REQUIRED("Configuration Required", false)
-}
+    fun getModelRegistry(): AiModelRegistry = modelRegistry
 
-enum class SuruRoutingTaskKind {
-    CHAT,
-    PLANNING_REASONING,
-    STUDY_HELP,
-    VISION_MULTIMODAL
-}
-
-data class ProviderDiagnostic(
-    val provider: SuruAiProvider,
-    val status: ProviderConnectionStatus,
-    val detail: String
-)
-
-data class GatewayCompletionResult(
-    val rawText: String,
-    val providerUsed: SuruAiProvider,
-    val modelUsed: String,
-    val secondaryReviewedBy: String? = null,
-    val fallbackNote: String? = null
-)
-
-class SuruAiGateway(private val appContext: Context) {
-
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
-        .build()
+    fun getProviderConfigState(provider: SuruAiProvider): ProviderConfigState {
+        if (credentialProvider.getProxyUrl() != null) {
+            return ProviderConfigState.PROXY_CONFIGURED
+        }
+        if (credentialProvider.getApiKey(provider) != null) {
+            return ProviderConfigState.API_KEY_DETECTED
+        }
+        if (provider == SuruAiProvider.GEMINI && isFirebaseAvailable()) {
+            return ProviderConfigState.FIREBASE_FALLBACK_ONLY
+        }
+        return ProviderConfigState.NOT_CONFIGURED
+    }
 
     fun getProviderStatus(provider: SuruAiProvider): ProviderConnectionStatus {
-        if (configuredProxyUrl() != null) {
-            return ProviderConnectionStatus.CONFIGURED_PROXY
+        val configState = getProviderConfigState(provider)
+        if (configState == ProviderConfigState.NOT_CONFIGURED) {
+            return ProviderConnectionStatus.NOT_CONFIGURED
         }
-        return when (provider) {
-            SuruAiProvider.OPENAI -> if (configuredKey(BuildConfig.OPENAI_API_KEY) != null) {
-                ProviderConnectionStatus.CONFIGURED_DIRECT
-            } else ProviderConnectionStatus.CONFIGURATION_REQUIRED
-            SuruAiProvider.ANTHROPIC -> if (configuredKey(BuildConfig.ANTHROPIC_API_KEY) != null) {
-                ProviderConnectionStatus.CONFIGURED_DIRECT
-            } else ProviderConnectionStatus.CONFIGURATION_REQUIRED
-            SuruAiProvider.GEMINI -> when {
-                configuredKey(BuildConfig.GEMINI_API_KEY) != null -> ProviderConnectionStatus.CONFIGURED_DIRECT
-                isFirebaseAvailable() -> ProviderConnectionStatus.CONFIGURED_FIREBASE
-                else -> ProviderConnectionStatus.CONFIGURATION_REQUIRED
-            }
-            SuruAiProvider.XAI -> if (configuredKey(BuildConfig.XAI_API_KEY) != null) {
-                ProviderConnectionStatus.CONFIGURED_DIRECT
-            } else ProviderConnectionStatus.CONFIGURATION_REQUIRED
-            SuruAiProvider.DEEPSEEK -> if (configuredKey(BuildConfig.DEEPSEEK_API_KEY) != null) {
-                ProviderConnectionStatus.CONFIGURED_DIRECT
-            } else ProviderConnectionStatus.CONFIGURATION_REQUIRED
+        val runtime = runtimeRecords.value[provider] ?: ProviderRuntimeRecord()
+        return when {
+            runtime.isTesting -> ProviderConnectionStatus.TESTING
+            runtime.liveVerifiedConnected -> ProviderConnectionStatus.CONNECTED
+            runtime.lastErrorMessage != null -> ProviderConnectionStatus.CONNECTION_FAILED
+            else -> ProviderConnectionStatus.CONFIGURED_UNTESTED
         }
     }
 
-    fun getAllDiagnostics(): List<ProviderDiagnostic> {
-        return SuruAiProvider.entries.map { provider ->
-            val st = getProviderStatus(provider)
-            val detail = when (st) {
-                ProviderConnectionStatus.CONFIGURED_DIRECT -> "API key detected via BuildConfig / Secrets."
-                ProviderConnectionStatus.CONFIGURED_FIREBASE -> "Connected via Firebase AI Logic."
-                ProviderConnectionStatus.CONFIGURED_PROXY -> "Routed through configured SURU backend proxy."
-                ProviderConnectionStatus.CONFIGURATION_REQUIRED -> "Add ${provider.name}_API_KEY or SURU_AI_PROXY_URL in AI Studio Secrets."
-            }
-            ProviderDiagnostic(provider, st, detail)
-        }
-    }
+    fun getAllDiagnostics(): List<ProviderDiagnostic> = buildDiagnosticsSnapshot()
 
     fun hasAnyConfiguredProvider(): Boolean {
-        return SuruAiProvider.entries.any { getProviderStatus(it).isReady }
+        return SuruAiProvider.entries.any { getProviderConfigState(it) != ProviderConfigState.NOT_CONFIGURED }
+    }
+
+    suspend fun testConnection(
+        provider: SuruAiProvider,
+        modelOverride: String? = null,
+        supabaseAccessToken: String = lastSyncedPrefs.supabaseAccessToken
+    ): ProviderDiagnostic {
+        val model = modelOverride?.takeIf { it.isNotBlank() } ?: resolveSelectedModel(provider, lastSyncedPrefs)
+        val configState = getProviderConfigState(provider)
+        if (configState == ProviderConfigState.NOT_CONFIGURED) {
+            val detail = "Missing ${provider.envVarName}. Set it in AI Studio Secrets (or configure SURU_AI_PROXY_URL)."
+            updateRuntimeRecord(provider) {
+                it.copy(
+                    liveVerifiedConnected = false,
+                    isTesting = false,
+                    lastErrorMessage = detail,
+                    lastErrorCategory = AiErrorCategory.NOT_CONFIGURED
+                )
+            }
+            return getAllDiagnostics().first { it.provider == provider }
+        }
+
+        updateRuntimeRecord(provider) {
+            it.copy(isTesting = true, lastErrorMessage = null, lastErrorCategory = AiErrorCategory.NONE)
+        }
+
+        val startMs = clockMillis()
+        try {
+            val raw = invokeWithRetry(provider) {
+                invokeSingleProvider(
+                    provider = provider,
+                    model = model,
+                    systemInstruction = "Respond concisely with OK.",
+                    historyTurns = emptyList(),
+                    userPrompt = "Connection check: reply with OK.",
+                    imageAttachment = null,
+                    expectJson = false,
+                    supabaseAccessToken = supabaseAccessToken,
+                    maxTokens = 24
+                )
+            }
+            if (raw.isBlank()) {
+                throw AiGatewayException(
+                    provider = provider,
+                    category = AiErrorCategory.INVALID_RESPONSE,
+                    safeDetail = "${provider.displayName} returned an empty response during connection test."
+                )
+            }
+            val latency = (clockMillis() - startMs).coerceAtLeast(1L)
+            markProviderSuccess(provider)
+            logUsageAsync(provider, model, 28, raw.length, success = true, latencyMs = latency)
+            // Best-effort live model catalog refresh after verified connection
+            runCatching { refreshModels(provider) }
+        } catch (e: CancellationException) {
+            updateRuntimeRecord(provider) { it.copy(isTesting = false) }
+            throw e
+        } catch (t: Throwable) {
+            val classified = AiProviderAdapters.classifyThrowable(provider, t, allActiveSecrets())
+            val latency = (clockMillis() - startMs).coerceAtLeast(1L)
+            markProviderFailure(provider, classified)
+            logUsageAsync(provider, model, 28, 0, success = false, latencyMs = latency)
+        }
+        return getAllDiagnostics().first { it.provider == provider }
+    }
+
+    suspend fun refreshModels(provider: SuruAiProvider): List<String> {
+        val apiKey = credentialProvider.getApiKey(provider) ?: return modelRegistry.getModels(provider)
+        val req = AiProviderAdapters.buildListModelsRequest(
+            provider = provider,
+            baseUrl = endpointConfig.baseUrlFor(provider),
+            apiKey = apiKey
+        )
+        val fetched = withContext(Dispatchers.IO) {
+            runCatching {
+                httpClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use emptyList()
+                    val body = resp.body?.string().orEmpty()
+                    AiProviderAdapters.parseModelsResponse(provider, body)
+                }
+            }.getOrDefault(emptyList())
+        }
+        if (fetched.isNotEmpty()) {
+            modelRegistry.updateDiscoveredModels(provider, fetched)
+            refreshDiagnosticsSnapshot()
+        }
+        return modelRegistry.getModels(provider)
     }
 
     fun selectExecutionChain(
@@ -148,25 +190,26 @@ class SuruAiGateway(private val appContext: Context) {
         taskKind: SuruRoutingTaskKind
     ): List<Pair<SuruAiProvider, String>> {
         val preferred = SuruAiProvider.fromStored(prefs.suruDefaultProvider)
-        val preferredModel = prefs.suruDefaultModel.takeIf { it in preferred.models }
-            ?: preferred.models.first()
+        val preferredModel = resolveSelectedModel(preferred, prefs)
 
-        val configured = SuruAiProvider.entries.filter { getProviderStatus(it).isReady }
+        val configured = SuruAiProvider.entries.filter { getProviderConfigState(it) != ProviderConfigState.NOT_CONFIGURED }
         if (configured.isEmpty()) return emptyList()
 
         val chain = LinkedHashSet<Pair<SuruAiProvider, String>>()
 
         if (!prefs.suruAutoRoutingEnabled) {
-            if (getProviderStatus(preferred).isReady) {
+            if (preferred in configured) {
                 chain.add(preferred to preferredModel)
             }
         } else {
             val smartOrder = when (taskKind) {
                 SuruRoutingTaskKind.VISION_MULTIMODAL -> listOf(
+                    preferred.takeIf { it.supportsVision },
                     SuruAiProvider.GEMINI,
                     SuruAiProvider.OPENAI,
                     SuruAiProvider.ANTHROPIC
-                )
+                ).filterNotNull()
+
                 SuruRoutingTaskKind.PLANNING_REASONING,
                 SuruRoutingTaskKind.STUDY_HELP -> listOf(
                     preferred,
@@ -175,6 +218,7 @@ class SuruAiGateway(private val appContext: Context) {
                     SuruAiProvider.OPENAI,
                     SuruAiProvider.GEMINI
                 )
+
                 SuruRoutingTaskKind.CHAT -> listOf(
                     preferred,
                     SuruAiProvider.GEMINI,
@@ -185,7 +229,7 @@ class SuruAiGateway(private val appContext: Context) {
                 )
             }
             smartOrder.filter { it in configured }.forEach { prov ->
-                val model = if (prov == preferred) preferredModel else prov.models.first()
+                val model = resolveSelectedModel(prov, prefs)
                 if (taskKind != SuruRoutingTaskKind.VISION_MULTIMODAL || prov.supportsVision) {
                     chain.add(prov to model)
                 }
@@ -195,8 +239,7 @@ class SuruAiGateway(private val appContext: Context) {
         if (prefs.suruAutoFallbackEnabled) {
             configured.forEach { prov ->
                 if (taskKind != SuruRoutingTaskKind.VISION_MULTIMODAL || prov.supportsVision) {
-                    val model = if (prov == preferred) preferredModel else prov.models.first()
-                    chain.add(prov to model)
+                    chain.add(prov to resolveSelectedModel(prov, prefs))
                 }
             }
         }
@@ -212,29 +255,38 @@ class SuruAiGateway(private val appContext: Context) {
         imageAttachment: SuruImageAttachment? = null,
         expectJson: Boolean = true
     ): GatewayCompletionResult {
+        syncPreferences(prefs)
+        val preferred = SuruAiProvider.fromStored(prefs.suruDefaultProvider)
         val chain = selectExecutionChain(prefs, taskKind)
         if (chain.isEmpty()) {
-            throw IllegalStateException("No AI provider is configured. Add an API key or SURU_AI_PROXY_URL in AI Studio Secrets.")
+            throw AiGatewayException(
+                provider = preferred,
+                category = AiErrorCategory.NOT_CONFIGURED,
+                safeDetail = "No AI provider is configured. Add API keys (GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY, DEEPSEEK_API_KEY) or SURU_AI_PROXY_URL in AI Studio Secrets."
+            )
         }
 
-        var lastError: Throwable? = null
-        val attemptedNames = mutableListOf<String>()
+        var lastError: AiGatewayException? = null
+        val failedReasons = mutableListOf<String>()
 
         for ((index, candidate) in chain.withIndex()) {
             val (provider, model) = candidate
-            val startMs = System.currentTimeMillis()
+            val startMs = clockMillis()
             try {
-                val raw = invokeSingleProvider(
-                    provider = provider,
-                    model = model,
-                    systemInstruction = systemInstruction,
-                    historyTurns = historyTurns,
-                    userPrompt = userPrompt,
-                    imageAttachment = imageAttachment,
-                    expectJson = expectJson,
-                    supabaseAccessToken = prefs.supabaseAccessToken
-                )
-                val latency = System.currentTimeMillis() - startMs
+                val raw = invokeWithRetry(provider) {
+                    invokeSingleProvider(
+                        provider = provider,
+                        model = model,
+                        systemInstruction = systemInstruction,
+                        historyTurns = historyTurns,
+                        userPrompt = userPrompt,
+                        imageAttachment = imageAttachment,
+                        expectJson = expectJson,
+                        supabaseAccessToken = prefs.supabaseAccessToken
+                    )
+                }
+                val latency = (clockMillis() - startMs).coerceAtLeast(1L)
+                markProviderSuccess(provider)
                 logUsageAsync(
                     provider = provider,
                     model = model,
@@ -246,26 +298,28 @@ class SuruAiGateway(private val appContext: Context) {
 
                 var reviewedBy: String? = null
                 var finalOutput = raw
-                if (prefs.suruSecondaryReviewEnabled &&
-                    taskKind == SuruRoutingTaskKind.STUDY_HELP
-                ) {
+                if (prefs.suruSecondaryReviewEnabled && taskKind == SuruRoutingTaskKind.STUDY_HELP) {
                     val secondaryProv = SuruAiProvider.fromStored(prefs.suruSecondaryProvider)
-                    val secondaryModel = prefs.suruSecondaryModel.takeIf { it in secondaryProv.models }
-                        ?: secondaryProv.models.first()
-                    if (secondaryProv != provider && getProviderStatus(secondaryProv).isReady) {
+                    val secondaryModel = prefs.suruSecondaryModel
+                        .takeIf { it in modelRegistry.getModels(secondaryProv) }
+                        ?: resolveSelectedModel(secondaryProv, prefs)
+                    if (secondaryProv != provider && getProviderConfigState(secondaryProv) != ProviderConfigState.NOT_CONFIGURED) {
                         runCatching {
                             val reviewPrompt = "Verify factual accuracy and clarity of this draft JSON response, keeping the exact same JSON schema and improving weak spots if needed:\n\n$raw"
-                            val reviewed = invokeSingleProvider(
-                                provider = secondaryProv,
-                                model = secondaryModel,
-                                systemInstruction = "Return valid JSON matching the exact schema provided.",
-                                historyTurns = emptyList(),
-                                userPrompt = reviewPrompt,
-                                imageAttachment = null,
-                                expectJson = expectJson,
-                                supabaseAccessToken = prefs.supabaseAccessToken
-                            )
+                            val reviewed = invokeWithRetry(secondaryProv) {
+                                invokeSingleProvider(
+                                    provider = secondaryProv,
+                                    model = secondaryModel,
+                                    systemInstruction = "Return valid JSON matching the exact schema provided.",
+                                    historyTurns = emptyList(),
+                                    userPrompt = reviewPrompt,
+                                    imageAttachment = null,
+                                    expectJson = expectJson,
+                                    supabaseAccessToken = prefs.supabaseAccessToken
+                                )
+                            }
                             if (reviewed.isNotBlank()) {
+                                markProviderSuccess(secondaryProv)
                                 finalOutput = reviewed
                                 reviewedBy = "${secondaryProv.shortName} ($secondaryModel)"
                             }
@@ -273,23 +327,24 @@ class SuruAiGateway(private val appContext: Context) {
                     }
                 }
 
-                val fallbackNote = if (index > 0 && attemptedNames.isNotEmpty()) {
-                    "Auto-fallback to ${provider.shortName} after ${attemptedNames.last()} was unavailable."
-                } else null
-
+                val fallbackNote = buildFallbackNotice(provider, model, index, failedReasons)
+                val routingNote = buildRoutingNotice(preferred, provider, taskKind, index)
                 return GatewayCompletionResult(
                     rawText = finalOutput,
                     providerUsed = provider,
                     modelUsed = model,
                     secondaryReviewedBy = reviewedBy,
-                    fallbackNote = fallbackNote
+                    fallbackNote = fallbackNote,
+                    routingNote = routingNote
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                lastError = t
-                attemptedNames.add(provider.shortName)
-                val latency = System.currentTimeMillis() - startMs
+                val classified = AiProviderAdapters.classifyThrowable(provider, t, allActiveSecrets())
+                lastError = classified
+                failedReasons.add("${provider.shortName} (${classified.category.label})")
+                markProviderFailure(provider, classified)
+                val latency = (clockMillis() - startMs).coerceAtLeast(1L)
                 logUsageAsync(
                     provider = provider,
                     model = model,
@@ -302,7 +357,246 @@ class SuruAiGateway(private val appContext: Context) {
             }
         }
 
-        throw lastError ?: IllegalStateException("All configured AI providers failed.")
+        throw lastError ?: AiGatewayException(
+            provider = preferred,
+            category = AiErrorCategory.SERVER_ERROR,
+            safeDetail = "All configured AI providers failed."
+        )
+    }
+
+    fun streamCompletion(
+        prefs: UserPreferencesState,
+        taskKind: SuruRoutingTaskKind,
+        systemInstruction: String,
+        historyTurns: List<Pair<String, String>>,
+        userPrompt: String,
+        imageAttachment: SuruImageAttachment? = null,
+        expectJson: Boolean = true
+    ): Flow<AiGatewayStreamEvent> = flow {
+        syncPreferences(prefs)
+        val preferred = SuruAiProvider.fromStored(prefs.suruDefaultProvider)
+        val chain = selectExecutionChain(prefs, taskKind)
+        if (chain.isEmpty()) {
+            throw AiGatewayException(
+                provider = preferred,
+                category = AiErrorCategory.NOT_CONFIGURED,
+                safeDetail = "No AI provider is configured. Add API keys or SURU_AI_PROXY_URL in AI Studio Secrets."
+            )
+        }
+
+        var lastError: AiGatewayException? = null
+        val failedReasons = mutableListOf<String>()
+
+        for ((index, candidate) in chain.withIndex()) {
+            val (provider, model) = candidate
+            val startMs = clockMillis()
+            val accumulated = StringBuilder()
+            try {
+                val fallbackNote = buildFallbackNotice(provider, model, index, failedReasons)
+                val routingNote = buildRoutingNotice(preferred, provider, taskKind, index)
+
+                val apiKey = credentialProvider.getApiKey(provider)
+                val proxyUrl = credentialProvider.getProxyUrl()
+                if (proxyUrl == null && apiKey != null && provider.supportsStreaming) {
+                    streamDirectProvider(
+                        provider = provider,
+                        apiKey = apiKey,
+                        model = model,
+                        systemInstruction = systemInstruction,
+                        historyTurns = historyTurns,
+                        userPrompt = userPrompt,
+                        imageAttachment = imageAttachment
+                    ) { chunk ->
+                        accumulated.append(chunk)
+                        emit(
+                            AiGatewayStreamEvent.Delta(
+                                provider = provider,
+                                model = model,
+                                chunk = chunk,
+                                accumulatedText = accumulated.toString(),
+                                fallbackNote = fallbackNote,
+                                routingNote = routingNote
+                            )
+                        )
+                    }
+                    val finalRaw = accumulated.toString().trim()
+                    if (finalRaw.isBlank()) {
+                        throw AiGatewayException(
+                            provider = provider,
+                            category = AiErrorCategory.INVALID_RESPONSE,
+                            safeDetail = "${provider.displayName} stream ended with empty output."
+                        )
+                    }
+                    markProviderSuccess(provider)
+                    logUsageAsync(
+                        provider = provider,
+                        model = model,
+                        promptChars = systemInstruction.length + userPrompt.length,
+                        responseChars = finalRaw.length,
+                        success = true,
+                        latencyMs = (clockMillis() - startMs).coerceAtLeast(1L)
+                    )
+                    emit(
+                        AiGatewayStreamEvent.Completed(
+                            GatewayCompletionResult(
+                                rawText = finalRaw,
+                                providerUsed = provider,
+                                modelUsed = model,
+                                fallbackNote = fallbackNote,
+                                routingNote = routingNote
+                            )
+                        )
+                    )
+                    return@flow
+                } else {
+                    val result = invokeWithRetry(provider) {
+                        invokeSingleProvider(
+                            provider = provider,
+                            model = model,
+                            systemInstruction = systemInstruction,
+                            historyTurns = historyTurns,
+                            userPrompt = userPrompt,
+                            imageAttachment = imageAttachment,
+                            expectJson = expectJson,
+                            supabaseAccessToken = prefs.supabaseAccessToken
+                        )
+                    }
+                    markProviderSuccess(provider)
+                    logUsageAsync(
+                        provider = provider,
+                        model = model,
+                        promptChars = systemInstruction.length + userPrompt.length,
+                        responseChars = result.length,
+                        success = true,
+                        latencyMs = (clockMillis() - startMs).coerceAtLeast(1L)
+                    )
+                    emit(
+                        AiGatewayStreamEvent.Completed(
+                            GatewayCompletionResult(
+                                rawText = result,
+                                providerUsed = provider,
+                                modelUsed = model,
+                                fallbackNote = fallbackNote,
+                                routingNote = routingNote
+                            )
+                        )
+                    )
+                    return@flow
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                val classified = AiProviderAdapters.classifyThrowable(provider, t, allActiveSecrets())
+                lastError = classified
+                failedReasons.add("${provider.shortName} (${classified.category.label})")
+                markProviderFailure(provider, classified)
+                logUsageAsync(
+                    provider = provider,
+                    model = model,
+                    promptChars = systemInstruction.length + userPrompt.length,
+                    responseChars = 0,
+                    success = false,
+                    latencyMs = (clockMillis() - startMs).coerceAtLeast(1L)
+                )
+                // If partial chunks were already streamed from this provider, don't mid-stream splice another provider
+                if (accumulated.isNotEmpty() || !prefs.suruAutoFallbackEnabled) {
+                    throw classified
+                }
+            }
+        }
+
+        throw lastError ?: AiGatewayException(
+            provider = preferred,
+            category = AiErrorCategory.SERVER_ERROR,
+            safeDetail = "All configured AI providers failed."
+        )
+    }.flowOn(Dispatchers.IO)
+
+    private suspend fun streamDirectProvider(
+        provider: SuruAiProvider,
+        apiKey: String,
+        model: String,
+        systemInstruction: String,
+        historyTurns: List<Pair<String, String>>,
+        userPrompt: String,
+        imageAttachment: SuruImageAttachment?,
+        onDelta: suspend (String) -> Unit
+    ) {
+        val req = AiProviderAdapters.buildChatRequest(
+            provider = provider,
+            baseUrl = endpointConfig.baseUrlFor(provider),
+            apiKey = apiKey,
+            model = model,
+            systemInstruction = systemInstruction,
+            historyTurns = historyTurns,
+            userPrompt = userPrompt,
+            imageAttachment = imageAttachment,
+            expectJson = false,
+            stream = true
+        )
+        invokeWithRetry(provider) {
+            httpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    val errBody = resp.body?.string().orEmpty()
+                    throw AiProviderAdapters.classifyHttpFailure(provider, model, resp.code, errBody, allActiveSecrets())
+                }
+                val source = resp.body?.source() ?: throw AiGatewayException(
+                    provider = provider,
+                    category = AiErrorCategory.INVALID_RESPONSE,
+                    safeDetail = "${provider.displayName} returned an empty stream body."
+                )
+                val contentType = resp.header("Content-Type").orEmpty().lowercase()
+                if (contentType.contains("application/json") && !contentType.contains("event-stream")) {
+                    val bodyStr = source.readUtf8()
+                    val text = AiProviderAdapters.parseCompletionResponse(provider, bodyStr)
+                    onDelta(text)
+                    return@use
+                }
+                while (!source.exhausted()) {
+                    currentCoroutineContext().ensureActive()
+                    val line = source.readUtf8Line() ?: break
+                    val trimmed = line.trim()
+                    if (trimmed.isEmpty() || trimmed.startsWith(":")) continue
+                    if (trimmed.startsWith("data:")) {
+                        val dataPayload = trimmed.removePrefix("data:").trim()
+                        if (dataPayload == "[DONE]") break
+                        val delta = AiProviderAdapters.parseSseDataLine(provider, dataPayload)
+                        if (!delta.isNullOrEmpty()) {
+                            onDelta(delta)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun <T> invokeWithRetry(
+        provider: SuruAiProvider,
+        block: suspend () -> T
+    ): T {
+        var attempt = 0
+        var lastError: AiGatewayException? = null
+        while (attempt < maxRetryAttempts) {
+            try {
+                return block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                val classified = AiProviderAdapters.classifyThrowable(provider, t, allActiveSecrets())
+                lastError = classified
+                attempt++
+                if (!classified.retryable || attempt >= maxRetryAttempts) {
+                    throw classified
+                }
+                val backoffMs = baseRetryDelayMs * (1L shl (attempt - 1))
+                delay(backoffMs)
+            }
+        }
+        throw lastError ?: AiGatewayException(
+            provider = provider,
+            category = AiErrorCategory.SERVER_ERROR,
+            safeDetail = "${provider.displayName} failed after retries."
+        )
     }
 
     private suspend fun invokeSingleProvider(
@@ -313,9 +607,10 @@ class SuruAiGateway(private val appContext: Context) {
         userPrompt: String,
         imageAttachment: SuruImageAttachment?,
         expectJson: Boolean,
-        supabaseAccessToken: String
+        supabaseAccessToken: String,
+        maxTokens: Int = 1600
     ): String {
-        val proxyUrl = configuredProxyUrl()
+        val proxyUrl = credentialProvider.getProxyUrl()
         if (proxyUrl != null) {
             return callProxyEndpoint(
                 proxyUrl = proxyUrl,
@@ -330,61 +625,38 @@ class SuruAiGateway(private val appContext: Context) {
             )
         }
 
-        return when (provider) {
-            SuruAiProvider.GEMINI -> {
-                val apiKey = configuredKey(BuildConfig.GEMINI_API_KEY)
-                if (apiKey != null) {
-                    callGeminiRest(apiKey, model, systemInstruction, historyTurns, userPrompt, imageAttachment, expectJson)
-                } else {
-                    callFirebaseGemini(model, systemInstruction, historyTurns, userPrompt, imageAttachment)
+        val apiKey = credentialProvider.getApiKey(provider)
+        if (apiKey == null) {
+            if (provider == SuruAiProvider.GEMINI && isFirebaseAvailable()) {
+                return callFirebaseGemini(model, systemInstruction, historyTurns, userPrompt, imageAttachment)
+            }
+            throw AiGatewayException(
+                provider = provider,
+                category = AiErrorCategory.NOT_CONFIGURED,
+                safeDetail = "${provider.envVarName} is not configured in AI Studio Secrets."
+            )
+        }
+
+        val req = AiProviderAdapters.buildChatRequest(
+            provider = provider,
+            baseUrl = endpointConfig.baseUrlFor(provider),
+            apiKey = apiKey,
+            model = model,
+            systemInstruction = systemInstruction,
+            historyTurns = historyTurns,
+            userPrompt = userPrompt,
+            imageAttachment = imageAttachment,
+            expectJson = expectJson,
+            stream = false,
+            maxTokens = maxTokens
+        )
+        return withContext(Dispatchers.IO) {
+            httpClient.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    throw AiProviderAdapters.classifyHttpFailure(provider, model, resp.code, body, allActiveSecrets())
                 }
-            }
-            SuruAiProvider.OPENAI -> {
-                val key = configuredKey(BuildConfig.OPENAI_API_KEY)
-                    ?: throw IllegalStateException("OPENAI_API_KEY is not configured.")
-                callOpenAiCompatible(
-                    endpoint = "https://api.openai.com/v1/chat/completions",
-                    apiKey = key,
-                    model = model,
-                    systemInstruction = systemInstruction,
-                    historyTurns = historyTurns,
-                    userPrompt = userPrompt,
-                    imageAttachment = imageAttachment,
-                    expectJson = expectJson
-                )
-            }
-            SuruAiProvider.XAI -> {
-                val key = configuredKey(BuildConfig.XAI_API_KEY)
-                    ?: throw IllegalStateException("XAI_API_KEY is not configured.")
-                callOpenAiCompatible(
-                    endpoint = "https://api.x.ai/v1/chat/completions",
-                    apiKey = key,
-                    model = model,
-                    systemInstruction = systemInstruction,
-                    historyTurns = historyTurns,
-                    userPrompt = userPrompt,
-                    imageAttachment = null,
-                    expectJson = expectJson
-                )
-            }
-            SuruAiProvider.DEEPSEEK -> {
-                val key = configuredKey(BuildConfig.DEEPSEEK_API_KEY)
-                    ?: throw IllegalStateException("DEEPSEEK_API_KEY is not configured.")
-                callOpenAiCompatible(
-                    endpoint = "https://api.deepseek.com/chat/completions",
-                    apiKey = key,
-                    model = model,
-                    systemInstruction = systemInstruction,
-                    historyTurns = historyTurns,
-                    userPrompt = userPrompt,
-                    imageAttachment = null,
-                    expectJson = expectJson
-                )
-            }
-            SuruAiProvider.ANTHROPIC -> {
-                val key = configuredKey(BuildConfig.ANTHROPIC_API_KEY)
-                    ?: throw IllegalStateException("ANTHROPIC_API_KEY is not configured.")
-                callAnthropicMessages(key, model, systemInstruction, historyTurns, userPrompt, imageAttachment)
+                AiProviderAdapters.parseCompletionResponse(provider, body)
             }
         }
     }
@@ -424,75 +696,12 @@ class SuruAiGateway(private val appContext: Context) {
         httpClient.newCall(reqBuilder.build()).execute().use { resp ->
             val raw = resp.body?.string().orEmpty()
             if (!resp.isSuccessful) {
-                throw IllegalStateException("AI proxy error HTTP ${resp.code}: ${raw.take(180)}")
+                throw AiProviderAdapters.classifyHttpFailure(provider, model, resp.code, raw, allActiveSecrets())
             }
-            val parsed = JSONObject(raw)
+            val parsed = runCatching { JSONObject(raw) }.getOrNull()
+                ?: throw AiGatewayException(provider, AiErrorCategory.INVALID_RESPONSE, safeDetail = "Invalid proxy JSON.")
             parsed.optString("text").ifBlank { parsed.optString("output") }
-                .ifBlank { throw IllegalStateException("Empty AI proxy response.") }
-        }
-    }
-
-    private suspend fun callGeminiRest(
-        apiKey: String,
-        model: String,
-        systemInstruction: String,
-        historyTurns: List<Pair<String, String>>,
-        userPrompt: String,
-        imageAttachment: SuruImageAttachment?,
-        expectJson: Boolean
-    ): String = withContext(Dispatchers.IO) {
-        val contentsArray = JSONArray()
-        historyTurns.forEach { (role, text) ->
-            contentsArray.put(
-                JSONObject().put("role", if (role == "model") "model" else "user")
-                    .put("parts", JSONArray().put(JSONObject().put("text", text)))
-            )
-        }
-        val currentParts = JSONArray().put(
-            JSONObject().put("text", userPrompt.ifBlank { "Analyze the attached image carefully." })
-        )
-        if (imageAttachment != null) {
-            currentParts.put(
-                JSONObject().put(
-                    "inlineData",
-                    JSONObject().put("mimeType", "image/jpeg").put("data", imageAttachment.base64Jpeg)
-                )
-            )
-        }
-        contentsArray.put(JSONObject().put("role", "user").put("parts", currentParts))
-
-        val payload = JSONObject().apply {
-            put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))))
-            put("contents", contentsArray)
-            put("generationConfig", JSONObject().apply {
-                put("temperature", 0.35)
-                put("maxOutputTokens", 1600)
-                if (expectJson) put("responseMimeType", "application/json")
-            })
-        }
-
-        val req = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey")
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        httpClient.newCall(req).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val msg = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(msg?.takeIf { it.isNotBlank() } ?: "Gemini HTTP ${resp.code}")
-            }
-            val root = JSONObject(body)
-            val parts = root.optJSONArray("candidates")
-                ?.optJSONObject(0)
-                ?.optJSONObject("content")
-                ?.optJSONArray("parts")
-                ?: throw IllegalStateException("Gemini returned no candidates.")
-            val out = StringBuilder()
-            for (i in 0 until parts.length()) {
-                out.append(parts.optJSONObject(i)?.optString("text").orEmpty())
-            }
-            out.toString().trim().ifBlank { throw IllegalStateException("Empty Gemini response.") }
+                .ifBlank { throw AiGatewayException(provider, AiErrorCategory.INVALID_RESPONSE, safeDetail = "Empty proxy response.") }
         }
     }
 
@@ -525,134 +734,139 @@ class SuruAiGateway(private val appContext: Context) {
             }
         }
         return response.text?.trim().orEmpty().ifBlank {
-            throw IllegalStateException("Firebase AI returned an empty response.")
+            throw AiGatewayException(
+                provider = SuruAiProvider.GEMINI,
+                category = AiErrorCategory.INVALID_RESPONSE,
+                safeDetail = "Firebase AI returned an empty response."
+            )
         }
     }
 
-    private suspend fun callOpenAiCompatible(
-        endpoint: String,
-        apiKey: String,
-        model: String,
-        systemInstruction: String,
-        historyTurns: List<Pair<String, String>>,
-        userPrompt: String,
-        imageAttachment: SuruImageAttachment?,
-        expectJson: Boolean
-    ): String = withContext(Dispatchers.IO) {
-        val messages = JSONArray()
-        messages.put(JSONObject().put("role", "system").put("content", systemInstruction))
-        historyTurns.forEach { (role, text) ->
-            val mapped = if (role == "model" || role == "assistant") "assistant" else "user"
-            messages.put(JSONObject().put("role", mapped).put("content", text))
-        }
-        if (imageAttachment != null) {
-            val contentArray = JSONArray()
-                .put(JSONObject().put("type", "text").put("text", userPrompt.ifBlank { "Analyze this image." }))
-                .put(
-                    JSONObject().put("type", "image_url").put(
-                        "image_url",
-                        JSONObject().put("url", "data:image/jpeg;base64,${imageAttachment.base64Jpeg}")
-                    )
-                )
-            messages.put(JSONObject().put("role", "user").put("content", contentArray))
-        } else {
-            messages.put(JSONObject().put("role", "user").put("content", userPrompt))
-        }
-
-        val payload = JSONObject().apply {
-            put("model", model)
-            put("messages", messages)
-            if (!model.startsWith("o") && !model.contains("reasoner")) {
-                put("temperature", 0.35)
-            }
-            if (expectJson && endpoint.contains("openai.com")) {
-                put("response_format", JSONObject().put("type", "json_object"))
-            }
-        }
-
-        val req = Request.Builder()
-            .url(endpoint)
-            .header("Authorization", "Bearer $apiKey")
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        httpClient.newCall(req).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val msg = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(msg?.takeIf { it.isNotBlank() } ?: "Provider HTTP ${resp.code}")
-            }
-            val root = JSONObject(body)
-            val content = root.optJSONArray("choices")
-                ?.optJSONObject(0)
-                ?.optJSONObject("message")
-                ?.optString("content")
-                ?.trim()
-            content?.ifBlank { null } ?: throw IllegalStateException("Provider returned empty message.")
-        }
+    private fun resolveSelectedModel(provider: SuruAiProvider, prefs: UserPreferencesState): String {
+        val perProvider = prefs.parsedProviderModels().mapNotNull { (k, v) ->
+            SuruAiProvider.entries.firstOrNull { it.name == k }?.let { it to v }
+        }.toMap()
+        val isPrimary = SuruAiProvider.fromStored(prefs.suruDefaultProvider) == provider
+        return modelRegistry.resolveSelectedModel(
+            provider = provider,
+            perProviderSelections = perProvider,
+            fallbackDefaultModel = prefs.suruDefaultModel,
+            isPrimaryProvider = isPrimary
+        )
     }
 
-    private suspend fun callAnthropicMessages(
-        apiKey: String,
-        model: String,
-        systemInstruction: String,
-        historyTurns: List<Pair<String, String>>,
-        userPrompt: String,
-        imageAttachment: SuruImageAttachment?
-    ): String = withContext(Dispatchers.IO) {
-        val messages = JSONArray()
-        historyTurns.forEach { (role, text) ->
-            val mapped = if (role == "model" || role == "assistant") "assistant" else "user"
-            messages.put(JSONObject().put("role", mapped).put("content", text))
-        }
-        val currentContent = if (imageAttachment != null) {
-            JSONArray()
-                .put(
-                    JSONObject().put("type", "image").put(
-                        "source",
-                        JSONObject()
-                            .put("type", "base64")
-                            .put("media_type", "image/jpeg")
-                            .put("data", imageAttachment.base64Jpeg)
-                    )
-                )
-                .put(JSONObject().put("type", "text").put("text", userPrompt.ifBlank { "Analyze this image." }))
-        } else {
-            userPrompt
-        }
-        messages.put(JSONObject().put("role", "user").put("content", currentContent))
+    private fun buildDiagnosticsSnapshot(): List<ProviderDiagnostic> {
+        val runtimes = runtimeRecords.value
+        return SuruAiProvider.entries.map { provider ->
+            val configState = getProviderConfigState(provider)
+            val runtime = runtimes[provider] ?: ProviderRuntimeRecord()
+            val status = getProviderStatus(provider)
+            val selectedModel = resolveSelectedModel(provider, lastSyncedPrefs)
+            val models = modelRegistry.getModels(provider)
 
-        val payload = JSONObject().apply {
-            put("model", model)
-            put("max_tokens", 1600)
-            put("system", systemInstruction)
-            put("messages", messages)
-        }
-
-        val req = Request.Builder()
-            .url("https://api.anthropic.com/v1/messages")
-            .header("x-api-key", apiKey)
-            .header("anthropic-version", "2023-06-01")
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-
-        httpClient.newCall(req).execute().use { resp ->
-            val body = resp.body?.string().orEmpty()
-            if (!resp.isSuccessful) {
-                val msg = runCatching { JSONObject(body).optJSONObject("error")?.optString("message") }.getOrNull()
-                throw IllegalStateException(msg?.takeIf { it.isNotBlank() } ?: "Anthropic HTTP ${resp.code}")
+            val apiConfigLabel = when (configState) {
+                ProviderConfigState.API_KEY_DETECTED -> "${provider.envVarName} detected via Secrets"
+                ProviderConfigState.PROXY_CONFIGURED -> "SURU_AI_PROXY_URL configured"
+                ProviderConfigState.FIREBASE_FALLBACK_ONLY -> "GEMINI_API_KEY missing · Firebase fallback ready"
+                ProviderConfigState.NOT_CONFIGURED -> "Not Configured — add ${provider.envVarName} in Secrets"
             }
-            val root = JSONObject(body)
-            val contentArr = root.optJSONArray("content") ?: throw IllegalStateException("Anthropic returned empty content.")
-            val out = StringBuilder()
-            for (i in 0 until contentArr.length()) {
-                val block = contentArr.optJSONObject(i) ?: continue
-                if (block.optString("type") == "text") {
-                    out.append(block.optString("text"))
+
+            val detail = when (status) {
+                ProviderConnectionStatus.CONNECTED -> "Live API request verified ($selectedModel)."
+                ProviderConnectionStatus.TESTING -> "Sending live verification request to ${provider.shortName}..."
+                ProviderConnectionStatus.CONNECTION_FAILED -> runtime.lastErrorMessage ?: "Connection failed."
+                ProviderConnectionStatus.CONFIGURED_UNTESTED -> when (configState) {
+                    ProviderConfigState.API_KEY_DETECTED -> "Key configured. Tap Test Connection to verify live access."
+                    ProviderConfigState.PROXY_CONFIGURED -> "Proxy configured. Tap Test Connection to verify live access."
+                    ProviderConfigState.FIREBASE_FALLBACK_ONLY -> "Firebase fallback available. Tap Test Connection or set GEMINI_API_KEY."
+                    ProviderConfigState.NOT_CONFIGURED -> "Add ${provider.envVarName} or SURU_AI_PROXY_URL in AI Studio Secrets."
                 }
+                ProviderConnectionStatus.NOT_CONFIGURED -> "Add ${provider.envVarName} or SURU_AI_PROXY_URL in AI Studio Secrets."
             }
-            out.toString().trim().ifBlank { throw IllegalStateException("Empty Anthropic response.") }
+
+            ProviderDiagnostic(
+                provider = provider,
+                status = status,
+                configState = configState,
+                apiConfigLabel = apiConfigLabel,
+                selectedModel = selectedModel,
+                availableModels = models,
+                detail = detail,
+                lastConnectedAtMillis = runtime.lastConnectedAtMillis,
+                lastErrorMessage = runtime.lastErrorMessage,
+                lastErrorCategory = runtime.lastErrorCategory,
+                isTesting = runtime.isTesting
+            )
         }
+    }
+
+    private fun updateRuntimeRecord(
+        provider: SuruAiProvider,
+        transform: (ProviderRuntimeRecord) -> ProviderRuntimeRecord
+    ) {
+        runtimeRecords.update { current ->
+            val prev = current[provider] ?: ProviderRuntimeRecord()
+            current + (provider to transform(prev))
+        }
+        refreshDiagnosticsSnapshot()
+    }
+
+    private fun markProviderSuccess(provider: SuruAiProvider) {
+        val now = clockMillis()
+        updateRuntimeRecord(provider) {
+            it.copy(
+                liveVerifiedConnected = true,
+                isTesting = false,
+                lastConnectedAtMillis = now,
+                lastErrorMessage = null,
+                lastErrorCategory = AiErrorCategory.NONE
+            )
+        }
+    }
+
+    private fun markProviderFailure(provider: SuruAiProvider, error: AiGatewayException) {
+        updateRuntimeRecord(provider) {
+            it.copy(
+                liveVerifiedConnected = false,
+                isTesting = false,
+                lastErrorMessage = error.safeDetail,
+                lastErrorCategory = error.category
+            )
+        }
+    }
+
+    private fun refreshDiagnosticsSnapshot() {
+        _diagnosticsFlow.value = buildDiagnosticsSnapshot()
+    }
+
+    private fun allActiveSecrets(): List<String> {
+        return SuruAiProvider.entries.mapNotNull { credentialProvider.getApiKey(it) }
+    }
+
+    private fun buildFallbackNotice(
+        providerUsed: SuruAiProvider,
+        modelUsed: String,
+        index: Int,
+        failedReasons: List<String>
+    ): String? {
+        if (index <= 0 || failedReasons.isEmpty()) return null
+        return "Switched to ${providerUsed.displayName} ($modelUsed) via automatic fallback after ${failedReasons.joinToString(", ")} failed."
+    }
+
+    private fun buildRoutingNotice(
+        preferred: SuruAiProvider,
+        providerUsed: SuruAiProvider,
+        taskKind: SuruRoutingTaskKind,
+        index: Int
+    ): String? {
+        if (index != 0 || preferred == providerUsed) return null
+        val reason = when (taskKind) {
+            SuruRoutingTaskKind.VISION_MULTIMODAL -> "vision input requires multimodal support"
+            SuruRoutingTaskKind.PLANNING_REASONING -> "planning/reasoning task routing"
+            SuruRoutingTaskKind.STUDY_HELP -> "study synthesis task routing"
+            SuruRoutingTaskKind.CHAT -> "primary provider unavailable"
+        }
+        return "Auto-routed from ${preferred.shortName} to ${providerUsed.shortName} ($reason)."
     }
 
     private suspend fun logUsageAsync(
@@ -684,17 +898,16 @@ class SuruAiGateway(private val appContext: Context) {
     }
 
     companion object {
-        fun configuredKey(rawValue: String?): String? {
-            val raw = rawValue?.trim().orEmpty()
-            if (raw.isBlank() || raw == "your_api_key_here" || raw.startsWith("YOUR_")) {
-                return null
-            }
-            return raw
-        }
+        fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build()
 
-        fun configuredProxyUrl(): String? {
-            val raw = runCatching { BuildConfig.SURU_AI_PROXY_URL.trim() }.getOrDefault("")
-            return raw.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-        }
+        fun configuredKey(rawValue: String?): String? =
+            BuildConfigAiCredentialProvider.normalizeValidCredential(rawValue)
+
+        fun configuredProxyUrl(): String? =
+            BuildConfigAiCredentialProvider().getProxyUrl()
     }
 }

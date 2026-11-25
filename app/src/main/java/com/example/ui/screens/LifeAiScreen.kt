@@ -439,11 +439,50 @@ fun LifeAiScreen(
                         }
 
                         if (state.isAiLoading) {
-                            item {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text("SURU is thinking...", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                            val streamingText = state.aiStreamingReply
+                            if (!streamingText.isNullOrBlank()) {
+                                item {
+                                    val streamShape = RoundedCornerShape(
+                                        topStart = 18.dp,
+                                        topEnd = 18.dp,
+                                        bottomStart = 4.dp,
+                                        bottomEnd = 18.dp
+                                    )
+                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+                                        Column(
+                                            modifier = Modifier
+                                                .widthIn(max = 320.dp)
+                                                .clip(streamShape)
+                                                .background(tokens.surfaceCard)
+                                                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), streamShape)
+                                                .padding(14.dp)
+                                                .testTag("ai_streaming_bubble")
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(14.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                state.aiStreamingProviderLabel?.let { label ->
+                                                    StatusPill(text = label, color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
+                                            Spacer(Modifier.height(6.dp))
+                                            Text(streamingText, style = MaterialTheme.typography.bodyMedium, color = tokens.inkPrimary)
+                                        }
+                                    }
+                                }
+                            } else {
+                                item {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
+                                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text("SURU is thinking...", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                    }
                                 }
                             }
                         }

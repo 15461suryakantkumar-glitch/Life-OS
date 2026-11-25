@@ -38,7 +38,8 @@ import com.example.ui.theme.SoftPeach
 fun FeeloraBrandMark(
     size: Dp = 44.dp,
     modifier: Modifier = Modifier,
-    withSoftFrame: Boolean = false
+    withSoftFrame: Boolean = false,
+    showGlow: Boolean = false
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     val emblemModifier = if (withSoftFrame) {
@@ -57,6 +58,14 @@ fun FeeloraBrandMark(
             )
             .border(1.dp, tokens.borderAccent.copy(alpha = 0.55f), frameShape)
             .padding(size * 0.12f)
+    } else if (showGlow) {
+        modifier
+            .size(size)
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(tokens.primary.copy(alpha = 0.24f), Color.Transparent)
+                )
+            )
     } else {
         modifier.size(size)
     }

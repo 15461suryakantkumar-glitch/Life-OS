@@ -456,7 +456,7 @@ fun OnboardingScreen(
                                         .border(1.dp, tokens.borderAccent.copy(alpha = 0.55f), RoundedCornerShape(tokens.heroRadius))
                                 ) {
                                     Image(
-                                        painter = painterResource(id = R.drawable.img_feelora_welcome_editorial_1795527020857),
+                                        painter = painterResource(id = R.drawable.img_feelora_welcome_1795511874594),
                                         contentDescription = "FEELORA editorial botanical journal artwork",
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize()

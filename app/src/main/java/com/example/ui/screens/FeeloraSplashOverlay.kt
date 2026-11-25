@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun FeeloraSplashOverlay(
+    audioLogoEnabled: Boolean = true,
     onPlayAudioLogo: () -> Unit,
     onFinished: () -> Unit
 ) {
@@ -64,8 +65,10 @@ fun FeeloraSplashOverlay(
     val taglineAlpha = remember { Animatable(if (reducedMotion) 1f else 0f) }
     val containerAlpha = remember { Animatable(1f) }
 
-    LaunchedEffect(reducedMotion) {
-        onPlayAudioLogo()
+    LaunchedEffect(reducedMotion, audioLogoEnabled) {
+        if (audioLogoEnabled) {
+            onPlayAudioLogo()
+        }
         if (reducedMotion) {
             delay(650L)
             containerAlpha.animateTo(0f, tween(220))

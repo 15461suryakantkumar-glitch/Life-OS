@@ -83,6 +83,7 @@ import com.example.suru.SuruIntelligenceService
 import com.example.suru.SuruMascotState
 import com.example.suru.SuruNluEngine
 import com.example.suru.SuruPendingContext
+import com.example.suru.SuruStreamUpdate
 import com.example.suru.SuruStructuredAction
 import com.example.suru.SuruStudyHelpMode
 import com.example.suru.SuruStudyHelpResult
@@ -183,6 +184,8 @@ data class LifeOsUiState(
     val kuttaEventOverride: KuttaVisualState? = null,
     val studyTimer: StudyTimerState = StudyTimerState(),
     val isAiLoading: Boolean = false,
+    val aiStreamingReply: String? = null,
+    val aiStreamingProviderLabel: String? = null,
     val aiErrorMessage: String? = null,
     val petReactionBanner: String? = null,
     val levelUpBanner: Int? = null,
@@ -349,6 +352,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     private val studyTimerState = MutableStateFlow(StudyTimerState())
     private val aiLoadingState = MutableStateFlow(false)
+    private val aiStreamingState = MutableStateFlow<Pair<String?, String?>>(null to null)
     private val aiErrorState = MutableStateFlow<String?>(null)
     private val petReactionState = MutableStateFlow<String?>(null)
     private val levelUpBannerState = MutableStateFlow<Int?>(null)
@@ -412,6 +416,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private data class TransientFlows(
         val timer: StudyTimerState,
         val aiLoading: Boolean,
+        val aiStreamingReply: String?,
+        val aiStreamingProviderLabel: String?,
         val aiError: String?,
         val petReaction: String?,
         val levelUpBanner: Int?,
@@ -427,7 +433,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val confirmation: SuruConfirmationRequest?,
         val undoRecord: SuruUndoRecord?,
         val studyHelp: SuruStudyHelpResult?,
-        val pendingImage: SuruImageAttachment?
+        val pendingImage: SuruImageAttachment?,
+        val diagnostics: List<ProviderDiagnostic>
     )
 
     private data class SocialNetworkFlows(
@@ -538,9 +545,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val feedbackBannersFlow = combine(
         petReactionState,
         levelUpBannerState,
-        kuttaEventState
-    ) { petReact, lvlBanner, kuttaOverride ->
-        Triple(petReact, lvlBanner, kuttaOverride)
+        kuttaEventState,
+        aiStreamingState
+    ) { petReact, lvlBanner, kuttaOverride, streamPair ->
+        listOf<Any?>(petReact, lvlBanner, kuttaOverride, streamPair.first, streamPair.second)
     }
 
     private val transientFlow = combine(
@@ -550,7 +558,17 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         feedbackBannersFlow,
         snackbarState
     ) { timer, loading, err, banners, snack ->
-        TransientFlows(timer, loading, err, banners.first, banners.second, snack, banners.third)
+        TransientFlows(
+            timer = timer,
+            aiLoading = loading,
+            aiStreamingReply = banners[3] as String?,
+            aiStreamingProviderLabel = banners[4] as String?,
+            aiError = err,
+            petReaction = banners[0] as String?,
+            levelUpBanner = banners[1] as Int?,
+            snackbar = snack,
+            kuttaOverride = banners[2] as KuttaVisualState?
+        )
     }
 
     private val suruVoiceFlow = combine(
@@ -573,8 +591,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         suruVoiceFlow,
         suruSuccessOverride,
         suruPendingConfirmationState,
-        suruExtrasFlow
-    ) { voiceTriple, success, confirm, extras ->
+        suruExtrasFlow,
+        suruService.getGateway().diagnosticsFlow
+    ) { voiceTriple, success, confirm, extras, diagnostics ->
         SuruUiTransientFlows(
             voiceState = voiceTriple.first,
             partialTranscript = voiceTriple.second,
@@ -583,7 +602,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             confirmation = confirm,
             undoRecord = extras.first,
             studyHelp = extras.second,
-            pendingImage = extras.third
+            pendingImage = extras.third,
+            diagnostics = diagnostics
         )
     }
 
@@ -662,6 +682,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             else -> SuruMascotState.IDLE
         }
 
+        suruService.getGateway().syncPreferences(core.prefs)
         val cloudStatus = suruService.getCloudAiStatus()
         LifeOsUiState(
             isPrefsLoaded = true,
@@ -684,6 +705,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             kuttaEventOverride = trans.kuttaOverride,
             studyTimer = trans.timer,
             isAiLoading = trans.aiLoading,
+            aiStreamingReply = trans.aiStreamingReply,
+            aiStreamingProviderLabel = trans.aiStreamingProviderLabel,
             aiErrorMessage = trans.aiError,
             petReactionBanner = trans.petReaction,
             levelUpBanner = trans.levelUpBanner,
@@ -693,7 +716,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             isOnline = social.isOnline,
             isCloudAiAvailable = cloudStatus.isCloudConfigured,
             cloudAiStatus = cloudStatus,
-            aiProviderDiagnostics = suruService.getGateway().getAllDiagnostics(),
+            aiProviderDiagnostics = suru.diagnostics,
             aiProviderUsageLogs = social.aiUsageLogs,
             notificationHistory = social.notificationHistory,
             isPeerRadarActive = social.isPeerRadarActive,
@@ -2667,29 +2690,53 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            // 1. Multi-Provider Cloud AI Gateway first whenever configured & online
-            when (
-                val cloudResponse = suruService.processUnifiedPrompt(
-                    userPrompt = effectivePrompt,
-                    conversationHistory = current.aiMessages,
-                    imageAttachment = attachedImage,
-                    context = snapshot,
-                    tasks = current.tasks,
-                    events = current.events,
-                    studyPlans = current.suruStudyPlans,
-                    enabledMemories = enabledMemories,
-                    pendingContext = pendingSuruContext,
-                    todayEpochDay = today,
-                    prefs = current.prefs
-                )
-            ) {
+            // 1. Multi-Provider Cloud AI Gateway (streaming + fallback + history preservation)
+            var finalCloudResponse: SuruAiResponse? = null
+            suruService.streamUnifiedPrompt(
+                userPrompt = effectivePrompt,
+                conversationHistory = current.aiMessages,
+                imageAttachment = attachedImage,
+                context = snapshot,
+                tasks = current.tasks,
+                events = current.events,
+                studyPlans = current.suruStudyPlans,
+                enabledMemories = enabledMemories,
+                pendingContext = pendingSuruContext,
+                todayEpochDay = today,
+                prefs = current.prefs
+            ).collect { update ->
+                when (update) {
+                    is SuruStreamUpdate.StreamingText -> {
+                        val badgeLabel = buildString {
+                            append(update.providerLabel)
+                            if (!update.fallbackNote.isNullOrBlank()) {
+                                append(" · Fallback")
+                            }
+                        }
+                        val displayText = buildString {
+                            append(update.partialReply.ifBlank { "..." })
+                            if (!update.fallbackNote.isNullOrBlank()) {
+                                append("\n\n(${update.fallbackNote})")
+                            }
+                        }
+                        aiStreamingState.value = displayText to badgeLabel
+                    }
+                    is SuruStreamUpdate.Completed -> {
+                        finalCloudResponse = update.response
+                    }
+                }
+            }
+            aiStreamingState.value = null to null
+
+            when (val cloudResponse = finalCloudResponse) {
                 is SuruAiResponse.Success -> {
                     executeSuruActionAndRespond(
                         suruAction = cloudResponse.action,
                         sourcePrompt = effectivePrompt,
                         current = current,
                         today = today,
-                        speakReply = speakReply
+                        speakReply = speakReply,
+                        providerBadge = cloudResponse.providerBadge
                     )
                     aiLoadingState.value = false
                     return@launch
@@ -2752,7 +2799,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         sourcePrompt: String,
         current: LifeOsUiState,
         today: Long,
-        speakReply: Boolean
+        speakReply: Boolean,
+        providerBadge: String? = null
     ) {
         pendingSuruContext = suruAction.updatedPendingContext
         if (suruAction.studyPlanDraft != null) {
@@ -2760,7 +2808,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         var finalReply = suruAction.reply
-        var badge: String? = null
+        var badge: String? = providerBadge
 
         when {
             suruAction.intent == SuruIntent.STUDY_HELP -> {
@@ -3058,7 +3106,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         secondaryReviewEnabled: Boolean,
         secondaryProvider: SuruAiProvider,
         secondaryModel: String,
-        autoFallbackEnabled: Boolean
+        autoFallbackEnabled: Boolean,
+        streamingEnabled: Boolean = true
     ) {
         viewModelScope.launch {
             prefsRepo.updateSuruAiGatewaySettings(
@@ -3068,10 +3117,40 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 secondaryReviewEnabled = secondaryReviewEnabled,
                 secondaryProvider = secondaryProvider.name,
                 secondaryModel = secondaryModel,
-                autoFallbackEnabled = autoFallbackEnabled
+                autoFallbackEnabled = autoFallbackEnabled,
+                streamingEnabled = streamingEnabled
             )
             soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
-            snackbarState.value = "SURU AI routing updated (${defaultProvider.shortName})"
+            snackbarState.value = "Primary provider set to ${defaultProvider.displayName} ($defaultModel)"
+        }
+    }
+
+    fun selectAiProviderModel(provider: SuruAiProvider, modelId: String) {
+        viewModelScope.launch {
+            prefsRepo.updateProviderModelSelection(provider.name, modelId)
+            soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
+            snackbarState.value = "${provider.shortName} model set to $modelId"
+        }
+    }
+
+    fun testAiProviderConnection(provider: SuruAiProvider) {
+        viewModelScope.launch {
+            val diag = suruService.getGateway().testConnection(provider)
+            val prefsNow = uiState.value.prefs
+            if (diag.status.isLiveVerified) {
+                soundManager.playCue(LifeOsSoundCue.SURU_SUCCESS, prefsNow)
+                snackbarState.value = "${provider.displayName}: Connected (${diag.selectedModel})"
+            } else {
+                soundManager.playCue(LifeOsSoundCue.SURU_ERROR, prefsNow)
+                snackbarState.value = "${provider.displayName}: ${diag.status.label}"
+            }
+        }
+    }
+
+    fun refreshAiProviderModels(provider: SuruAiProvider) {
+        viewModelScope.launch {
+            val models = suruService.getGateway().refreshModels(provider)
+            snackbarState.value = "${provider.shortName}: ${models.size} model(s) loaded"
         }
     }
 

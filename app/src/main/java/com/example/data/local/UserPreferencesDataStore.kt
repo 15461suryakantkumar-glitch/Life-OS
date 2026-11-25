@@ -179,12 +179,25 @@ data class UserPreferencesState(
     val suruEveningHour: Int = 20,
     val suruDefaultProvider: String = "GEMINI",
     val suruDefaultModel: String = "gemini-2.5-flash",
+    val suruProviderModelsRaw: String = "",
+    val suruStreamingEnabled: Boolean = true,
     val suruAutoRoutingEnabled: Boolean = true,
     val suruSecondaryReviewEnabled: Boolean = false,
     val suruSecondaryProvider: String = "OPENAI",
-    val suruSecondaryModel: String = "gpt-4o-mini",
+    val suruSecondaryModel: String = "gpt-4.1-mini",
     val suruAutoFallbackEnabled: Boolean = true
 ) {
+    fun parsedProviderModels(): Map<String, String> {
+        if (suruProviderModelsRaw.isBlank()) return emptyMap()
+        return suruProviderModelsRaw.split(";")
+            .mapNotNull { entry ->
+                val idx = entry.indexOf('=')
+                if (idx <= 0 || idx >= entry.length - 1) null
+                else entry.substring(0, idx).trim() to entry.substring(idx + 1).trim()
+            }
+            .toMap()
+    }
+
     val level: Int
         get() = (totalXp / 250) + 1
 
@@ -292,6 +305,8 @@ class UserPreferencesRepository(private val context: Context) {
 
         val SURU_DEFAULT_PROVIDER = stringPreferencesKey("suru_default_provider")
         val SURU_DEFAULT_MODEL = stringPreferencesKey("suru_default_model")
+        val SURU_PROVIDER_MODELS_RAW = stringPreferencesKey("suru_provider_models_raw")
+        val SURU_STREAMING_ENABLED = booleanPreferencesKey("suru_streaming_enabled")
         val SURU_AUTO_ROUTING = booleanPreferencesKey("suru_auto_routing")
         val SURU_SECONDARY_REVIEW = booleanPreferencesKey("suru_secondary_review")
         val SURU_SECONDARY_PROVIDER = stringPreferencesKey("suru_secondary_provider")
@@ -406,10 +421,12 @@ class UserPreferencesRepository(private val context: Context) {
             suruEveningHour = prefs[Keys.SURU_EVENING_HOUR] ?: 20,
             suruDefaultProvider = prefs[Keys.SURU_DEFAULT_PROVIDER] ?: "GEMINI",
             suruDefaultModel = prefs[Keys.SURU_DEFAULT_MODEL] ?: "gemini-2.5-flash",
+            suruProviderModelsRaw = prefs[Keys.SURU_PROVIDER_MODELS_RAW] ?: "",
+            suruStreamingEnabled = prefs[Keys.SURU_STREAMING_ENABLED] ?: true,
             suruAutoRoutingEnabled = prefs[Keys.SURU_AUTO_ROUTING] ?: true,
             suruSecondaryReviewEnabled = prefs[Keys.SURU_SECONDARY_REVIEW] ?: false,
             suruSecondaryProvider = prefs[Keys.SURU_SECONDARY_PROVIDER] ?: "OPENAI",
-            suruSecondaryModel = prefs[Keys.SURU_SECONDARY_MODEL] ?: "gpt-4o-mini",
+            suruSecondaryModel = prefs[Keys.SURU_SECONDARY_MODEL] ?: "gpt-4.1-mini",
             suruAutoFallbackEnabled = prefs[Keys.SURU_AUTO_FALLBACK] ?: true
         )
     }
@@ -790,7 +807,9 @@ class UserPreferencesRepository(private val context: Context) {
         secondaryReviewEnabled: Boolean,
         secondaryProvider: String,
         secondaryModel: String,
-        autoFallbackEnabled: Boolean
+        autoFallbackEnabled: Boolean,
+        streamingEnabled: Boolean = true,
+        providerModelsOverride: Map<String, String>? = null
     ) {
         context.lifeOsDataStore.edit { prefs ->
             prefs[Keys.SURU_DEFAULT_PROVIDER] = defaultProvider
@@ -800,6 +819,45 @@ class UserPreferencesRepository(private val context: Context) {
             prefs[Keys.SURU_SECONDARY_PROVIDER] = secondaryProvider
             prefs[Keys.SURU_SECONDARY_MODEL] = secondaryModel
             prefs[Keys.SURU_AUTO_FALLBACK] = autoFallbackEnabled
+            prefs[Keys.SURU_STREAMING_ENABLED] = streamingEnabled
+
+            val existing = (prefs[Keys.SURU_PROVIDER_MODELS_RAW] ?: "")
+                .split(";")
+                .mapNotNull { entry ->
+                    val idx = entry.indexOf('=')
+                    if (idx <= 0 || idx >= entry.length - 1) null
+                    else entry.substring(0, idx).trim() to entry.substring(idx + 1).trim()
+                }
+                .toMap()
+                .toMutableMap()
+            providerModelsOverride?.forEach { (k, v) ->
+                if (v.isNotBlank()) existing[k] = v.trim()
+            }
+            if (defaultModel.isNotBlank()) {
+                existing[defaultProvider] = defaultModel.trim()
+            }
+            prefs[Keys.SURU_PROVIDER_MODELS_RAW] = existing.entries
+                .joinToString(";") { "${it.key}=${it.value}" }
+        }
+    }
+
+    suspend fun updateProviderModelSelection(providerName: String, modelId: String) {
+        if (modelId.isBlank()) return
+        context.lifeOsDataStore.edit { prefs ->
+            val existing = (prefs[Keys.SURU_PROVIDER_MODELS_RAW] ?: "")
+                .split(";")
+                .mapNotNull { entry ->
+                    val idx = entry.indexOf('=')
+                    if (idx <= 0 || idx >= entry.length - 1) null
+                    else entry.substring(0, idx).trim() to entry.substring(idx + 1).trim()
+                }
+                .toMap()
+                .toMutableMap()
+            existing[providerName] = modelId.trim()
+            prefs[Keys.SURU_PROVIDER_MODELS_RAW] = existing.entries.joinToString(";") { "${it.key}=${it.value}" }
+            if ((prefs[Keys.SURU_DEFAULT_PROVIDER] ?: "GEMINI") == providerName) {
+                prefs[Keys.SURU_DEFAULT_MODEL] = modelId.trim()
+            }
         }
     }
 
