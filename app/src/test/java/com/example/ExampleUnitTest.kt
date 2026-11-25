@@ -195,23 +195,16 @@ class ExampleUnitTest {
             challengesCompleted = 2,
             challengesTotal = 4
         )
-        assertTrue(inviteLink.startsWith("lifeos://friend?data=LIFEOS1:"))
+        assertEquals("https://feelora.app/invite?code=LIFE-ARIA-4821", inviteLink)
 
-        val parsed = FriendSyncCodec.parseInput(inviteLink)
-        assertNotNull(parsed)
-        assertEquals("Aria", parsed!!.displayName)
-        assertEquals("@aria.os", parsed.handle)
-        assertEquals("LIFE-ARIA-4821", parsed.friendCode)
-        assertEquals(950, parsed.xp)
-        assertEquals(9, parsed.streakDays)
-        assertFalse(parsed.shareFocus)
-        assertEquals(0, parsed.focusMinutesToday)
-        assertEquals(2, parsed.challengesCompleted)
-        assertEquals(4, parsed.challengesTotal)
+        val deepLink = FriendSyncCodec.buildDeepLink("LIFE-ARIA-4821")
+        assertEquals("lifeos://friend?code=LIFE-ARIA-4821", deepLink)
 
-        val shortParsed = FriendSyncCodec.parseInput("LIFE-KAI-1024")
-        assertNotNull(shortParsed)
-        assertEquals("LIFE-KAI-1024", shortParsed!!.friendCode)
+        assertEquals("LIFE-ARIA-4821", FriendSyncCodec.extractInviteCode(inviteLink))
+        assertEquals("LIFE-ARIA-4821", FriendSyncCodec.extractInviteCode(deepLink))
+        assertEquals("LIFE-KAI-1024", FriendSyncCodec.extractInviteCode("LIFE-KAI-1024"))
+        assertEquals("@aria.os", FriendSyncCodec.extractInviteCode("@Aria.Os"))
+        assertEquals("LIFE-ARIA-4821", FriendSyncCodec.resolveFriendCode(prefs))
     }
 
     @Test

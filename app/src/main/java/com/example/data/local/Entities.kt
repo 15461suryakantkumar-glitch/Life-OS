@@ -193,6 +193,9 @@ data class ChallengeEntity(
 @Entity(tableName = "friends")
 data class FriendEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val remoteUserId: String = "",
+    val friendshipId: String = "",
+    val isTogetherOne: Boolean = false,
     val displayName: String,
     val handle: String,
     val friendCode: String = "",
@@ -202,7 +205,7 @@ data class FriendEntity(
     val focusMinutesToday: Int = 0,
     val challengesCompleted: Int = 0,
     val challengesTotal: Int = 4,
-    val petStageName: String = "Little Spark",
+    val petStageName: String = "Playful Pup",
     val sharesStats: Boolean = true,
     val shareXp: Boolean = true,
     val shareStreaks: Boolean = true,

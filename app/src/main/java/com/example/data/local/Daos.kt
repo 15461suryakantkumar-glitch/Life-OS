@@ -169,11 +169,29 @@ interface ChallengeDao {
 
 @Dao
 interface FriendDao {
-    @Query("SELECT * FROM friends ORDER BY xp DESC")
+    @Query("SELECT * FROM friends ORDER BY isTogetherOne DESC, xp DESC")
     fun observeAllFriends(): Flow<List<FriendEntity>>
+
+    @Query("SELECT * FROM friends")
+    suspend fun getAllFriendsOnce(): List<FriendEntity>
+
+    @Query("SELECT * FROM friends WHERE (remoteUserId != '' AND remoteUserId = :remoteUserId) OR (friendCode != '' AND friendCode = :code) OR LOWER(handle) = LOWER(:handle) LIMIT 1")
+    suspend fun findByRemoteOrCodeOrHandle(remoteUserId: String, code: String, handle: String): FriendEntity?
 
     @Query("SELECT * FROM friends WHERE (friendCode != '' AND friendCode = :code) OR LOWER(handle) = LOWER(:handle) LIMIT 1")
     suspend fun findByCodeOrHandle(code: String, handle: String): FriendEntity?
+
+    @Query("SELECT * FROM friends WHERE remoteUserId = :remoteUserId LIMIT 1")
+    suspend fun findByRemoteUserId(remoteUserId: String): FriendEntity?
+
+    @Query("UPDATE friends SET isTogetherOne = 0")
+    suspend fun clearAllTogetherOne()
+
+    @Query("UPDATE friends SET isTogetherOne = :isTogetherOne WHERE remoteUserId = :remoteUserId")
+    suspend fun updateTogetherOneFlag(remoteUserId: String, isTogetherOne: Boolean)
+
+    @Query("DELETE FROM friends WHERE remoteUserId = :remoteUserId")
+    suspend fun deleteByRemoteUserId(remoteUserId: String)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFriend(friend: FriendEntity)

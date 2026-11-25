@@ -3,6 +3,7 @@ package com.example.data.social
 import android.content.Context
 import android.net.Uri
 import com.example.BuildConfig
+import com.example.data.local.UserPreferencesState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -20,29 +21,54 @@ data class SupabaseSession(
     val refreshToken: String,
     val expiresAtMillis: Long,
     val emailVerified: Boolean,
-    val displayName: String = ""
+    val displayName: String = "",
+    val isAnonymous: Boolean = false
 )
 
 sealed class SupabaseResult<out T> {
     data class Success<T>(val value: T) : SupabaseResult<T>()
-    data class Failure(val message: String, val isConfigMissing: Boolean = false, val isUnauthorized: Boolean = false) : SupabaseResult<Nothing>()
+    data class Failure(
+        val message: String,
+        val isConfigMissing: Boolean = false,
+        val isUnauthorized: Boolean = false
+    ) : SupabaseResult<Nothing>()
 }
 
-class SupabaseAuthAndSyncClient(private val appContext: Context) {
+object FeeloraSupabase {
+    @Volatile
+    private var cachedClient: SupabaseAuthAndSyncClient? = null
 
-    val httpClient: OkHttpClient = OkHttpClient.Builder()
+    fun client(context: Context): SupabaseAuthAndSyncClient {
+        return cachedClient ?: synchronized(this) {
+            cachedClient ?: SupabaseAuthAndSyncClient(context.applicationContext).also {
+                cachedClient = it
+            }
+        }
+    }
+}
+
+class SupabaseAuthAndSyncClient(
+    private val appContext: Context,
+    private val baseUrlOverride: String? = null,
+    private val anonKeyOverride: String? = null,
+    httpClientOverride: OkHttpClient? = null
+) {
+
+    val httpClient: OkHttpClient = httpClientOverride ?: OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(25, TimeUnit.SECONDS)
         .writeTimeout(25, TimeUnit.SECONDS)
         .build()
 
     fun getConfiguredUrl(): String? {
-        val raw = runCatching { BuildConfig.SUPABASE_URL.trim().trimEnd('/') }.getOrDefault("")
+        val raw = (baseUrlOverride ?: runCatching { BuildConfig.SUPABASE_URL }.getOrDefault(""))
+            .trim()
+            .trimEnd('/')
         return raw.takeIf { it.startsWith("https://") || it.startsWith("http://") }
     }
 
     fun getConfiguredAnonKey(): String? {
-        val raw = runCatching { BuildConfig.SUPABASE_ANON_KEY.trim() }.getOrDefault("")
+        val raw = (anonKeyOverride ?: runCatching { BuildConfig.SUPABASE_ANON_KEY }.getOrDefault("")).trim()
         return raw.takeIf { it.isNotBlank() && !it.startsWith("YOUR_") && it != "your_api_key_here" }
     }
 
@@ -52,8 +78,48 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
         return if (isConfigured()) {
             "Connected to FEELORA Cloud"
         } else {
-            "Cloud sync configuration required (add SUPABASE_URL & SUPABASE_ANON_KEY in AI Studio Secrets)."
+            "Cloud Together sync requires SUPABASE_URL & SUPABASE_ANON_KEY in AI Studio Secrets."
         }
+    }
+
+    suspend fun signInAnonymously(): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
+        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
+        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
+
+        val req = Request.Builder()
+            .url("$baseUrl/auth/v1/signup")
+            .header("apikey", anonKey)
+            .header("Content-Type", "application/json")
+            .post("{}".toRequestBody(JSON_MEDIA))
+            .build()
+
+        executeAuthRequest(req, fallbackEmail = "", fallbackName = "", isAnonymousFallback = true)
+    }
+
+    suspend fun ensureSession(currentPrefs: UserPreferencesState): SupabaseResult<SupabaseSession> {
+        if (!isConfigured()) return notConfiguredError()
+        val now = System.currentTimeMillis()
+        if (currentPrefs.hasValidRemoteSession && currentPrefs.supabaseSessionExpiresAt > now + 60_000L) {
+            return SupabaseResult.Success(
+                SupabaseSession(
+                    userId = currentPrefs.supabaseUserId,
+                    email = currentPrefs.userEmail,
+                    accessToken = currentPrefs.supabaseAccessToken,
+                    refreshToken = currentPrefs.supabaseRefreshToken,
+                    expiresAtMillis = currentPrefs.supabaseSessionExpiresAt,
+                    emailVerified = currentPrefs.emailVerified,
+                    displayName = currentPrefs.userName,
+                    isAnonymous = currentPrefs.userEmail.isBlank()
+                )
+            )
+        }
+        if (currentPrefs.supabaseRefreshToken.isNotBlank()) {
+            when (val refreshed = refreshSession(currentPrefs.supabaseRefreshToken)) {
+                is SupabaseResult.Success -> return refreshed
+                is SupabaseResult.Failure -> if (!refreshed.isUnauthorized) return refreshed
+            }
+        }
+        return signInAnonymously()
     }
 
     suspend fun signUp(
@@ -195,6 +261,7 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
                 val verified = user.optString("email_confirmed_at").isNotBlank() ||
                     user.optString("confirmed_at").isNotBlank()
                 val name = user.optJSONObject("user_metadata")?.optString("display_name").orEmpty()
+                val anon = user.optBoolean("is_anonymous", email.isBlank())
                 SupabaseResult.Success(
                     SupabaseSession(
                         userId = userId,
@@ -203,7 +270,8 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
                         refreshToken = "",
                         expiresAtMillis = System.currentTimeMillis() + 3600_000L,
                         emailVerified = verified,
-                        displayName = name
+                        displayName = name,
+                        isAnonymous = anon
                     )
                 )
             }
@@ -281,6 +349,38 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
         }.getOrElse { SupabaseResult.Failure(it.message ?: "Upload failed.") }
     }
 
+    suspend fun restRpc(
+        functionName: String,
+        paramsJson: String,
+        accessToken: String
+    ): SupabaseResult<String> = withContext(Dispatchers.IO) {
+        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
+        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
+        if (accessToken.isBlank()) {
+            return@withContext SupabaseResult.Failure("Cloud session required.", isUnauthorized = true)
+        }
+        val req = Request.Builder()
+            .url("$baseUrl/rest/v1/rpc/$functionName")
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer $accessToken")
+            .header("Content-Type", "application/json")
+            .post(paramsJson.toRequestBody(JSON_MEDIA))
+            .build()
+
+        runCatching {
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    return@use SupabaseResult.Failure(
+                        message = parseSupabaseError(raw, "Cloud RPC failed (HTTP ${resp.code})."),
+                        isUnauthorized = resp.code == 401 || resp.code == 403
+                    )
+                }
+                SupabaseResult.Success(raw)
+            }
+        }.getOrElse { SupabaseResult.Failure(it.message ?: "Network connection unavailable.") }
+    }
+
     suspend fun restGet(pathWithQuery: String, accessToken: String): SupabaseResult<String> =
         executeRest("GET", pathWithQuery, null, accessToken)
 
@@ -345,7 +445,8 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
     private fun executeAuthRequest(
         req: Request,
         fallbackEmail: String,
-        fallbackName: String
+        fallbackName: String,
+        isAnonymousFallback: Boolean = false
     ): SupabaseResult<SupabaseSession> {
         return runCatching {
             httpClient.newCall(req).execute().use { resp ->
@@ -367,6 +468,7 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
                     userObj.optString("confirmed_at").isNotBlank()
                 val name = userObj.optJSONObject("user_metadata")?.optString("display_name")
                     ?.takeIf { it.isNotBlank() } ?: fallbackName
+                val isAnon = userObj.optBoolean("is_anonymous", isAnonymousFallback && email.isBlank())
 
                 if (userId.isBlank()) {
                     return@use SupabaseResult.Failure("Unexpected server response during sign in.")
@@ -380,7 +482,8 @@ class SupabaseAuthAndSyncClient(private val appContext: Context) {
                         refreshToken = refreshToken,
                         expiresAtMillis = System.currentTimeMillis() + (expiresIn * 1000L),
                         emailVerified = verified,
-                        displayName = name
+                        displayName = name,
+                        isAnonymous = isAnon
                     )
                 )
             }

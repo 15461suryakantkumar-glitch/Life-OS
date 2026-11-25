@@ -9,6 +9,7 @@ import com.example.data.local.TogetherOutboxEntity
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.UserPreferencesRepository
 import com.example.data.local.UserPreferencesState
+import com.example.util.DateTimeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,8 +50,28 @@ enum class TogetherReaction(val label: String, val badgeText: String) {
     HIGH_FIVE("High five", "High five")
 }
 
+data class TogetherStudyPresence(
+    val userId: String,
+    val displayName: String,
+    val isStudying: Boolean = false,
+    val sessionTitle: String = "",
+    val targetMinutes: Int = 25,
+    val startedAtMillis: Long = 0L,
+    val endsAtMillis: Long = 0L,
+    val kuttaEmotion: String = "HAPPY",
+    val cheerNote: String = "",
+    val updatedAtMillis: Long = 0L
+) {
+    fun remainingMinutes(nowMillis: Long = System.currentTimeMillis()): Int {
+        if (!isStudying || endsAtMillis <= nowMillis) return 0
+        return (((endsAtMillis - nowMillis) / 60_000L) + 1L).toInt().coerceAtLeast(1)
+    }
+}
+
 data class TogetherFriendProfile(
     val userId: String,
+    val friendshipId: String = "",
+    val isTogetherOne: Boolean = false,
     val displayName: String,
     val handle: String,
     val bio: String = "",
@@ -65,12 +86,16 @@ data class TogetherFriendProfile(
     val xp: Int = 0,
     val dailyStreak: Int = 0,
     val focusMinutesToday: Int = 0,
+    val focusDateEpochDay: Long = 0L,
     val tasksCompletedToday: Int = 0,
     val consistencyScore: Int = 0,
     val challengesCompleted: Int = 0,
+    val challengesTotal: Int = 4,
+    val petStageName: String = "Playful Pup",
     val unreadCount: Int = 0,
     val lastMessagePreview: String = "",
-    val lastMessageAtMillis: Long = 0L
+    val lastMessageAtMillis: Long = 0L,
+    val presence: TogetherStudyPresence? = null
 )
 
 data class TogetherFriendRequest(
@@ -79,7 +104,10 @@ data class TogetherFriendRequest(
     val addresseeId: String,
     val requesterName: String,
     val requesterHandle: String,
+    val addresseeName: String = "",
+    val addresseeHandle: String = "",
     val status: String, // PENDING | ACCEPTED | DECLINED | BLOCKED
+    val isTogetherOne: Boolean = false,
     val isIncoming: Boolean,
     val createdAtMillis: Long
 )
@@ -92,7 +120,7 @@ data class TogetherMessage(
     val recipientId: String,
     val content: String,
     val mediaUrl: String? = null,
-    val deliveryStatus: String = "SENT", // QUEUED | SENT | DELIVERED | READ
+    val deliveryStatus: String = "SENT", // QUEUED | FAILED | SENT | DELIVERED | READ
     val createdAtMillis: Long
 )
 
@@ -139,17 +167,24 @@ data class TogetherState(
     val isSyncing: Boolean = false,
     val isRealtimeConnected: Boolean = false,
     val statusNote: String = "",
+    val lastMessageError: String? = null,
     val friends: List<TogetherFriendProfile> = emptyList(),
     val incomingRequests: List<TogetherFriendRequest> = emptyList(),
     val outgoingRequests: List<TogetherFriendRequest> = emptyList(),
     val blockedUserIds: Set<String> = emptySet(),
     val messagesByConversation: Map<String, List<TogetherMessage>> = emptyMap(),
     val outboxCount: Int = 0,
+    val failedOutboxCount: Int = 0,
     val sharedGoals: List<TogetherSharedGoal> = emptyList(),
     val competitions: List<TogetherCompetition> = emptyList(),
     val activities: List<TogetherActivityItem> = emptyList(),
-    val togetherStreakDays: Int = 0
-)
+    val togetherStreakDays: Int = 0,
+    val myPresence: TogetherStudyPresence? = null,
+    val presenceByUserId: Map<String, TogetherStudyPresence> = emptyMap()
+) {
+    val activePartner: TogetherFriendProfile?
+        get() = friends.firstOrNull { it.isTogetherOne } ?: friends.firstOrNull()
+}
 
 /**
  * Enforces hard zero-leakage privacy guarantees before any profile snapshot leaves the device.
@@ -163,11 +198,17 @@ object TogetherPrivacyFilter {
         prefs: UserPreferencesState,
         tasksCompletedToday: Int,
         consistencyScore: Int,
-        challengesCompleted: Int
+        challengesCompleted: Int,
+        challengesTotal: Int = 4
     ): JSONObject {
         val code = prefs.friendCode.ifBlank {
             UserPreferencesRepository.generateFriendCode(prefs.userHandle, prefs.userName)
         }
+        val gatedXp = if (prefs.shareXpWithFriends) prefs.totalXp else 0
+        val gatedLevel = if (prefs.shareXpWithFriends) prefs.level else 1
+        val gatedFocus = if (prefs.shareFocusWithFriends) prefs.focusMinutesLoggedToday else 0
+        val gatedChallengesDone = if (prefs.shareChallengesWithFriends) challengesCompleted else 0
+
         return JSONObject().apply {
             put("id", userId)
             put("display_name", prefs.userName.ifBlank { "FEELORA Friend" })
@@ -182,19 +223,37 @@ object TogetherPrivacyFilter {
             put("share_streaks", prefs.shareStreaksWithFriends)
             put("share_focus", prefs.shareFocusWithFriends)
             put("share_challenges", prefs.shareChallengesWithFriends)
-            put("level", if (prefs.shareXpWithFriends) prefs.level else 1)
-            put("xp", if (prefs.shareXpWithFriends) prefs.totalXp else 0)
+            put("level", gatedLevel)
+            put("xp", gatedXp)
+            put("total_xp", gatedXp)
             put("daily_streak", if (prefs.shareStreaksWithFriends) prefs.dailyStreak else 0)
-            put("focus_minutes_today", if (prefs.shareFocusWithFriends) prefs.focusMinutesLoggedToday else 0)
+            put("focus_minutes_today", gatedFocus)
+            put("focus_date_epoch_day", if (prefs.shareFocusWithFriends) DateTimeUtils.todayEpochDay() else 0L)
             put("tasks_completed_today", if (prefs.shareChallengesWithFriends) tasksCompletedToday else 0)
             put("consistency_score", if (prefs.shareChallengesWithFriends) consistencyScore else 0)
-            put("challenges_completed", if (prefs.shareChallengesWithFriends) challengesCompleted else 0)
+            put("challenges_completed", gatedChallengesDone)
+            put("challenges_total", challengesTotal.coerceAtLeast(1))
+            put("pet_stage_name", prefs.petStage.title)
             put("updated_at", System.currentTimeMillis())
         }
     }
 
     fun conversationIdFor(userA: String, userB: String): String {
         return if (userA <= userB) "${userA}_$userB" else "${userB}_$userA"
+    }
+}
+
+object TogetherServiceLocator {
+    @Volatile
+    private var repository: TogetherRepository? = null
+
+    fun getRepository(context: Context): TogetherRepository {
+        return repository ?: synchronized(this) {
+            repository ?: TogetherRepository(
+                appContext = context.applicationContext,
+                supabase = FeeloraSupabase.client(context)
+            ).also { repository = it }
+        }
     }
 }
 
@@ -210,6 +269,7 @@ class TogetherRepository(
     private var realtimeSocket: WebSocket? = null
     private var currentUserId: String = ""
     private var currentAccessToken: String = ""
+    private var realtimeScope: CoroutineScope? = null
 
     fun refreshConfigurationState() {
         _state.update {
@@ -220,9 +280,14 @@ class TogetherRepository(
         }
     }
 
+    fun clearMessageError() {
+        _state.update { it.copy(lastMessageError = null) }
+    }
+
     fun startRealtimeSync(scope: CoroutineScope, userId: String, accessToken: String) {
         currentUserId = userId
         currentAccessToken = accessToken
+        realtimeScope = scope
         _state.update { it.copy(isCloudConfigured = supabase.isConfigured()) }
         if (!supabase.isConfigured() || userId.isBlank() || accessToken.isBlank()) {
             return
@@ -248,6 +313,7 @@ class TogetherRepository(
     fun stopRealtimeSync() {
         syncJob?.cancel()
         syncJob = null
+        realtimeScope = null
         runCatching { realtimeSocket?.close(1000, "Stopped") }
         realtimeSocket = null
         _state.update { it.copy(isRealtimeConnected = false) }
@@ -263,33 +329,45 @@ class TogetherRepository(
         val req = Request.Builder().url(wsUrl).build()
         realtimeSocket = supabase.httpClient.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                val joinMsg = JSONObject().apply {
-                    put("topic", "realtime:public:together_messages")
-                    put("event", "phx_join")
-                    put(
-                        "payload",
-                        JSONObject().put(
-                            "config",
-                            JSONObject().put("postgres_changes", JSONArray().put(
-                                JSONObject()
-                                    .put("event", "*")
-                                    .put("schema", "public")
-                                    .put("table", "together_messages")
-                            ))
-                        ).put("access_token", accessToken)
-                    )
-                    put("ref", "1")
+                val tables = listOf("together_messages", "friendships", "study_presence", "shared_goals")
+                tables.forEachIndexed { idx, table ->
+                    val joinMsg = JSONObject().apply {
+                        put("topic", "realtime:public:$table")
+                        put("event", "phx_join")
+                        put(
+                            "payload",
+                            JSONObject().put(
+                                "config",
+                                JSONObject().put(
+                                    "postgres_changes",
+                                    JSONArray().put(
+                                        JSONObject()
+                                            .put("event", "*")
+                                            .put("schema", "public")
+                                            .put("table", table)
+                                    )
+                                )
+                            ).put("access_token", accessToken)
+                        )
+                        put("ref", "${idx + 1}")
+                    }
+                    webSocket.send(joinMsg.toString())
                 }
-                webSocket.send(joinMsg.toString())
                 _state.update { it.copy(isRealtimeConnected = true) }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                if (text.contains("together_messages") || text.contains("INSERT") || text.contains("UPDATE")) {
-                    syncJob?.let {
-                        // Immediate pull will occur cleanly; also trigger one-off background fetch
-                        CoroutineScope(Dispatchers.IO).launch {
-                            runCatching { refreshMessagesAndCounts(userId, accessToken) }
+                val isChangeEvent = text.contains("INSERT") ||
+                    text.contains("UPDATE") ||
+                    text.contains("DELETE") ||
+                    text.contains("postgres_changes")
+                if (!isChangeEvent) return
+                val scope = realtimeScope ?: CoroutineScope(Dispatchers.IO)
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        when {
+                            text.contains("together_messages") -> refreshMessagesAndCounts(userId, accessToken)
+                            else -> refreshAllInternal()
                         }
                     }
                 }
@@ -311,7 +389,8 @@ class TogetherRepository(
         prefs: UserPreferencesState,
         tasksCompletedToday: Int,
         consistencyScore: Int,
-        challengesCompleted: Int
+        challengesCompleted: Int,
+        challengesTotal: Int = 4
     ): SupabaseResult<Unit> {
         if (!supabase.isConfigured() || userId.isBlank() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
@@ -321,11 +400,49 @@ class TogetherRepository(
             prefs = prefs,
             tasksCompletedToday = tasksCompletedToday,
             consistencyScore = consistencyScore,
-            challengesCompleted = challengesCompleted
+            challengesCompleted = challengesCompleted,
+            challengesTotal = challengesTotal
         )
         return when (val res = supabase.restPost("profiles", payload.toString(), accessToken, upsert = true)) {
             is SupabaseResult.Success -> SupabaseResult.Success(Unit)
             is SupabaseResult.Failure -> res
+        }
+    }
+
+    suspend fun lookupProfileByFriendCode(
+        rawQuery: String,
+        accessToken: String
+    ): SupabaseResult<TogetherFriendProfile?> {
+        if (!supabase.isConfigured() || accessToken.isBlank()) {
+            return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
+        }
+        val extracted = FriendSyncCodec.extractInviteCode(rawQuery) ?: rawQuery.trim()
+        if (extracted.isBlank()) return SupabaseResult.Success(null)
+
+        val rpcParams = JSONObject().put("p_code", extracted).toString()
+        val rpcRes = supabase.restRpc("lookup_profile_by_friend_code", rpcParams, accessToken)
+        if (rpcRes is SupabaseResult.Success) {
+            val arr = runCatching { JSONArray(rpcRes.value) }.getOrNull()
+            if (arr != null && arr.length() > 0) {
+                return SupabaseResult.Success(parseFriendProfile(arr.getJSONObject(0)))
+            }
+            if (arr != null) return SupabaseResult.Success(null)
+        }
+
+        // Fallback query if RPC is not deployed on the remote Postgres instance yet
+        val encodedHandle = Uri.encode(SupabaseAuthAndSyncClient.normalizeHandle(extracted))
+        val encodedCode = Uri.encode(extracted.uppercase())
+        val fallback = supabase.restGet(
+            "profiles?or=(handle.eq.$encodedHandle,friend_code.eq.$encodedCode)&limit=1",
+            accessToken
+        )
+        return when (fallback) {
+            is SupabaseResult.Success -> {
+                val arr = JSONArray(fallback.value)
+                if (arr.length() == 0) SupabaseResult.Success(null)
+                else SupabaseResult.Success(parseFriendProfile(arr.getJSONObject(0)))
+            }
+            is SupabaseResult.Failure -> fallback
         }
     }
 
@@ -351,28 +468,37 @@ class TogetherRepository(
             }
             val shipsArr = JSONArray((shipsRes as SupabaseResult.Success).value)
             val acceptedIds = LinkedHashSet<String>()
+            val friendshipIdByUser = HashMap<String, String>()
+            val togetherOneByUser = HashMap<String, Boolean>()
             val blockedIds = HashSet<String>()
             val incoming = mutableListOf<TogetherFriendRequest>()
             val outgoing = mutableListOf<TogetherFriendRequest>()
 
             for (i in 0 until shipsArr.length()) {
                 val obj = shipsArr.getJSONObject(i)
+                val shipId = obj.optString("id")
                 val reqId = obj.optString("requester_id")
                 val addId = obj.optString("addressee_id")
                 val status = obj.optString("status")
+                val isTogetherOne = obj.optBoolean("is_together_one", false)
                 val otherId = if (reqId == uid) addId else reqId
                 val isIncoming = addId == uid
                 when (status) {
-                    "ACCEPTED" -> if (otherId.isNotBlank()) acceptedIds.add(otherId)
+                    "ACCEPTED" -> if (otherId.isNotBlank()) {
+                        acceptedIds.add(otherId)
+                        friendshipIdByUser[otherId] = shipId
+                        togetherOneByUser[otherId] = isTogetherOne
+                    }
                     "BLOCKED" -> if (otherId.isNotBlank()) blockedIds.add(otherId)
                     "PENDING" -> {
                         val reqItem = TogetherFriendRequest(
-                            id = obj.optString("id"),
+                            id = shipId,
                             requesterId = reqId,
                             addresseeId = addId,
                             requesterName = obj.optString("requester_name"),
                             requesterHandle = obj.optString("requester_handle"),
                             status = status,
+                            isTogetherOne = isTogetherOne,
                             isIncoming = isIncoming,
                             createdAtMillis = obj.optLong("created_at")
                         )
@@ -381,22 +507,58 @@ class TogetherRepository(
                 }
             }
 
-            // 2. Profiles of accepted friends
-            val friends = mutableListOf<TogetherFriendProfile>()
-            if (acceptedIds.isNotEmpty()) {
-                val inClause = acceptedIds.joinToString(",")
+            // 2. Profiles of accepted friends + study_presence
+            val profileLookupIds = (acceptedIds + uid + outgoing.map { it.addresseeId }).filter { it.isNotBlank() }.distinct()
+            val profilesById = HashMap<String, TogetherFriendProfile>()
+            if (profileLookupIds.isNotEmpty()) {
+                val inClause = profileLookupIds.joinToString(",")
                 val profRes = supabase.restGet("profiles?id=in.($inClause)", token)
                 if (profRes is SupabaseResult.Success) {
                     val arr = JSONArray(profRes.value)
                     for (i in 0 until arr.length()) {
                         val p = arr.getJSONObject(i)
                         val prof = parseFriendProfile(p)
-                        if (prof.userId !in blockedIds) {
-                            friends.add(prof)
-                        }
+                        profilesById[prof.userId] = prof
                     }
                 }
             }
+
+            // 2b. Enrich outgoing requests with addressee names
+            for (idx in outgoing.indices) {
+                val reqItem = outgoing[idx]
+                profilesById[reqItem.addresseeId]?.let { target ->
+                    outgoing[idx] = reqItem.copy(
+                        addresseeName = target.displayName,
+                        addresseeHandle = target.handle
+                    )
+                }
+            }
+
+            // 2c. Live Co-Study Presence
+            val presenceMap = HashMap<String, TogetherStudyPresence>()
+            if (profileLookupIds.isNotEmpty()) {
+                val inClause = profileLookupIds.joinToString(",")
+                val presRes = supabase.restGet("study_presence?user_id=in.($inClause)", token)
+                if (presRes is SupabaseResult.Success) {
+                    val arr = JSONArray(presRes.value)
+                    for (i in 0 until arr.length()) {
+                        val pres = parsePresence(arr.getJSONObject(i))
+                        presenceMap[pres.userId] = pres
+                    }
+                }
+            }
+
+            val friends = acceptedIds
+                .filter { it !in blockedIds }
+                .mapNotNull { id ->
+                    profilesById[id]?.copy(
+                        friendshipId = friendshipIdByUser[id].orEmpty(),
+                        isTogetherOne = togetherOneByUser[id] == true,
+                        presence = presenceMap[id]
+                    )
+                }
+                .sortedByDescending { it.isTogetherOne }
+                .toMutableList()
 
             // 3. Messages + unread counts + outbox merge
             refreshMessagesAndCounts(uid, token, friends)
@@ -419,13 +581,13 @@ class TogetherRepository(
             val actRes = supabase.restGet("together_activities?order=created_at.desc&limit=30", token)
             val acts = if (actRes is SupabaseResult.Success) parseActivities(JSONArray(actRes.value)) else emptyList()
 
-            // Compute friendly Together Streak from connected friends & active streaks
             val streakVal = if (friends.isEmpty()) 0 else {
                 val sharedActive = friends.count { it.dailyStreak > 0 }
                 if (sharedActive > 0) (friends.maxOfOrNull { it.dailyStreak } ?: 1).coerceAtMost(365) else 1
             }
 
             val outboxList = db.togetherOutboxDao().getAllOnce()
+            val failedCount = outboxList.count { it.status == "FAILED" }
             _state.update {
                 it.copy(
                     isSyncing = false,
@@ -438,16 +600,27 @@ class TogetherRepository(
                     competitions = comps,
                     activities = acts,
                     outboxCount = outboxList.size,
-                    togetherStreakDays = streakVal
+                    failedOutboxCount = failedCount,
+                    togetherStreakDays = streakVal,
+                    myPresence = presenceMap[uid] ?: it.myPresence,
+                    presenceByUserId = presenceMap
                 )
             }
 
-            // Mirror accepted friends cleanly into local Room friends cache
+            // Mirror accepted friends cleanly into local Room friends cache & prune disconnected ones
+            val existingLocal = db.friendDao().getAllFriendsOnce()
+            val remoteIds = friends.mapTo(HashSet()) { it.userId }
+            existingLocal.filter { it.remoteUserId.isNotBlank() && it.remoteUserId !in remoteIds }.forEach { stale ->
+                db.friendDao().deleteFriend(stale)
+            }
             friends.forEach { f ->
-                val existing = db.friendDao().findByCodeOrHandle(f.friendCode, f.handle)
+                val existing = db.friendDao().findByRemoteOrCodeOrHandle(f.userId, f.friendCode, f.handle)
                 db.friendDao().insertFriend(
                     FriendEntity(
                         id = existing?.id ?: 0L,
+                        remoteUserId = f.userId,
+                        friendshipId = f.friendshipId,
+                        isTogetherOne = f.isTogetherOne,
                         displayName = f.displayName,
                         handle = f.handle,
                         friendCode = f.friendCode,
@@ -456,14 +629,14 @@ class TogetherRepository(
                         streakDays = f.dailyStreak,
                         focusMinutesToday = f.focusMinutesToday,
                         challengesCompleted = f.challengesCompleted,
-                        challengesTotal = 4,
-                        petStageName = "FEELORA Together",
+                        challengesTotal = f.challengesTotal.coerceAtLeast(1),
+                        petStageName = f.petStageName.ifBlank { "Playful Pup" },
                         sharesStats = f.shareXp || f.shareStreaks || f.shareFocus || f.shareChallenges,
                         shareXp = f.shareXp,
                         shareStreaks = f.shareStreaks,
                         shareFocus = f.shareFocus,
                         shareChallenges = f.shareChallenges,
-                        statusText = "Connected online",
+                        statusText = if (f.isTogetherOne) "Together One Partner" else "Connected online",
                         lastSyncedAtMillis = System.currentTimeMillis()
                     )
                 )
@@ -480,10 +653,13 @@ class TogetherRepository(
         token: String,
         friendsToUpdate: MutableList<TogetherFriendProfile>? = null
     ) {
-        val msgRes = supabase.restGet(
-            "together_messages?or=(sender_id.eq.$uid,recipient_id.eq.$uid)&order=created_at.asc&limit=300",
-            token
-        )
+        val msgRes = if (supabase.isConfigured() && uid.isNotBlank() && token.isNotBlank()) {
+            supabase.restGet(
+                "together_messages?or=(sender_id.eq.$uid,recipient_id.eq.$uid)&order=created_at.asc&limit=300",
+                token
+            )
+        } else null
+
         val outbox = db.togetherOutboxDao().getAllOnce()
         val grouped = LinkedHashMap<String, MutableList<TogetherMessage>>()
 
@@ -506,7 +682,7 @@ class TogetherRepository(
             }
         }
 
-        // Append queued offline messages cleanly
+        // Append queued/failed offline messages cleanly
         outbox.forEach { queued ->
             val list = grouped.getOrPut(queued.conversationId) { mutableListOf() }
             if (list.none { it.clientMessageId == queued.clientMessageId }) {
@@ -519,7 +695,7 @@ class TogetherRepository(
                         recipientId = queued.recipientUserId,
                         content = queued.content,
                         mediaUrl = queued.mediaLocalUri,
-                        deliveryStatus = "QUEUED",
+                        deliveryStatus = if (queued.status == "FAILED") "FAILED" else "QUEUED",
                         createdAtMillis = queued.createdAtMillis
                     )
                 )
@@ -546,7 +722,8 @@ class TogetherRepository(
             it.copy(
                 friends = targetFriends,
                 messagesByConversation = grouped,
-                outboxCount = outbox.size
+                outboxCount = outbox.size,
+                failedOutboxCount = outbox.count { q -> q.status == "FAILED" }
             )
         }
     }
@@ -561,43 +738,50 @@ class TogetherRepository(
         if (!supabase.isConfigured() || myUserId.isBlank() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
-        val cleanQuery = query.trim()
-        if (cleanQuery.isBlank()) return SupabaseResult.Failure("Enter a username or Friend Code.")
+        currentUserId = myUserId
+        currentAccessToken = accessToken
+        val cleanQuery = FriendSyncCodec.extractInviteCode(query) ?: query.trim()
+        if (cleanQuery.isBlank()) return SupabaseResult.Failure("Enter a Friend Code, @username, or invite link.")
 
-        val encodedHandle = Uri.encode(SupabaseAuthAndSyncClient.normalizeHandle(cleanQuery))
-        val encodedCode = Uri.encode(cleanQuery.uppercase())
-        val searchRes = supabase.restGet(
-            "profiles?or=(handle.eq.$encodedHandle,friend_code.eq.$encodedCode)&limit=1",
-            accessToken
-        )
-        if (searchRes is SupabaseResult.Failure) return searchRes
-        val arr = JSONArray((searchRes as SupabaseResult.Success).value)
-        if (arr.length() == 0) {
-            return SupabaseResult.Failure("No FEELORA user found matching \"$cleanQuery\".")
+        val lookupRes = lookupProfileByFriendCode(cleanQuery, accessToken)
+        if (lookupRes is SupabaseResult.Failure) return lookupRes
+        val target = (lookupRes as SupabaseResult.Success).value
+            ?: return SupabaseResult.Failure("No FEELORA user found matching \"$cleanQuery\".")
+
+        if (target.userId == myUserId) {
+            return SupabaseResult.Failure("That's your own FEELORA Friend Code!")
         }
-        val target = arr.getJSONObject(0)
-        val targetId = target.optString("id")
-        val targetName = target.optString("display_name")
-        if (targetId == myUserId) {
-            return SupabaseResult.Failure("That's your own FEELORA profile!")
+        if (_state.value.friends.any { it.userId == target.userId }) {
+            return SupabaseResult.Success("You're already connected with ${target.displayName}!")
         }
 
         val payload = JSONObject().apply {
             put("requester_id", myUserId)
-            put("addressee_id", targetId)
-            put("requester_name", myName.ifBlank { "Friend" })
+            put("addressee_id", target.userId)
+            put("requester_name", myName.ifBlank { "FEELORA Friend" })
             put("requester_handle", myHandle.ifBlank { "@feelora" })
             put("status", "PENDING")
+            put("is_together_one", _state.value.friends.isEmpty())
             put("created_at", System.currentTimeMillis())
         }
         return when (val ins = supabase.restPost("friendships", payload.toString(), accessToken, upsert = true)) {
             is SupabaseResult.Success -> {
                 refreshAllInternal()
-                SupabaseResult.Success("Friend request sent to $targetName.")
+                SupabaseResult.Success("Friend request sent to ${target.displayName} (${target.friendCode}).")
             }
             is SupabaseResult.Failure -> ins
         }
     }
+
+    suspend fun respondToFriendRequest(
+        requestId: String,
+        accept: Boolean,
+        accessToken: String
+    ): SupabaseResult<Unit> = respondToFriendRequest(
+        requestId = requestId,
+        status = if (accept) "ACCEPTED" else "DECLINED",
+        accessToken = accessToken
+    )
 
     suspend fun respondToFriendRequest(
         requestId: String,
@@ -607,10 +791,62 @@ class TogetherRepository(
         if (!supabase.isConfigured() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
-        val body = JSONObject().put("status", status).toString()
+        val body = JSONObject().apply {
+            put("status", status)
+            if (status == "ACCEPTED" && _state.value.friends.none { it.isTogetherOne }) {
+                put("is_together_one", true)
+            }
+        }.toString()
         val res = supabase.restPatch("friendships?id=eq.$requestId", body, accessToken)
         return when (res) {
             is SupabaseResult.Success -> {
+                refreshAllInternal()
+                SupabaseResult.Success(Unit)
+            }
+            is SupabaseResult.Failure -> res
+        }
+    }
+
+    suspend fun cancelFriendRequest(
+        requestId: String,
+        accessToken: String
+    ): SupabaseResult<Unit> {
+        if (!supabase.isConfigured() || accessToken.isBlank()) {
+            return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
+        }
+        return when (val res = supabase.restDelete("friendships?id=eq.$requestId", accessToken)) {
+            is SupabaseResult.Success -> {
+                refreshAllInternal()
+                SupabaseResult.Success(Unit)
+            }
+            is SupabaseResult.Failure -> res
+        }
+    }
+
+    suspend fun setTogetherOnePartner(
+        myUserId: String,
+        friendUserId: String,
+        isTogetherOne: Boolean,
+        accessToken: String
+    ): SupabaseResult<Unit> {
+        if (!supabase.isConfigured() || myUserId.isBlank() || accessToken.isBlank()) {
+            return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
+        }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
+        if (isTogetherOne) {
+            // Reset other active Together One markers for current user's friendships
+            supabase.restPatch(
+                "friendships?or=(requester_id.eq.$myUserId,addressee_id.eq.$myUserId)&is_together_one=eq.true",
+                JSONObject().put("is_together_one", false).toString(),
+                accessToken
+            )
+            db.friendDao().clearAllTogetherOne()
+        }
+        val targetQuery = "friendships?or=(and(requester_id.eq.$myUserId,addressee_id.eq.$friendUserId),and(requester_id.eq.$friendUserId,addressee_id.eq.$myUserId))"
+        return when (val res = supabase.restPatch(targetQuery, JSONObject().put("is_together_one", isTogetherOne).toString(), accessToken)) {
+            is SupabaseResult.Success -> {
+                db.friendDao().updateTogetherOneFlag(friendUserId, isTogetherOne)
                 refreshAllInternal()
                 SupabaseResult.Success(Unit)
             }
@@ -627,19 +863,92 @@ class TogetherRepository(
         if (!supabase.isConfigured() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
         val query = "friendships?or=(and(requester_id.eq.$myUserId,addressee_id.eq.$friendUserId),and(requester_id.eq.$friendUserId,addressee_id.eq.$myUserId))"
         val res = if (block) {
-            supabase.restPatch(query, JSONObject().put("status", "BLOCKED").toString(), accessToken)
+            supabase.restPatch(query, JSONObject().put("status", "BLOCKED").put("is_together_one", false).toString(), accessToken)
         } else {
             supabase.restDelete(query, accessToken)
         }
         return when (res) {
             is SupabaseResult.Success -> {
+                db.friendDao().deleteByRemoteUserId(friendUserId)
                 refreshAllInternal()
                 SupabaseResult.Success(Unit)
             }
             is SupabaseResult.Failure -> res
         }
+    }
+
+    suspend fun upsertStudyPresence(
+        userId: String,
+        displayName: String,
+        isStudying: Boolean,
+        sessionTitle: String,
+        targetMinutes: Int,
+        startedAtMillis: Long,
+        endsAtMillis: Long,
+        kuttaEmotion: String,
+        cheerNote: String,
+        accessToken: String
+    ): SupabaseResult<TogetherStudyPresence> {
+        val now = System.currentTimeMillis()
+        val localPresence = TogetherStudyPresence(
+            userId = userId.ifBlank { "local_self" },
+            displayName = displayName.ifBlank { "You" },
+            isStudying = isStudying,
+            sessionTitle = sessionTitle.trim(),
+            targetMinutes = targetMinutes.coerceAtLeast(1),
+            startedAtMillis = startedAtMillis,
+            endsAtMillis = endsAtMillis,
+            kuttaEmotion = kuttaEmotion.ifBlank { "HAPPY" },
+            cheerNote = cheerNote.trim().take(120),
+            updatedAtMillis = now
+        )
+        _state.update { it.copy(myPresence = localPresence) }
+
+        if (!supabase.isConfigured() || userId.isBlank() || accessToken.isBlank()) {
+            return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
+        }
+
+        val payload = JSONObject().apply {
+            put("user_id", userId)
+            put("display_name", localPresence.displayName)
+            put("is_studying", localPresence.isStudying)
+            put("session_title", localPresence.sessionTitle)
+            put("target_minutes", localPresence.targetMinutes)
+            put("started_at_millis", localPresence.startedAtMillis)
+            put("ends_at_millis", localPresence.endsAtMillis)
+            put("kutta_emotion", localPresence.kuttaEmotion)
+            put("cheer_note", localPresence.cheerNote)
+            put("updated_at", now)
+        }
+
+        return when (val res = supabase.restPost("study_presence", payload.toString(), accessToken, upsert = true)) {
+            is SupabaseResult.Success -> SupabaseResult.Success(localPresence)
+            is SupabaseResult.Failure -> res
+        }
+    }
+
+    suspend fun sendQuickCheer(
+        myUserId: String,
+        myName: String,
+        friendUserId: String,
+        cheerMessage: String,
+        accessToken: String
+    ): SupabaseResult<Unit> {
+        val msgRes = sendMessage(
+            myUserId = myUserId,
+            friendUserId = friendUserId,
+            content = cheerMessage,
+            mediaLocalUri = null,
+            accessToken = accessToken
+        )
+        if (msgRes is SupabaseResult.Success) {
+            postActivity(myUserId, myName, "Sent a KUTTA cheer: \"$cheerMessage\"", accessToken)
+        }
+        return msgRes
     }
 
     suspend fun reportUser(
@@ -674,11 +983,11 @@ class TogetherRepository(
         if (cleanText.isBlank() && mediaLocalUri == null) {
             return SupabaseResult.Success(Unit)
         }
-        val convId = TogetherPrivacyFilter.conversationIdFor(myUserId.ifBlank { "local" }, friendUserId)
+        val effectiveUid = myUserId.ifBlank { "local_self" }
+        val convId = TogetherPrivacyFilter.conversationIdFor(effectiveUid, friendUserId)
         val clientMsgId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
 
-        // Upload image via Photo Picker URI if online & configured
         var uploadedMediaUrl: String? = null
         if (mediaLocalUri != null && supabase.isConfigured() && accessToken.isNotBlank()) {
             val objectPath = "$myUserId/$clientMsgId.jpg"
@@ -688,22 +997,23 @@ class TogetherRepository(
             }
         }
 
-        // Queue in Room outbox first for reliability
-        db.togetherOutboxDao().upsert(
-            TogetherOutboxEntity(
-                conversationId = convId,
-                recipientUserId = friendUserId,
-                clientMessageId = clientMsgId,
-                content = cleanText,
-                mediaLocalUri = uploadedMediaUrl ?: mediaLocalUri?.toString(),
-                status = "PENDING",
-                createdAtMillis = now
-            )
+        val initialEntity = TogetherOutboxEntity(
+            conversationId = convId,
+            recipientUserId = friendUserId,
+            clientMessageId = clientMsgId,
+            content = cleanText,
+            mediaLocalUri = uploadedMediaUrl ?: mediaLocalUri?.toString(),
+            status = "PENDING",
+            createdAtMillis = now
         )
+        db.togetherOutboxDao().upsert(initialEntity)
 
         if (!supabase.isConfigured() || myUserId.isBlank() || accessToken.isBlank()) {
-            refreshMessagesAndCounts(myUserId.ifBlank { "local" }, accessToken)
-            return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
+            val errMsg = supabase.configurationStatusMessage()
+            db.togetherOutboxDao().upsert(initialEntity.copy(status = "FAILED", retryCount = 1))
+            _state.update { it.copy(lastMessageError = errMsg) }
+            refreshMessagesAndCounts(effectiveUid, accessToken)
+            return SupabaseResult.Failure(errMsg, isConfigMissing = true)
         }
 
         val payload = JSONObject().apply {
@@ -720,14 +1030,35 @@ class TogetherRepository(
         return when (val postRes = supabase.restPost("together_messages", payload.toString(), accessToken)) {
             is SupabaseResult.Success -> {
                 db.togetherOutboxDao().deleteByClientId(clientMsgId)
+                _state.update { it.copy(lastMessageError = null) }
                 refreshMessagesAndCounts(myUserId, accessToken)
                 SupabaseResult.Success(Unit)
             }
             is SupabaseResult.Failure -> {
+                val persisted = db.togetherOutboxDao().getAllOnce().firstOrNull { it.clientMessageId == clientMsgId }
+                if (persisted != null) {
+                    db.togetherOutboxDao().upsert(
+                        persisted.copy(status = "FAILED", retryCount = persisted.retryCount + 1)
+                    )
+                }
+                _state.update { it.copy(lastMessageError = postRes.message) }
                 refreshMessagesAndCounts(myUserId, accessToken)
                 postRes
             }
         }
+    }
+
+    suspend fun retryFailedMessages(myUserId: String, accessToken: String): SupabaseResult<Int> {
+        if (!supabase.isConfigured() || myUserId.isBlank() || accessToken.isBlank()) {
+            val msg = supabase.configurationStatusMessage()
+            _state.update { it.copy(lastMessageError = msg) }
+            return SupabaseResult.Failure(msg, isConfigMissing = true)
+        }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
+        val sentCount = flushOutboxInternal()
+        refreshMessagesAndCounts(myUserId, accessToken)
+        return SupabaseResult.Success(sentCount)
     }
 
     suspend fun markConversationRead(myUserId: String, friendUserId: String, accessToken: String) {
@@ -738,15 +1069,17 @@ class TogetherRepository(
         refreshMessagesAndCounts(myUserId, accessToken)
     }
 
-    private suspend fun flushOutboxInternal() {
+    private suspend fun flushOutboxInternal(): Int {
         val uid = currentUserId
         val token = currentAccessToken
-        if (!supabase.isConfigured() || uid.isBlank() || token.isBlank()) return
+        if (!supabase.isConfigured() || uid.isBlank() || token.isBlank()) return 0
         val queued = db.togetherOutboxDao().getAllOnce()
+        var flushed = 0
         queued.forEach { item ->
+            val convId = TogetherPrivacyFilter.conversationIdFor(uid, item.recipientUserId)
             val payload = JSONObject().apply {
                 put("client_message_id", item.clientMessageId)
-                put("conversation_id", item.conversationId)
+                put("conversation_id", convId)
                 put("sender_id", uid)
                 put("recipient_id", item.recipientUserId)
                 put("content", item.content)
@@ -759,8 +1092,16 @@ class TogetherRepository(
             val res = supabase.restPost("together_messages", payload.toString(), token, upsert = true)
             if (res is SupabaseResult.Success) {
                 db.togetherOutboxDao().deleteByClientId(item.clientMessageId)
+                flushed++
+            } else if (res is SupabaseResult.Failure) {
+                db.togetherOutboxDao().upsert(item.copy(status = "FAILED", retryCount = item.retryCount + 1))
+                _state.update { it.copy(lastMessageError = res.message) }
             }
         }
+        if (flushed > 0 && db.togetherOutboxDao().getAllOnce().isEmpty()) {
+            _state.update { it.copy(lastMessageError = null) }
+        }
+        return flushed
     }
 
     suspend fun createSharedGoal(
@@ -776,6 +1117,8 @@ class TogetherRepository(
         if (!supabase.isConfigured() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
         val payload = JSONObject().apply {
             put("creator_id", myUserId)
             if (!partnerId.isNullOrBlank()) put("partner_id", partnerId)
@@ -807,6 +1150,8 @@ class TogetherRepository(
         if (!supabase.isConfigured() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
         val nextVal = (goal.currentValue + delta).coerceIn(0, goal.targetValue)
         val completed = nextVal >= goal.targetValue
         val payload = JSONObject().apply {
@@ -838,6 +1183,8 @@ class TogetherRepository(
         if (!supabase.isConfigured() || accessToken.isBlank()) {
             return SupabaseResult.Failure(supabase.configurationStatusMessage(), isConfigMissing = true)
         }
+        currentUserId = myUserId
+        currentAccessToken = accessToken
         val payload = JSONObject().apply {
             put("creator_id", myUserId)
             if (!partnerId.isNullOrBlank()) put("partner_id", partnerId)
@@ -909,6 +1256,11 @@ class TogetherRepository(
     }
 
     private fun parseFriendProfile(p: JSONObject): TogetherFriendProfile {
+        val shareXp = p.optBoolean("share_xp", true)
+        val shareStreaks = p.optBoolean("share_streaks", true)
+        val shareFocus = p.optBoolean("share_focus", false)
+        val shareChallenges = p.optBoolean("share_challenges", true)
+        val rawXp = maxOf(p.optInt("total_xp", 0), p.optInt("xp", 0))
         return TogetherFriendProfile(
             userId = p.optString("id"),
             displayName = p.optString("display_name", "Friend"),
@@ -917,17 +1269,35 @@ class TogetherRepository(
             friendCode = p.optString("friend_code", ""),
             avatarPreset = UserAvatarPreset.fromStored(p.optString("avatar_preset")),
             avatarUrl = p.optString("avatar_url", ""),
-            shareXp = p.optBoolean("share_xp", true),
-            shareStreaks = p.optBoolean("share_streaks", true),
-            shareFocus = p.optBoolean("share_focus", false),
-            shareChallenges = p.optBoolean("share_challenges", true),
-            level = p.optInt("level", 1),
-            xp = p.optInt("xp", 0),
-            dailyStreak = p.optInt("daily_streak", 0),
-            focusMinutesToday = p.optInt("focus_minutes_today", 0),
-            tasksCompletedToday = p.optInt("tasks_completed_today", 0),
-            consistencyScore = p.optInt("consistency_score", 0),
-            challengesCompleted = p.optInt("challenges_completed", 0)
+            shareXp = shareXp,
+            shareStreaks = shareStreaks,
+            shareFocus = shareFocus,
+            shareChallenges = shareChallenges,
+            level = if (shareXp) p.optInt("level", 1) else 1,
+            xp = if (shareXp) rawXp else 0,
+            dailyStreak = if (shareStreaks) p.optInt("daily_streak", 0) else 0,
+            focusMinutesToday = if (shareFocus) p.optInt("focus_minutes_today", 0) else 0,
+            focusDateEpochDay = if (shareFocus) p.optLong("focus_date_epoch_day", 0L) else 0L,
+            tasksCompletedToday = if (shareChallenges) p.optInt("tasks_completed_today", 0) else 0,
+            consistencyScore = if (shareChallenges) p.optInt("consistency_score", 0) else 0,
+            challengesCompleted = if (shareChallenges) p.optInt("challenges_completed", 0) else 0,
+            challengesTotal = if (shareChallenges) p.optInt("challenges_total", 4).coerceAtLeast(1) else 4,
+            petStageName = p.optString("pet_stage_name", "Playful Pup").ifBlank { "Playful Pup" }
+        )
+    }
+
+    private fun parsePresence(o: JSONObject): TogetherStudyPresence {
+        return TogetherStudyPresence(
+            userId = o.optString("user_id"),
+            displayName = o.optString("display_name", "Friend"),
+            isStudying = o.optBoolean("is_studying", false),
+            sessionTitle = o.optString("session_title", ""),
+            targetMinutes = o.optInt("target_minutes", 25).coerceAtLeast(1),
+            startedAtMillis = o.optLong("started_at_millis", 0L),
+            endsAtMillis = o.optLong("ends_at_millis", 0L),
+            kuttaEmotion = o.optString("kutta_emotion", "HAPPY"),
+            cheerNote = o.optString("cheer_note", ""),
+            updatedAtMillis = o.optLong("updated_at", 0L)
         )
     }
 

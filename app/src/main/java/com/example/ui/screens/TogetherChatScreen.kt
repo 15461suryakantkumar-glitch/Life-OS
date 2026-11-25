@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -78,6 +79,9 @@ fun TogetherChatScreen(
     myUserId: String,
     friend: TogetherFriendProfile,
     messages: List<TogetherMessage>,
+    lastMessageError: String? = null,
+    failedOutboxCount: Int = 0,
+    onRetryFailedMessages: () -> Unit = {},
     onBack: () -> Unit,
     onSendMessage: (content: String, mediaUri: Uri?) -> Unit,
     onBlockFriend: (block: Boolean) -> Unit,
@@ -160,6 +164,18 @@ fun TogetherChatScreen(
                 }
             }
 
+            if (lastMessageError != null || failedOutboxCount > 0) {
+                com.example.ui.components.FeeloraStatusBanner(
+                    message = lastMessageError ?: "$failedOutboxCount message(s) failed to send.",
+                    tone = com.example.ui.components.FeeloraBannerTone.ERROR,
+                    actionLabel = "Retry",
+                    onAction = onRetryFailedMessages,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .testTag("together_chat_retry_banner")
+                )
+            }
+
             // Message Thread
             LazyColumn(
                 state = listState,
@@ -178,7 +194,8 @@ fun TogetherChatScreen(
                     }
                 }
                 items(messages, key = { it.clientMessageId.ifBlank { it.id } }) { msg ->
-                    val isMine = msg.senderId == myUserId || msg.senderId.isBlank()
+                    val isMine = msg.senderId == myUserId || msg.senderId.isBlank() || msg.senderId == "local_self"
+                    val isFailed = msg.deliveryStatus == "FAILED"
                     val shape = RoundedCornerShape(
                         topStart = 18.dp,
                         topEnd = 18.dp,
@@ -199,7 +216,11 @@ fun TogetherChatScreen(
                                 )
                                 .border(
                                     1.dp,
-                                    if (isMine) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f) else tokens.borderSubtle,
+                                    when {
+                                        isFailed -> RoseAlert.copy(alpha = 0.7f)
+                                        isMine -> MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                                        else -> tokens.borderSubtle
+                                    },
                                     shape
                                 )
                                 .padding(12.dp)
@@ -227,10 +248,21 @@ fun TogetherChatScreen(
                                     color = tokens.inkMuted
                                 )
                                 if (isMine) {
-                                    StatusPill(
-                                        text = msg.deliveryStatus.lowercase().replaceFirstChar { it.uppercase() },
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
+                                    if (isFailed) {
+                                        StatusPill(
+                                            text = "Failed · Retry",
+                                            color = RoseAlert,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .clickable { onRetryFailedMessages() }
+                                                .testTag("chat_failed_retry_pill")
+                                        )
+                                    } else {
+                                        StatusPill(
+                                            text = msg.deliveryStatus.lowercase().replaceFirstChar { it.uppercase() },
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -131,12 +131,13 @@ import com.example.ui.screens.StudyScreen
 import com.example.ui.screens.SuruAiSettingsSheet
 import com.example.ui.screens.TasksScreen
 import com.example.ui.screens.TogetherChatScreen
-import com.example.ui.screens.TogetherScreen
+import com.example.ui.screens.TogetherOneScreen
 import com.example.ui.screens.WellnessScreen
 import com.example.ui.screens.conversationMessagesFor
 import com.example.ui.theme.LifeOsTheme
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.viewmodel.LifeOsViewModel
+import com.example.ui.viewmodel.TogetherOneViewModel
 import kotlinx.coroutines.launch
 
 enum class LifeOsSection(
@@ -152,7 +153,7 @@ enum class LifeOsSection(
     CALENDAR("calendar", "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth, isPrimaryTab = true),
     LIFE_AI("life_ai", "SURU", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome, isPrimaryTab = true),
     WELLNESS("wellness", "Wellness", Icons.Filled.HealthAndSafety, Icons.Outlined.HealthAndSafety),
-    TOGETHER("together", "Together One", Icons.Filled.Groups, Icons.Outlined.Groups),
+    TOGETHER_ONE("together_one", "Together One", Icons.Filled.Groups, Icons.Outlined.Groups),
     TOGETHER_CHAT("together_chat", "Chat", Icons.AutoMirrored.Filled.Chat, Icons.AutoMirrored.Outlined.Chat),
     GROWTH("growth", "KUTTA Corner", Icons.Filled.Pets, Icons.Outlined.Pets),
     NOTIFICATIONS("notifications", "Notifications", Icons.Filled.Notifications, Icons.Outlined.Notifications),
@@ -168,9 +169,11 @@ fun LifeOsApp(
     onConsumeInitialRoute: () -> Unit = {},
     incomingFriendPayload: String? = null,
     onConsumeIncomingFriendPayload: () -> Unit = {},
-    viewModel: LifeOsViewModel = viewModel()
+    viewModel: LifeOsViewModel = viewModel(),
+    togetherOneViewModel: TogetherOneViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val togetherOneState by togetherOneViewModel.uiState.collectAsStateWithLifecycle()
     var currentSection by remember { mutableStateOf(LifeOsSection.HOME) }
     var openCreateTaskImmediately by remember { mutableStateOf(false) }
     var showSuruAiSettingsSheet by remember { mutableStateOf(false) }
@@ -206,7 +209,7 @@ fun LifeOsApp(
     fun navigateToSection(target: LifeOsSection) {
         currentSection = target
         when (target) {
-            LifeOsSection.TOGETHER -> viewModel.refreshTogetherData()
+            LifeOsSection.TOGETHER_ONE -> togetherOneViewModel.refresh()
             LifeOsSection.PERMISSIONS -> viewModel.refreshSystemPermissions()
             else -> Unit
         }
@@ -214,7 +217,8 @@ fun LifeOsApp(
 
     val navigateToRoute: (String) -> Unit = { route ->
         val normalized = when (route) {
-            "friends" -> "together"
+            "friends", "together", "together_one" -> LifeOsSection.TOGETHER_ONE.route
+            "suru_ai", "life_ai" -> LifeOsSection.LIFE_AI.route
             else -> route
         }
         LifeOsSection.entries.firstOrNull { it.route == normalized }?.let {
@@ -249,8 +253,11 @@ fun LifeOsApp(
                     currentSection = LifeOsSection.TASKS
                     openCreateTaskImmediately = true
                 }
-                "friends", "together" -> {
-                    navigateToSection(LifeOsSection.TOGETHER)
+                "friends", "together", "together_one" -> {
+                    navigateToSection(LifeOsSection.TOGETHER_ONE)
+                }
+                "suru_ai", "life_ai" -> {
+                    navigateToSection(LifeOsSection.LIFE_AI)
                 }
                 else -> {
                     LifeOsSection.entries.firstOrNull { it.route == initialRoute }?.let {
@@ -265,17 +272,16 @@ fun LifeOsApp(
     LaunchedEffect(incomingFriendPayload, state.prefs.isSignedIn) {
         val payload = incomingFriendPayload
         if (!payload.isNullOrBlank() && state.prefs.isSignedIn) {
-            viewModel.importFriendFromInput(payload)
-            navigateToSection(LifeOsSection.TOGETHER)
+            togetherOneViewModel.sendInviteOrRequest(payload) { _, msg ->
+                viewModel.showMessage(msg)
+            }
+            navigateToSection(LifeOsSection.TOGETHER_ONE)
             onConsumeIncomingFriendPayload()
         }
     }
 
     var hasRenderedInitialSection by remember { mutableStateOf(false) }
     LaunchedEffect(currentSection) {
-        if (currentSection != LifeOsSection.TOGETHER) {
-            viewModel.stopNearbyPeerRadar()
-        }
         if (hasRenderedInitialSection) {
             viewModel.playUiCue(LifeOsSoundCue.NAV_SWITCH)
         } else {
@@ -314,7 +320,7 @@ fun LifeOsApp(
             when (currentSection) {
                 LifeOsSection.TOGETHER_CHAT -> {
                     viewModel.openTogetherChat(null)
-                    currentSection = LifeOsSection.TOGETHER
+                    currentSection = LifeOsSection.TOGETHER_ONE
                 }
                 LifeOsSection.COMMAND_CENTER -> currentSection = LifeOsSection.PROFILE
                 LifeOsSection.PERMISSIONS -> currentSection = LifeOsSection.SETTINGS
@@ -458,7 +464,7 @@ fun LifeOsApp(
                                                 LifeOsSection.CALENDAR,
                                                 LifeOsSection.LIFE_AI,
                                                 LifeOsSection.WELLNESS,
-                                                LifeOsSection.TOGETHER,
+                                                LifeOsSection.TOGETHER_ONE,
                                                 LifeOsSection.GROWTH,
                                                 LifeOsSection.NOTIFICATIONS,
                                                 LifeOsSection.PROFILE,
@@ -482,7 +488,7 @@ fun LifeOsApp(
                                                 railSections.forEach { sec ->
                                                     val selected = currentSection == sec
                                                     val badgeCount = when (sec) {
-                                                        LifeOsSection.TOGETHER -> state.unreadTogetherMessagesCount
+                                                        LifeOsSection.TOGETHER_ONE -> state.unreadTogetherMessagesCount
                                                         LifeOsSection.NOTIFICATIONS -> state.unreadNotificationsCount
                                                         else -> 0
                                                     }
@@ -642,31 +648,34 @@ fun LifeOsApp(
                                                         onToggleHabit = viewModel::toggleHabitToday,
                                                         onAddHabit = viewModel::addHabit
                                                     )
-                                                    LifeOsSection.TOGETHER -> TogetherScreen(
-                                                        state = state,
-                                                        myInviteLink = viewModel.buildMyInviteLink(),
+                                                    LifeOsSection.TOGETHER_ONE -> TogetherOneScreen(
+                                                        state = togetherOneState,
+                                                        localCachedFriends = state.friends,
                                                         onBack = { currentSection = LifeOsSection.HOME },
-                                                        onRefresh = viewModel::refreshTogetherData,
+                                                        onRefresh = togetherOneViewModel::refresh,
+                                                        onSendInviteOrRequest = togetherOneViewModel::sendInviteOrRequest,
+                                                        onRespondToRequest = togetherOneViewModel::respondToRequest,
+                                                        onCancelOutgoingRequest = togetherOneViewModel::cancelOutgoingRequest,
+                                                        onToggleTogetherOnePartner = togetherOneViewModel::toggleTogetherOnePartner,
+                                                        onRemoveOrBlockFriend = togetherOneViewModel::removeOrBlockFriend,
                                                         onOpenChat = { friend ->
                                                             viewModel.openTogetherChat(friend.userId)
                                                             currentSection = LifeOsSection.TOGETHER_CHAT
                                                         },
-                                                        onSendFriendRequest = viewModel::sendTogetherFriendRequest,
-                                                        onRespondToRequest = viewModel::respondToTogetherRequest,
-                                                        onCreateSharedGoal = viewModel::createTogetherSharedGoal,
-                                                        onIncrementGoal = viewModel::incrementTogetherSharedGoal,
-                                                        onCreateCompetition = viewModel::createTogetherCompetition,
-                                                        onReactToActivity = viewModel::reactToTogetherActivity,
-                                                        onUpdatePrivacy = viewModel::updatePrivacy,
-                                                        onImportLocalFriend = viewModel::importFriendFromInput,
-                                                        onToggleNearbyRadar = viewModel::toggleNearbyPeerRadar,
-                                                        onSyncNearbyPeer = viewModel::syncWithNearbyPeer,
+                                                        onStartCoStudy = togetherOneViewModel::startCoStudySession,
+                                                        onStopCoStudy = togetherOneViewModel::stopCoStudySession,
+                                                        onSendCheer = togetherOneViewModel::sendCheer,
+                                                        onCreateSharedGoal = togetherOneViewModel::createSharedGoal,
+                                                        onIncrementGoal = togetherOneViewModel::incrementSharedGoal,
+                                                        onCreateCompetition = togetherOneViewModel::createCompetition,
+                                                        onReactToActivity = togetherOneViewModel::reactToActivity,
+                                                        onUpdatePrivacy = togetherOneViewModel::updatePrivacy,
+                                                        onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
+                                                        onClearFeedback = togetherOneViewModel::clearFeedback,
                                                         onShowMessage = viewModel::showMessage
                                                     )
                                                     LifeOsSection.TOGETHER_CHAT -> {
-                                                        val myId = state.prefs.supabaseUserId.ifBlank {
-                                                            state.prefs.friendCode.ifBlank { "local_self" }
-                                                        }
+                                                        val myId = state.prefs.supabaseUserId.ifBlank { "local_self" }
                                                         val friend = state.togetherState.friends.firstOrNull {
                                                             it.userId == state.activeChatFriendId
                                                         }
@@ -679,18 +688,21 @@ fun LifeOsApp(
                                                                     friendUserId = friend.userId,
                                                                     map = state.togetherState.messagesByConversation
                                                                 ),
+                                                                lastMessageError = togetherOneState.togetherState.lastMessageError,
+                                                                failedOutboxCount = togetherOneState.togetherState.failedOutboxCount,
+                                                                onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
                                                                 onBack = {
                                                                     viewModel.openTogetherChat(null)
-                                                                    currentSection = LifeOsSection.TOGETHER
+                                                                    currentSection = LifeOsSection.TOGETHER_ONE
                                                                 },
                                                                 onSendMessage = { content, mediaUri ->
-                                                                    viewModel.sendTogetherChatMessage(friend.userId, content, mediaUri)
+                                                                    togetherOneViewModel.sendChatMessage(friend.userId, content, mediaUri)
                                                                 },
                                                                 onBlockFriend = { block ->
-                                                                    viewModel.blockOrRemoveTogetherFriend(friend.userId, block)
+                                                                    togetherOneViewModel.removeOrBlockFriend(friend.userId, block)
                                                                     if (block) {
                                                                         viewModel.openTogetherChat(null)
-                                                                        currentSection = LifeOsSection.TOGETHER
+                                                                        currentSection = LifeOsSection.TOGETHER_ONE
                                                                     }
                                                                 },
                                                                 onReportUser = { reason ->
@@ -698,25 +710,30 @@ fun LifeOsApp(
                                                                 }
                                                             )
                                                         } else {
-                                                            TogetherScreen(
-                                                                state = state,
-                                                                myInviteLink = viewModel.buildMyInviteLink(),
+                                                            TogetherOneScreen(
+                                                                state = togetherOneState,
+                                                                localCachedFriends = state.friends,
                                                                 onBack = { currentSection = LifeOsSection.HOME },
-                                                                onRefresh = viewModel::refreshTogetherData,
+                                                                onRefresh = togetherOneViewModel::refresh,
+                                                                onSendInviteOrRequest = togetherOneViewModel::sendInviteOrRequest,
+                                                                onRespondToRequest = togetherOneViewModel::respondToRequest,
+                                                                onCancelOutgoingRequest = togetherOneViewModel::cancelOutgoingRequest,
+                                                                onToggleTogetherOnePartner = togetherOneViewModel::toggleTogetherOnePartner,
+                                                                onRemoveOrBlockFriend = togetherOneViewModel::removeOrBlockFriend,
                                                                 onOpenChat = { selectedFriend ->
                                                                     viewModel.openTogetherChat(selectedFriend.userId)
                                                                     currentSection = LifeOsSection.TOGETHER_CHAT
                                                                 },
-                                                                onSendFriendRequest = viewModel::sendTogetherFriendRequest,
-                                                                onRespondToRequest = viewModel::respondToTogetherRequest,
-                                                                onCreateSharedGoal = viewModel::createTogetherSharedGoal,
-                                                                onIncrementGoal = viewModel::incrementTogetherSharedGoal,
-                                                                onCreateCompetition = viewModel::createTogetherCompetition,
-                                                                onReactToActivity = viewModel::reactToTogetherActivity,
-                                                                onUpdatePrivacy = viewModel::updatePrivacy,
-                                                                onImportLocalFriend = viewModel::importFriendFromInput,
-                                                                onToggleNearbyRadar = viewModel::toggleNearbyPeerRadar,
-                                                                onSyncNearbyPeer = viewModel::syncWithNearbyPeer,
+                                                                onStartCoStudy = togetherOneViewModel::startCoStudySession,
+                                                                onStopCoStudy = togetherOneViewModel::stopCoStudySession,
+                                                                onSendCheer = togetherOneViewModel::sendCheer,
+                                                                onCreateSharedGoal = togetherOneViewModel::createSharedGoal,
+                                                                onIncrementGoal = togetherOneViewModel::incrementSharedGoal,
+                                                                onCreateCompetition = togetherOneViewModel::createCompetition,
+                                                                onReactToActivity = togetherOneViewModel::reactToActivity,
+                                                                onUpdatePrivacy = togetherOneViewModel::updatePrivacy,
+                                                                onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
+                                                                onClearFeedback = togetherOneViewModel::clearFeedback,
                                                                 onShowMessage = viewModel::showMessage
                                                             )
                                                         }
@@ -1004,7 +1021,7 @@ private fun FeeloraNavigationDrawerSheet(
                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp)
             )
             listOf(
-                LifeOsSection.TOGETHER,
+                LifeOsSection.TOGETHER_ONE,
                 LifeOsSection.GROWTH,
                 LifeOsSection.NOTIFICATIONS,
                 LifeOsSection.PROFILE,
@@ -1012,7 +1029,7 @@ private fun FeeloraNavigationDrawerSheet(
                 LifeOsSection.PERMISSIONS
             ).forEach { sec ->
                 val badge = when (sec) {
-                    LifeOsSection.TOGETHER -> unreadTogether
+                    LifeOsSection.TOGETHER_ONE -> unreadTogether
                     LifeOsSection.NOTIFICATIONS -> unreadNotifications
                     else -> 0
                 }

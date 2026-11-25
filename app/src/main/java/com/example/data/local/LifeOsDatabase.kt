@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StudySessionEntity::class,
         StudyResourceEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class LifeOsDatabase : RoomDatabase() {
@@ -161,6 +161,14 @@ abstract class LifeOsDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `friends` ADD COLUMN `remoteUserId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `friends` ADD COLUMN `friendshipId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `friends` ADD COLUMN `isTogetherOne` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getInstance(context: Context): LifeOsDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -176,7 +184,8 @@ abstract class LifeOsDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9,
+                        MIGRATION_9_10
                     )
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .build()

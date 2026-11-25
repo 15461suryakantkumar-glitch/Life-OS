@@ -69,6 +69,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="feelora" android:host="invite" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="feelora.app"
+                    android:pathPrefix="/invite" />
+            </intent-filter>
         </activity>
 
         <!-- FEELORA Jetpack Glance Home-Screen Widgets -->
