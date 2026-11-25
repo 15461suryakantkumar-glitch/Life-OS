@@ -68,7 +68,6 @@ import com.example.data.audio.SoundCategory
 import com.example.data.local.UserAvatarPreset
 import com.example.data.local.WidgetConfigEntity
 import com.example.notifications.AppPermissionStatus
-import com.example.suru.SuruAiProvider
 import com.example.suru.SuruVoiceLanguage
 import com.example.ui.components.FeeloraConfirmDialog
 import com.example.ui.components.FeeloraScreenBackdrop
@@ -116,6 +115,7 @@ fun SettingsScreen(
     onUpdateReducedMotion: (Boolean) -> Unit = {},
     onUpdateSplashAudioLogo: (Boolean) -> Unit = {},
     onReplayOpeningSequence: () -> Unit = {},
+    onReplayOnboarding: () -> Unit = {},
     onUpdateSuruVoiceSettings: (Boolean, Float, SuruVoiceLanguage) -> Unit = { _, _, _ -> },
     onUpdateSuruBriefingSettings: (Boolean, Boolean, Int, Int) -> Unit = { _, _, _, _ -> },
     onUpdateSuruPersonalization: (Boolean) -> Unit = {},
@@ -478,21 +478,20 @@ fun SettingsScreen(
                 }
             }
 
-            // SURU Multi-Provider AI Gateway & Voice
+            // SURU Voice & Preferences
             item {
-                val activeProvider = SuruAiProvider.fromStored(prefs.suruDefaultProvider)
                 ObsidianCard(borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Spacer(Modifier.width(8.dp))
                             Column {
-                                Text("SURU AI Gateway & Voice", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
-                                Text("${activeProvider.displayName} · ${prefs.suruDefaultModel}", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
+                                Text("SURU Preferences", style = MaterialTheme.typography.titleMedium, color = tokens.inkPrimary)
+                                Text("Voice, briefings & personalization", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            OutlinedButton(onClick = onOpenSuruAiSettings) { Text("Models", maxLines = 1, softWrap = false) }
+                            OutlinedButton(onClick = onOpenSuruAiSettings) { Text("Voice", maxLines = 1, softWrap = false) }
                             OutlinedButton(onClick = onOpenSuru, modifier = Modifier.testTag("settings_open_suru_btn")) { Text("Chat", maxLines = 1, softWrap = false) }
                         }
                     }
@@ -605,6 +604,15 @@ fun SettingsScreen(
                         Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Replay Opening Sequence")
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = onReplayOnboarding,
+                        modifier = Modifier.fillMaxWidth().testTag("settings_replay_onboarding_btn")
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Replay Onboarding")
                     }
                     Spacer(Modifier.height(6.dp))
                     OutlinedButton(onClick = { showWidgetSheet = true }, modifier = Modifier.fillMaxWidth()) {

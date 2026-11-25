@@ -80,7 +80,6 @@ import androidx.core.content.ContextCompat
 import com.example.data.audio.LifeOsSoundCue
 import com.example.data.local.SuruMemoryEntity
 import com.example.data.local.SuruStudyPlanEntity
-import com.example.suru.SuruAiProvider
 import com.example.suru.SuruBriefingsPanel
 import com.example.suru.SuruConfirmationCard
 import com.example.suru.SuruImageProcessor
@@ -136,9 +135,6 @@ fun LifeAiScreen(
     val listState = rememberLazyListState()
     val voiceLanguage = remember(state.prefs.suruVoiceLanguage) {
         SuruVoiceLanguage.fromStored(state.prefs.suruVoiceLanguage)
-    }
-    val preferredProvider = remember(state.prefs.suruDefaultProvider) {
-        SuruAiProvider.fromStored(state.prefs.suruDefaultProvider)
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -239,13 +235,15 @@ fun LifeAiScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("SURU", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary, fontWeight = FontWeight.Bold)
-                            StatusPill(
-                                text = if (state.suruVoiceState != SuruVoiceState.READY) state.suruVoiceState.label else preferredProvider.shortName,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            if (state.suruVoiceState != SuruVoiceState.READY && state.suruVoiceState != SuruVoiceState.FAILED) {
+                                StatusPill(
+                                    text = state.suruVoiceState.label,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                         Text(
-                            text = state.cloudAiStatus.badgeLabel,
+                            text = "FEELORA Companion",
                             style = MaterialTheme.typography.bodySmall,
                             color = tokens.inkSecondary,
                             maxLines = 1,
@@ -257,7 +255,7 @@ fun LifeAiScreen(
                         onClick = onOpenAiSettings,
                         modifier = Modifier.size(44.dp).testTag("suru_gateway_settings_btn")
                     ) {
-                        Icon(Icons.Filled.Tune, contentDescription = "AI Gateway & Models", tint = MaterialTheme.colorScheme.secondary)
+                        Icon(Icons.Filled.Tune, contentDescription = "SURU Voice Preferences", tint = MaterialTheme.colorScheme.secondary)
                     }
 
                     IconButton(
@@ -351,13 +349,13 @@ fun LifeAiScreen(
                         }
                     }
 
-                    val activeError = state.suruVoiceError ?: state.aiErrorMessage
-                    if (activeError != null) {
+                    val activeVoiceError = state.suruVoiceError
+                    if (activeVoiceError != null) {
                         ObsidianCard(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp), borderColor = RoseAlert) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = RoseAlert)
                                 Spacer(Modifier.width(8.dp))
-                                Text(activeError, style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary, modifier = Modifier.weight(1f))
+                                Text(activeVoiceError, style = MaterialTheme.typography.bodySmall, color = tokens.inkPrimary, modifier = Modifier.weight(1f))
                                 TextButton(onClick = { onClearVoiceError(); onDismissError() }) { Text("Dismiss") }
                             }
                         }
@@ -375,7 +373,7 @@ fun LifeAiScreen(
                                     Text("Hi ${state.prefs.userName.ifBlank { "Friend" }}, I'm SURU", style = MaterialTheme.typography.titleLarge, color = tokens.inkPrimary)
                                     Spacer(Modifier.height(6.dp))
                                     Text(
-                                        text = "Speak or type naturally in English, Hindi, or Hinglish. Multi-provider routing routes reasoning, vision, and chat transparently.",
+                                        text = "Speak or type naturally in English, Hindi, or Hinglish to plan your day, organize tasks, or study calmly.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = tokens.inkSecondary
                                     )

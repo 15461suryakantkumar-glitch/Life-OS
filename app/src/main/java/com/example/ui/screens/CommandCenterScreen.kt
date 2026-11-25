@@ -210,9 +210,9 @@ fun CommandCenterScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("MASTERY & STREAK", style = FeeloraTypeHelpers.editorialEyebrow, color = tokens.deepPrimary)
+                            Text("MASTERY & STREAK", style = FeeloraTypeHelpers.editorialTag, color = tokens.deepPrimary)
                             Spacer(Modifier.height(4.dp))
-                            Text("Level ${prefs.level}", style = FeeloraTypeHelpers.numericDisplay, color = tokens.inkPrimary)
+                            Text("Level ${prefs.level}", style = FeeloraTypeHelpers.statNumber, color = tokens.inkPrimary)
                             Text("${prefs.totalXp} XP total · ${state.productivityScore}% consistency", style = MaterialTheme.typography.bodySmall, color = tokens.inkSecondary)
                         }
                         AnimatedStreakPill(streakDays = prefs.dailyStreak)

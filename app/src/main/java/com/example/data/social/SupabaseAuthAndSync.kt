@@ -168,6 +168,29 @@ class SupabaseAuthAndSyncClient(
         executeAuthRequest(req, fallbackEmail = email.trim(), fallbackName = "")
     }
 
+    suspend fun signInWithGoogleIdToken(
+        idToken: String,
+        fallbackEmail: String = "",
+        fallbackName: String = ""
+    ): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
+        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
+        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
+
+        val payload = JSONObject().apply {
+            put("provider", "google")
+            put("id_token", idToken)
+        }
+
+        val req = Request.Builder()
+            .url("$baseUrl/auth/v1/token?grant_type=id_token")
+            .header("apikey", anonKey)
+            .header("Content-Type", "application/json")
+            .post(payload.toString().toRequestBody(JSON_MEDIA))
+            .build()
+
+        executeAuthRequest(req, fallbackEmail = fallbackEmail, fallbackName = fallbackName)
+    }
+
     suspend fun refreshSession(refreshToken: String): SupabaseResult<SupabaseSession> = withContext(Dispatchers.IO) {
         val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
         val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
@@ -392,6 +415,36 @@ class SupabaseAuthAndSyncClient(
 
     suspend fun restDelete(pathWithQuery: String, accessToken: String): SupabaseResult<String> =
         executeRest("DELETE", pathWithQuery, null, accessToken)
+
+    suspend fun restRpc(
+        functionName: String,
+        bodyJson: String,
+        accessToken: String = ""
+    ): SupabaseResult<String> = withContext(Dispatchers.IO) {
+        val baseUrl = getConfiguredUrl() ?: return@withContext notConfiguredError()
+        val anonKey = getConfiguredAnonKey() ?: return@withContext notConfiguredError()
+        val bearer = accessToken.ifBlank { anonKey }
+        val req = Request.Builder()
+            .url("$baseUrl/rest/v1/rpc/$functionName")
+            .header("apikey", anonKey)
+            .header("Authorization", "Bearer $bearer")
+            .header("Content-Type", "application/json")
+            .post(bodyJson.toRequestBody(JSON_MEDIA))
+            .build()
+
+        runCatching {
+            httpClient.newCall(req).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    return@use SupabaseResult.Failure(
+                        message = parseSupabaseError(raw, "RPC failed (HTTP ${resp.code})."),
+                        isUnauthorized = resp.code == 401 || resp.code == 403
+                    )
+                }
+                SupabaseResult.Success(raw)
+            }
+        }.getOrElse { SupabaseResult.Failure(it.message ?: "Network connection unavailable.") }
+    }
 
     private suspend fun executeRest(
         method: String,

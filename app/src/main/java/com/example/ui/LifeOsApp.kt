@@ -22,16 +22,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -47,6 +51,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -93,10 +98,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -115,6 +123,7 @@ import com.example.kutta.LocalReducedMotion
 import com.example.ui.components.AnimatedStreakPill
 import com.example.ui.components.StatusPill
 import com.example.ui.components.UserAvatarBadge
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CalendarScreen
 import com.example.ui.screens.CommandCenterScreen
 import com.example.ui.screens.FeeloraSplashOverlay
@@ -123,6 +132,7 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LifeAiScreen
 import com.example.ui.screens.NotificationsHistoryScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.OpeningSplashScreen
 import com.example.ui.screens.PermissionSetupScreen
 import com.example.ui.screens.PermissionsScreen
 import com.example.ui.screens.ProfileScreen
@@ -137,7 +147,6 @@ import com.example.ui.screens.conversationMessagesFor
 import com.example.ui.theme.LifeOsTheme
 import com.example.ui.theme.LifeOsThemeTokensProvider
 import com.example.ui.viewmodel.LifeOsViewModel
-import com.example.ui.viewmodel.TogetherOneViewModel
 import kotlinx.coroutines.launch
 
 enum class LifeOsSection(
@@ -148,12 +157,12 @@ enum class LifeOsSection(
     val isPrimaryTab: Boolean = false
 ) {
     HOME("home", "Home", Icons.Filled.Home, Icons.Outlined.Home, isPrimaryTab = true),
-    STUDY("study", "Study", Icons.Filled.MenuBook, Icons.Outlined.MenuBook, isPrimaryTab = true),
     TASKS("tasks", "Tasks", Icons.Filled.CheckCircle, Icons.Outlined.CheckCircle, isPrimaryTab = true),
+    LIFE_AI("life_ai", "AI", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome, isPrimaryTab = true),
     CALENDAR("calendar", "Calendar", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth, isPrimaryTab = true),
-    LIFE_AI("life_ai", "SURU", Icons.Filled.AutoAwesome, Icons.Outlined.AutoAwesome, isPrimaryTab = true),
+    TOGETHER_ONE("together", "Together", Icons.Filled.Groups, Icons.Outlined.Groups, isPrimaryTab = true),
+    STUDY("study", "Study", Icons.Filled.MenuBook, Icons.Outlined.MenuBook),
     WELLNESS("wellness", "Wellness", Icons.Filled.HealthAndSafety, Icons.Outlined.HealthAndSafety),
-    TOGETHER_ONE("together_one", "Together One", Icons.Filled.Groups, Icons.Outlined.Groups),
     TOGETHER_CHAT("together_chat", "Chat", Icons.AutoMirrored.Filled.Chat, Icons.AutoMirrored.Outlined.Chat),
     GROWTH("growth", "KUTTA Corner", Icons.Filled.Pets, Icons.Outlined.Pets),
     NOTIFICATIONS("notifications", "Notifications", Icons.Filled.Notifications, Icons.Outlined.Notifications),
@@ -163,21 +172,27 @@ enum class LifeOsSection(
     PERMISSIONS("permissions", "Permissions", Icons.Filled.Shield, Icons.Outlined.Shield)
 }
 
+private enum class FeeloraEntryRoute {
+    SPLASH,
+    ONBOARDING,
+    AUTH
+}
+
 @Composable
 fun LifeOsApp(
     initialRoute: String? = null,
     onConsumeInitialRoute: () -> Unit = {},
     incomingFriendPayload: String? = null,
     onConsumeIncomingFriendPayload: () -> Unit = {},
-    viewModel: LifeOsViewModel = viewModel(),
-    togetherOneViewModel: TogetherOneViewModel = viewModel()
+    viewModel: LifeOsViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val togetherOneState by togetherOneViewModel.uiState.collectAsStateWithLifecycle()
     var currentSection by remember { mutableStateOf(LifeOsSection.HOME) }
     var openCreateTaskImmediately by remember { mutableStateOf(false) }
     var showSuruAiSettingsSheet by remember { mutableStateOf(false) }
     var showSplashSequence by remember { mutableStateOf(true) }
+    var entryRoute by rememberSaveable { mutableStateOf(FeeloraEntryRoute.SPLASH) }
+    var replayEntryRoute by rememberSaveable { mutableStateOf<FeeloraEntryRoute?>(null) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val drawerScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -209,17 +224,17 @@ fun LifeOsApp(
     fun navigateToSection(target: LifeOsSection) {
         currentSection = target
         when (target) {
-            LifeOsSection.TOGETHER_ONE -> togetherOneViewModel.refresh()
+            LifeOsSection.TOGETHER_ONE -> viewModel.refreshTogetherData()
             LifeOsSection.PERMISSIONS -> viewModel.refreshSystemPermissions()
             else -> Unit
         }
     }
 
     val navigateToRoute: (String) -> Unit = { route ->
-        val normalized = when (route) {
-            "friends", "together", "together_one" -> LifeOsSection.TOGETHER_ONE.route
-            "suru_ai", "life_ai" -> LifeOsSection.LIFE_AI.route
-            else -> route
+        val normalized = when (route.trim().lowercase()) {
+            "friends", "together", "together_one" -> "together"
+            "ai", "suru", "life_ai" -> "life_ai"
+            else -> route.trim().lowercase()
         }
         LifeOsSection.entries.firstOrNull { it.route == normalized }?.let {
             navigateToSection(it)
@@ -248,7 +263,7 @@ fun LifeOsApp(
 
     LaunchedEffect(initialRoute) {
         if (!initialRoute.isNullOrBlank()) {
-            when (initialRoute) {
+            when (initialRoute.trim().lowercase()) {
                 "create_task" -> {
                     currentSection = LifeOsSection.TASKS
                     openCreateTaskImmediately = true
@@ -256,13 +271,8 @@ fun LifeOsApp(
                 "friends", "together", "together_one" -> {
                     navigateToSection(LifeOsSection.TOGETHER_ONE)
                 }
-                "suru_ai", "life_ai" -> {
-                    navigateToSection(LifeOsSection.LIFE_AI)
-                }
                 else -> {
-                    LifeOsSection.entries.firstOrNull { it.route == initialRoute }?.let {
-                        navigateToSection(it)
-                    }
+                    navigateToRoute(initialRoute)
                 }
             }
             onConsumeInitialRoute()
@@ -272,9 +282,7 @@ fun LifeOsApp(
     LaunchedEffect(incomingFriendPayload, state.prefs.isSignedIn) {
         val payload = incomingFriendPayload
         if (!payload.isNullOrBlank() && state.prefs.isSignedIn) {
-            togetherOneViewModel.sendInviteOrRequest(payload) { _, msg ->
-                viewModel.showMessage(msg)
-            }
+            viewModel.prepopulateTogetherFriendCode(payload, autoConnectIfValid = true)
             navigateToSection(LifeOsSection.TOGETHER_ONE)
             onConsumeIncomingFriendPayload()
         }
@@ -282,6 +290,9 @@ fun LifeOsApp(
 
     var hasRenderedInitialSection by remember { mutableStateOf(false) }
     LaunchedEffect(currentSection) {
+        if (currentSection != LifeOsSection.TOGETHER_ONE) {
+            viewModel.stopNearbyPeerRadar()
+        }
         if (hasRenderedInitialSection) {
             viewModel.playUiCue(LifeOsSoundCue.NAV_SWITCH)
         } else {
@@ -311,9 +322,22 @@ fun LifeOsApp(
         }
     }
 
+    LaunchedEffect(state.isPrefsLoaded, state.prefs.isSignedIn) {
+        if (state.isPrefsLoaded && !state.prefs.isSignedIn) {
+            showSplashSequence = false
+        }
+    }
+
+    LaunchedEffect(state.prefs.isSignedIn) {
+        if (!state.prefs.isSignedIn) {
+            entryRoute = FeeloraEntryRoute.SPLASH
+            replayEntryRoute = null
+        }
+    }
+
     val isMainAppReady = state.prefs.isSignedIn && state.prefs.hasCompletedPermissionSetup
 
-    BackHandler(enabled = isMainAppReady && (drawerState.isOpen || currentSection != LifeOsSection.HOME)) {
+    BackHandler(enabled = isMainAppReady && replayEntryRoute == null && (drawerState.isOpen || currentSection != LifeOsSection.HOME)) {
         if (drawerState.isOpen) {
             drawerScope.launch { drawerState.close() }
         } else {
@@ -349,32 +373,62 @@ fun LifeOsApp(
                         )
                     }
                     1 -> {
-                        OnboardingScreen(
-                            existingPrefs = state.prefs,
-                            authUiState = state.authUiState,
-                            inviteLink = viewModel.buildMyInviteLink(),
-                            onPreviewThemeMode = viewModel::updateThemeMode,
-                            onSignUp = viewModel::signUpWithSupabase,
-                            onSignIn = viewModel::signInWithSupabase,
-                            onSendPasswordReset = viewModel::sendPasswordReset,
-                            onResendVerification = viewModel::resendVerificationEmail,
-                            onCheckUsername = viewModel::checkUsernameAvailability,
-                            onClearAuthFeedback = viewModel::clearAuthFeedback,
-                            onConnectFriendInput = viewModel::importFriendFromInput,
-                            onComplete7Step = { name, handleOrEmail, bio, preferredLanguage, themeMode, avatarPreset, avatarPhotoUri, focusGoalMinutes ->
-                                currentSection = LifeOsSection.HOME
-                                viewModel.complete7StepOnboarding(
-                                    name = name,
-                                    handleOrEmail = handleOrEmail,
-                                    bio = bio,
-                                    preferredLanguage = preferredLanguage,
-                                    themeMode = themeMode,
-                                    avatarPreset = avatarPreset,
-                                    avatarPhotoUri = avatarPhotoUri,
-                                    focusGoalMinutes = focusGoalMinutes
+                        AnimatedContent(
+                            targetState = entryRoute,
+                            transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(180)) },
+                            label = "feelora_entry_route"
+                        ) { route ->
+                            when (route) {
+                                FeeloraEntryRoute.SPLASH -> OpeningSplashScreen(
+                                    initialMuted = !state.prefs.splashAudioLogoEnabled,
+                                    onToggleAudioMute = { muted -> viewModel.updateSplashAudioLogo(!muted) },
+                                    onGetStarted = { entryRoute = FeeloraEntryRoute.ONBOARDING },
+                                    onSignIn = {
+                                        viewModel.clearAuthFeedback()
+                                        entryRoute = FeeloraEntryRoute.AUTH
+                                    }
+                                )
+                                FeeloraEntryRoute.ONBOARDING -> OnboardingScreen(
+                                    initialPage = 0,
+                                    onBackToSplash = { entryRoute = FeeloraEntryRoute.SPLASH },
+                                    onSkip = {
+                                        viewModel.clearAuthFeedback()
+                                        entryRoute = FeeloraEntryRoute.AUTH
+                                    },
+                                    onComplete = {
+                                        viewModel.clearAuthFeedback()
+                                        entryRoute = FeeloraEntryRoute.AUTH
+                                    }
+                                )
+                                FeeloraEntryRoute.AUTH -> AuthScreen(
+                                    initialEmail = state.prefs.userEmail,
+                                    authUiState = state.authUiState,
+                                    onBack = {
+                                        viewModel.clearAuthFeedback()
+                                        entryRoute = FeeloraEntryRoute.SPLASH
+                                    },
+                                    onClearAuthFeedback = viewModel::clearAuthFeedback,
+                                    onGoogleSignIn = { email, displayName, idToken ->
+                                        viewModel.signInWithGoogleCredential(
+                                            email = email,
+                                            displayName = displayName,
+                                            idToken = idToken
+                                        ) {
+                                            currentSection = LifeOsSection.HOME
+                                        }
+                                    },
+                                    onEmailAuthSubmit = { email, password, isCreateAccount ->
+                                        viewModel.continueWithEmail(
+                                            email = email,
+                                            password = password,
+                                            isCreateAccount = isCreateAccount
+                                        ) {
+                                            currentSection = LifeOsSection.HOME
+                                        }
+                                    }
                                 )
                             }
-                        )
+                        }
                     }
                     2 -> {
                         PermissionSetupScreen(
@@ -386,7 +440,7 @@ fun LifeOsApp(
                     else -> {
                         ModalNavigationDrawer(
                             drawerState = drawerState,
-                            gesturesEnabled = currentSection != LifeOsSection.TOGETHER_CHAT,
+                            gesturesEnabled = currentSection != LifeOsSection.TOGETHER_CHAT && replayEntryRoute == null,
                             drawerContent = {
                                 FeeloraNavigationDrawerSheet(
                                     currentSection = currentSection,
@@ -401,6 +455,10 @@ fun LifeOsApp(
                                     onSelectSection = { target ->
                                         drawerScope.launch { drawerState.close() }
                                         navigateToSection(target)
+                                    },
+                                    onReplayOnboarding = {
+                                        drawerScope.launch { drawerState.close() }
+                                        replayEntryRoute = FeeloraEntryRoute.ONBOARDING
                                     }
                                 )
                             }
@@ -419,35 +477,11 @@ fun LifeOsApp(
                                     snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
                                     bottomBar = {
                                         if (!isWideScreen && showNavigationChrome) {
-                                            NavigationBar(
-                                                containerColor = tokens.surfaceBase,
-                                                contentColor = tokens.inkPrimary,
-                                                windowInsets = WindowInsets.navigationBars
-                                            ) {
-                                                val primaryTabs = LifeOsSection.entries.filter { it.isPrimaryTab }
-                                                primaryTabs.forEach { sec ->
-                                                    val selected = currentSection == sec
-                                                    NavigationBarItem(
-                                                        selected = selected,
-                                                        onClick = { navigateToSection(sec) },
-                                                        icon = {
-                                                            Icon(
-                                                                if (selected) sec.selectedIcon else sec.unselectedIcon,
-                                                                contentDescription = sec.label
-                                                            )
-                                                        },
-                                                        label = { Text(sec.label, maxLines = 1, softWrap = false) },
-                                                        colors = NavigationBarItemDefaults.colors(
-                                                            selectedIconColor = MaterialTheme.colorScheme.secondary,
-                                                            selectedTextColor = tokens.inkPrimary,
-                                                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-                                                            unselectedIconColor = tokens.inkMuted,
-                                                            unselectedTextColor = tokens.inkMuted
-                                                        ),
-                                                        modifier = Modifier.testTag("nav_${sec.route}")
-                                                    )
-                                                }
-                                            }
+                                            FeeloraBottomBar(
+                                                currentSection = currentSection,
+                                                unreadTogetherCount = state.unreadTogetherMessagesCount,
+                                                onSelectSection = ::navigateToSection
+                                            )
                                         }
                                     }
                                 ) { innerPadding ->
@@ -649,33 +683,28 @@ fun LifeOsApp(
                                                         onAddHabit = viewModel::addHabit
                                                     )
                                                     LifeOsSection.TOGETHER_ONE -> TogetherOneScreen(
-                                                        state = togetherOneState,
-                                                        localCachedFriends = state.friends,
+                                                        state = state,
                                                         onBack = { currentSection = LifeOsSection.HOME },
-                                                        onRefresh = togetherOneViewModel::refresh,
-                                                        onSendInviteOrRequest = togetherOneViewModel::sendInviteOrRequest,
-                                                        onRespondToRequest = togetherOneViewModel::respondToRequest,
-                                                        onCancelOutgoingRequest = togetherOneViewModel::cancelOutgoingRequest,
-                                                        onToggleTogetherOnePartner = togetherOneViewModel::toggleTogetherOnePartner,
-                                                        onRemoveOrBlockFriend = togetherOneViewModel::removeOrBlockFriend,
+                                                        onRefresh = viewModel::refreshTogetherData,
+                                                        onConnectCode = viewModel::connectTogetherFriendCode,
+                                                        onClearConnectFeedback = viewModel::clearTogetherConnectFeedback,
+                                                        onSendCheer = viewModel::sendCheerToFriend,
+                                                        onSendQuickNote = viewModel::sendQuickNoteToTogether,
                                                         onOpenChat = { friend ->
                                                             viewModel.openTogetherChat(friend.userId)
                                                             currentSection = LifeOsSection.TOGETHER_CHAT
                                                         },
-                                                        onStartCoStudy = togetherOneViewModel::startCoStudySession,
-                                                        onStopCoStudy = togetherOneViewModel::stopCoStudySession,
-                                                        onSendCheer = togetherOneViewModel::sendCheer,
-                                                        onCreateSharedGoal = togetherOneViewModel::createSharedGoal,
-                                                        onIncrementGoal = togetherOneViewModel::incrementSharedGoal,
-                                                        onCreateCompetition = togetherOneViewModel::createCompetition,
-                                                        onReactToActivity = togetherOneViewModel::reactToActivity,
-                                                        onUpdatePrivacy = togetherOneViewModel::updatePrivacy,
-                                                        onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
-                                                        onClearFeedback = togetherOneViewModel::clearFeedback,
+                                                        onRespondToRequest = viewModel::respondToTogetherRequest,
+                                                        onReactToActivity = viewModel::reactToTogetherActivity,
+                                                        onUpdatePrivacy = viewModel::updatePrivacy,
+                                                        onToggleNearbyRadar = viewModel::toggleNearbyPeerRadar,
+                                                        onSyncNearbyPeer = viewModel::syncWithNearbyPeer,
                                                         onShowMessage = viewModel::showMessage
                                                     )
                                                     LifeOsSection.TOGETHER_CHAT -> {
-                                                        val myId = state.prefs.supabaseUserId.ifBlank { "local_self" }
+                                                        val myId = state.prefs.supabaseUserId.ifBlank {
+                                                            state.prefs.friendCode.ifBlank { "local_self" }
+                                                        }
                                                         val friend = state.togetherState.friends.firstOrNull {
                                                             it.userId == state.activeChatFriendId
                                                         }
@@ -688,18 +717,15 @@ fun LifeOsApp(
                                                                     friendUserId = friend.userId,
                                                                     map = state.togetherState.messagesByConversation
                                                                 ),
-                                                                lastMessageError = togetherOneState.togetherState.lastMessageError,
-                                                                failedOutboxCount = togetherOneState.togetherState.failedOutboxCount,
-                                                                onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
                                                                 onBack = {
                                                                     viewModel.openTogetherChat(null)
                                                                     currentSection = LifeOsSection.TOGETHER_ONE
                                                                 },
                                                                 onSendMessage = { content, mediaUri ->
-                                                                    togetherOneViewModel.sendChatMessage(friend.userId, content, mediaUri)
+                                                                    viewModel.sendTogetherChatMessage(friend.userId, content, mediaUri)
                                                                 },
                                                                 onBlockFriend = { block ->
-                                                                    togetherOneViewModel.removeOrBlockFriend(friend.userId, block)
+                                                                    viewModel.blockOrRemoveTogetherFriend(friend.userId, block)
                                                                     if (block) {
                                                                         viewModel.openTogetherChat(null)
                                                                         currentSection = LifeOsSection.TOGETHER_ONE
@@ -711,29 +737,22 @@ fun LifeOsApp(
                                                             )
                                                         } else {
                                                             TogetherOneScreen(
-                                                                state = togetherOneState,
-                                                                localCachedFriends = state.friends,
+                                                                state = state,
                                                                 onBack = { currentSection = LifeOsSection.HOME },
-                                                                onRefresh = togetherOneViewModel::refresh,
-                                                                onSendInviteOrRequest = togetherOneViewModel::sendInviteOrRequest,
-                                                                onRespondToRequest = togetherOneViewModel::respondToRequest,
-                                                                onCancelOutgoingRequest = togetherOneViewModel::cancelOutgoingRequest,
-                                                                onToggleTogetherOnePartner = togetherOneViewModel::toggleTogetherOnePartner,
-                                                                onRemoveOrBlockFriend = togetherOneViewModel::removeOrBlockFriend,
+                                                                onRefresh = viewModel::refreshTogetherData,
+                                                                onConnectCode = viewModel::connectTogetherFriendCode,
+                                                                onClearConnectFeedback = viewModel::clearTogetherConnectFeedback,
+                                                                onSendCheer = viewModel::sendCheerToFriend,
+                                                                onSendQuickNote = viewModel::sendQuickNoteToTogether,
                                                                 onOpenChat = { selectedFriend ->
                                                                     viewModel.openTogetherChat(selectedFriend.userId)
                                                                     currentSection = LifeOsSection.TOGETHER_CHAT
                                                                 },
-                                                                onStartCoStudy = togetherOneViewModel::startCoStudySession,
-                                                                onStopCoStudy = togetherOneViewModel::stopCoStudySession,
-                                                                onSendCheer = togetherOneViewModel::sendCheer,
-                                                                onCreateSharedGoal = togetherOneViewModel::createSharedGoal,
-                                                                onIncrementGoal = togetherOneViewModel::incrementSharedGoal,
-                                                                onCreateCompetition = togetherOneViewModel::createCompetition,
-                                                                onReactToActivity = togetherOneViewModel::reactToActivity,
-                                                                onUpdatePrivacy = togetherOneViewModel::updatePrivacy,
-                                                                onRetryFailedMessages = togetherOneViewModel::retryFailedMessages,
-                                                                onClearFeedback = togetherOneViewModel::clearFeedback,
+                                                                onRespondToRequest = viewModel::respondToTogetherRequest,
+                                                                onReactToActivity = viewModel::reactToTogetherActivity,
+                                                                onUpdatePrivacy = viewModel::updatePrivacy,
+                                                                onToggleNearbyRadar = viewModel::toggleNearbyPeerRadar,
+                                                                onSyncNearbyPeer = viewModel::syncWithNearbyPeer,
                                                                 onShowMessage = viewModel::showMessage
                                                             )
                                                         }
@@ -827,6 +846,7 @@ fun LifeOsApp(
                                                         onUpdateReducedMotion = viewModel::updateReducedMotion,
                                                         onUpdateSplashAudioLogo = viewModel::updateSplashAudioLogo,
                                                         onReplayOpeningSequence = { showSplashSequence = true },
+                                                        onReplayOnboarding = { replayEntryRoute = FeeloraEntryRoute.ONBOARDING },
                                                         onUpdateSuruVoiceSettings = viewModel::updateSuruVoiceSettings,
                                                         onUpdateSuruBriefingSettings = viewModel::updateSuruBriefingSettings,
                                                         onUpdateSuruPersonalization = viewModel::updateSuruMemoryPersonalization,
@@ -862,9 +882,6 @@ fun LifeOsApp(
                                 state = state,
                                 onDismiss = { showSuruAiSettingsSheet = false },
                                 onUpdateGateway = viewModel::updateSuruAiGatewaySettings,
-                                onSelectProviderModel = viewModel::selectAiProviderModel,
-                                onTestConnection = viewModel::testAiProviderConnection,
-                                onRefreshModels = viewModel::refreshAiProviderModels,
                                 onUpdateVoice = viewModel::updateSuruVoiceSettings
                             )
                         }
@@ -906,10 +923,37 @@ fun LifeOsApp(
                         }
                     }
                 }
-                if (showSplashSequence && state.isPrefsLoaded) {
+                val activeReplayRoute = replayEntryRoute
+                if (activeReplayRoute != null && state.isPrefsLoaded && state.prefs.isSignedIn) {
+                    BackHandler { replayEntryRoute = null }
+                    AnimatedContent(
+                        targetState = activeReplayRoute,
+                        transitionSpec = { fadeIn(tween(240)) togetherWith fadeOut(tween(180)) },
+                        label = "feelora_replay_onboarding"
+                    ) { route ->
+                        when (route) {
+                            FeeloraEntryRoute.SPLASH -> OpeningSplashScreen(
+                                initialMuted = !state.prefs.splashAudioLogoEnabled,
+                                onToggleAudioMute = { muted -> viewModel.updateSplashAudioLogo(!muted) },
+                                onGetStarted = { replayEntryRoute = FeeloraEntryRoute.ONBOARDING },
+                                onSignIn = { replayEntryRoute = null }
+                            )
+                            FeeloraEntryRoute.ONBOARDING,
+                            FeeloraEntryRoute.AUTH -> OnboardingScreen(
+                                initialPage = 0,
+                                onBackToSplash = { replayEntryRoute = FeeloraEntryRoute.SPLASH },
+                                onSkip = { replayEntryRoute = null },
+                                onComplete = { replayEntryRoute = null }
+                            )
+                        }
+                    }
+                } else if (showSplashSequence && state.isPrefsLoaded && state.prefs.isSignedIn) {
                     FeeloraSplashOverlay(
-                        audioLogoEnabled = state.prefs.splashAudioLogoEnabled && state.prefs.soundEffectsEnabled,
-                        onPlayAudioLogo = viewModel::playAppOpenLogoCue,
+                        onPlayAudioLogo = {
+                            if (state.prefs.splashAudioLogoEnabled && state.prefs.soundEffectsEnabled) {
+                                viewModel.playAppOpenLogoCue()
+                            }
+                        },
                         onFinished = { showSplashSequence = false }
                     )
                 }
@@ -929,7 +973,8 @@ private fun FeeloraNavigationDrawerSheet(
     avatarPhotoUri: String,
     unreadTogether: Int,
     unreadNotifications: Int,
-    onSelectSection: (LifeOsSection) -> Unit
+    onSelectSection: (LifeOsSection) -> Unit,
+    onReplayOnboarding: () -> Unit = {}
 ) {
     val tokens = LifeOsThemeTokensProvider.current
     ModalDrawerSheet(
@@ -1040,6 +1085,33 @@ private fun FeeloraNavigationDrawerSheet(
                     onClick = { onSelectSection(sec) }
                 )
             }
+            NavigationDrawerItem(
+                label = {
+                    Text(
+                        text = "Replay Onboarding",
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                selected = false,
+                onClick = onReplayOnboarding,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Replay Onboarding"
+                    )
+                },
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    unselectedContainerColor = Color.Transparent,
+                    selectedIconColor = MaterialTheme.colorScheme.secondary,
+                    unselectedIconColor = tokens.inkSecondary,
+                    selectedTextColor = tokens.inkPrimary,
+                    unselectedTextColor = tokens.inkSecondary
+                ),
+                modifier = Modifier.testTag("drawer_replay_onboarding")
+            )
         }
     }
 }
@@ -1087,4 +1159,141 @@ private fun DrawerNavRow(
         ),
         modifier = Modifier.testTag("drawer_${section.route}")
     )
+}
+
+@Composable
+fun FeeloraBottomBar(
+    currentSection: LifeOsSection,
+    unreadTogetherCount: Int,
+    onSelectSection: (LifeOsSection) -> Unit
+) {
+    val tokens = LifeOsThemeTokensProvider.current
+    val primaryTabs = LifeOsSection.entries.filter { it.isPrimaryTab }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tokens.surfaceBase)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .testTag("feelora_bottom_bar")
+    ) {
+        HorizontalDivider(color = tokens.borderSubtle, thickness = 1.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(68.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            primaryTabs.forEach { sec ->
+                val selected = currentSection == sec
+                if (sec == LifeOsSection.LIFE_AI) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .clickable { onSelectSection(sec) }
+                            .testTag("nav_${sec.route}"),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .offset(y = (-6).dp)
+                                .size(48.dp)
+                                .shadow(
+                                    elevation = if (selected) 10.dp else 6.dp,
+                                    shape = CircleShape,
+                                    ambientColor = tokens.primary,
+                                    spotColor = tokens.deepPrimary
+                                )
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(tokens.primary, tokens.deepPrimary)
+                                    )
+                                )
+                                .border(
+                                    width = if (selected) 2.dp else 1.dp,
+                                    color = if (selected) tokens.surfaceCard else tokens.borderAccent,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (selected) sec.selectedIcon else sec.unselectedIcon,
+                                contentDescription = sec.label,
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Text(
+                            text = sec.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (selected) tokens.deepPrimary else tokens.inkSecondary,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.offset(y = (-4).dp)
+                        )
+                    }
+                } else {
+                    val badgeCount = if (sec == LifeOsSection.TOGETHER_ONE) unreadTogetherCount else 0
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                            .clip(RoundedCornerShape(tokens.smallRadius))
+                            .clickable { onSelectSection(sec) }
+                            .padding(vertical = 6.dp)
+                            .testTag("nav_${sec.route}"),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (badgeCount > 0) {
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.secondary,
+                                        contentColor = Color.White
+                                    ) {
+                                        Text(if (badgeCount > 9) "9+" else "$badgeCount")
+                                    }
+                                }
+                            }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(50))
+                                    .background(
+                                        if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                        else Color.Transparent
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 3.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (selected) sec.selectedIcon else sec.unselectedIcon,
+                                    contentDescription = sec.label,
+                                    tint = if (selected) MaterialTheme.colorScheme.primary else tokens.inkMuted,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            text = sec.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (selected) tokens.inkPrimary else tokens.inkMuted,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

@@ -16,8 +16,7 @@ import com.example.data.local.UserPreferencesState
 import com.example.util.DateTimeUtils
 import com.google.firebase.FirebaseApp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.TimeoutCancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -25,17 +24,16 @@ import java.util.Locale
 private const val SURU_AI_TAG = "SuruIntelligence"
 
 enum class SuruCloudAiStatus(val badgeLabel: String, val isCloudConfigured: Boolean) {
-    CLOUD_GEMINI_KEY("Cloud AI Ready", true),
-    CLOUD_FIREBASE("Firebase Gemini Ready", true),
-    MISSING_API_KEY("Local NLU Only (No API Key)", false),
+    CLOUD_GEMINI_KEY("Personal Companion", true),
+    CLOUD_FIREBASE("Personal Companion", true),
+    MISSING_API_KEY("Offline Companion", false),
     OFFLINE("Offline Mode", false)
 }
 
 sealed class SuruAiResponse {
     data class Success(
         val action: SuruStructuredAction,
-        val usedCloud: Boolean,
-        val providerBadge: String? = null
+        val usedCloud: Boolean
     ) : SuruAiResponse()
 
     data class Error(
@@ -44,43 +42,26 @@ sealed class SuruAiResponse {
     ) : SuruAiResponse()
 }
 
-sealed class SuruStreamUpdate {
-    data class StreamingText(
-        val partialReply: String,
-        val providerLabel: String,
-        val fallbackNote: String? = null
-    ) : SuruStreamUpdate()
+class SuruIntelligenceService(private val appContext: Context) {
 
-    data class Completed(val response: SuruAiResponse?) : SuruStreamUpdate()
-}
-
-class SuruIntelligenceService(
-    private val appContext: Context,
-    private val gateway: SuruAiGateway = SuruAiGateway(appContext)
-) {
+    private val gateway = SuruAiGateway(appContext)
 
     fun getGateway(): SuruAiGateway = gateway
 
     fun getCloudAiStatus(): SuruCloudAiStatus {
         val online = isDeviceOnline()
+        val hasOpenRouter = SuruAiRouter.currentOpenRouterKey() != null
+        val hasGeminiKey = configuredGeminiKey() != null
         val hasFirebase = runCatching { FirebaseApp.getApps(appContext).isNotEmpty() }.getOrDefault(false)
         if (!online) {
-            return if (gateway.hasAnyConfiguredProvider()) SuruCloudAiStatus.OFFLINE else SuruCloudAiStatus.MISSING_API_KEY
-        }
-        val key = configuredGeminiKey()
-        if (key != null || gateway.hasAnyConfiguredProvider()) {
-            return if (hasFirebase &&
-                key == null &&
-                configuredKey(BuildConfig.OPENAI_API_KEY) == null &&
-                configuredKey(BuildConfig.ANTHROPIC_API_KEY) == null &&
-                configuredKey(BuildConfig.XAI_API_KEY) == null &&
-                configuredKey(BuildConfig.DEEPSEEK_API_KEY) == null &&
-                SuruAiGateway.configuredProxyUrl() == null
-            ) {
-                SuruCloudAiStatus.CLOUD_FIREBASE
+            return if (hasOpenRouter || hasGeminiKey || hasFirebase) {
+                SuruCloudAiStatus.OFFLINE
             } else {
-                SuruCloudAiStatus.CLOUD_GEMINI_KEY
+                SuruCloudAiStatus.MISSING_API_KEY
             }
+        }
+        if (hasOpenRouter || hasGeminiKey) {
+            return SuruCloudAiStatus.CLOUD_GEMINI_KEY
         }
         if (hasFirebase) return SuruCloudAiStatus.CLOUD_FIREBASE
         return SuruCloudAiStatus.MISSING_API_KEY
@@ -91,11 +72,7 @@ class SuruIntelligenceService(
         return st == SuruCloudAiStatus.CLOUD_GEMINI_KEY || st == SuruCloudAiStatus.CLOUD_FIREBASE
     }
 
-    private fun configuredKey(rawValue: String?): String? = SuruAiGateway.configuredKey(rawValue)
-
-    private fun configuredGeminiKey(): String? = SuruAiGateway.configuredKey(
-        runCatching { BuildConfig.GEMINI_API_KEY }.getOrNull()
-    )
+    private fun configuredGeminiKey(): String? = SuruAiRouter.currentGeminiKey()
 
     private fun isDeviceOnline(): Boolean {
         return try {
@@ -110,118 +87,6 @@ class SuruIntelligenceService(
                     caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
         } catch (_: Throwable) {
             false
-        }
-    }
-
-    fun streamUnifiedPrompt(
-        userPrompt: String,
-        conversationHistory: List<AiMessageEntity>,
-        imageAttachment: SuruImageAttachment?,
-        context: LifeContextSnapshot,
-        tasks: List<TaskEntity>,
-        events: List<CalendarEventEntity>,
-        studyPlans: List<SuruStudyPlanEntity>,
-        enabledMemories: List<SuruMemoryEntity>,
-        pendingContext: SuruPendingContext?,
-        todayEpochDay: Long = DateTimeUtils.todayEpochDay(),
-        prefs: UserPreferencesState = UserPreferencesState()
-    ): Flow<SuruStreamUpdate> = flow {
-        val status = getCloudAiStatus()
-        if (!status.isCloudConfigured || status == SuruCloudAiStatus.OFFLINE) {
-            if (imageAttachment != null) {
-                val reason = if (status == SuruCloudAiStatus.OFFLINE) {
-                    "You are offline right now. Connect to the internet so SURU can analyze your photo."
-                } else {
-                    "Image analysis requires a configured multimodal AI provider (Gemini, OpenAI, or Claude) in AI Studio Secrets."
-                }
-                emit(SuruStreamUpdate.Completed(SuruAiResponse.Error(reason, status)))
-            } else {
-                emit(SuruStreamUpdate.Completed(null))
-            }
-            return@flow
-        }
-
-        val systemInstruction = buildSystemInstruction(
-            context = context,
-            tasks = tasks,
-            events = events,
-            studyPlans = studyPlans,
-            enabledMemories = enabledMemories,
-            pendingContext = pendingContext,
-            hasImage = imageAttachment != null,
-            todayEpochDay = todayEpochDay
-        )
-
-        val recentTurns = conversationHistory.takeLast(8).map { msg ->
-            (if (msg.isFromUser) "user" else "model") to buildString {
-                if (!msg.attachmentSummary.isNullOrBlank()) {
-                    append("[Image: ${msg.attachmentSummary}] ")
-                }
-                append(msg.text.take(600))
-            }
-        }
-
-        val taskKind = classifyTaskKind(userPrompt, imageAttachment)
-
-        if (!prefs.suruStreamingEnabled) {
-            val res = processUnifiedPrompt(
-                userPrompt = userPrompt,
-                conversationHistory = conversationHistory,
-                imageAttachment = imageAttachment,
-                context = context,
-                tasks = tasks,
-                events = events,
-                studyPlans = studyPlans,
-                enabledMemories = enabledMemories,
-                pendingContext = pendingContext,
-                todayEpochDay = todayEpochDay,
-                prefs = prefs
-            )
-            emit(SuruStreamUpdate.Completed(res))
-            return@flow
-        }
-
-        try {
-            gateway.streamCompletion(
-                prefs = prefs,
-                taskKind = taskKind,
-                systemInstruction = systemInstruction,
-                historyTurns = recentTurns,
-                userPrompt = userPrompt,
-                imageAttachment = imageAttachment,
-                expectJson = true
-            ).collect { event ->
-                when (event) {
-                    is AiGatewayStreamEvent.Delta -> {
-                        val preview = AiProviderAdapters.extractPartialReplyForUi(event.accumulatedText)
-                        val switchNotice = event.fallbackNote ?: event.routingNote
-                        emit(
-                            SuruStreamUpdate.StreamingText(
-                                partialReply = preview,
-                                providerLabel = "${event.provider.shortName} · ${event.model}",
-                                fallbackNote = switchNotice
-                            )
-                        )
-                    }
-                    is AiGatewayStreamEvent.Completed -> {
-                        val mapped = mapGatewayResultToResponse(
-                            result = event.result,
-                            context = context,
-                            tasks = tasks,
-                            events = events,
-                            todayEpochDay = todayEpochDay,
-                            status = status
-                        )
-                        emit(SuruStreamUpdate.Completed(mapped))
-                    }
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            val detail = AiSecretSanitizer.sanitize(t.message).ifBlank { "Network or API error" }
-            Log.w(SURU_AI_TAG, "Streaming AI gateway failed: $detail")
-            emit(SuruStreamUpdate.Completed(SuruAiResponse.Error(detail, status)))
         }
     }
 
@@ -242,130 +107,92 @@ class SuruIntelligenceService(
         if (!status.isCloudConfigured || status == SuruCloudAiStatus.OFFLINE) {
             if (imageAttachment != null) {
                 val reason = if (status == SuruCloudAiStatus.OFFLINE) {
-                    "You are offline right now. Connect to the internet so SURU can analyze your photo."
+                    "You're offline right now. Connect to the internet to share photos with SURU."
                 } else {
-                    "Image analysis requires a configured multimodal AI provider (Gemini, OpenAI, or Claude) in AI Studio Secrets."
+                    SuruAiRouter.CALM_UNAVAILABLE_MESSAGE
                 }
                 return SuruAiResponse.Error(reason, status)
             }
             return null
         }
 
+        val relevantMemories = SuruBoundedMemory.filterRelevantMemories(userPrompt, enabledMemories)
         val systemInstruction = buildSystemInstruction(
             context = context,
             tasks = tasks,
             events = events,
             studyPlans = studyPlans,
-            enabledMemories = enabledMemories,
+            enabledMemories = relevantMemories,
             pendingContext = pendingContext,
             hasImage = imageAttachment != null,
             todayEpochDay = todayEpochDay
         )
 
-        val recentTurns = conversationHistory.takeLast(8).map { msg ->
-            (if (msg.isFromUser) "user" else "model") to buildString {
-                if (!msg.attachmentSummary.isNullOrBlank()) {
-                    append("[Image: ${msg.attachmentSummary}] ")
-                }
-                append(msg.text.take(600))
+        val boundedMemory = SuruBoundedMemory.fromHistory(
+            turns = conversationHistory.map { msg ->
+                SuruTurn(
+                    isFromUser = msg.isFromUser,
+                    text = buildString {
+                        if (!msg.attachmentSummary.isNullOrBlank()) {
+                            append("[Photo: ${msg.attachmentSummary}] ")
+                        }
+                        append(msg.text)
+                    }
+                )
             }
-        }
-
-        val taskKind = classifyTaskKind(userPrompt, imageAttachment)
+        )
 
         return try {
-            val result = gateway.generateCompletion(
-                prefs = prefs,
-                taskKind = taskKind,
+            val result = gateway.generateCompletionBounded(
                 systemInstruction = systemInstruction,
-                historyTurns = recentTurns,
+                memoryState = boundedMemory,
                 userPrompt = userPrompt,
                 imageAttachment = imageAttachment,
                 expectJson = true
             )
-            mapGatewayResultToResponse(
-                result = result,
+            val rawJson = result.rawText
+
+            val parsed = parseStructuredJsonToAction(
+                rawJson = rawJson,
                 context = context,
                 tasks = tasks,
                 events = events,
-                todayEpochDay = todayEpochDay,
-                status = status
+                todayEpochDay = todayEpochDay
             )
+            if (parsed != null) {
+                SuruAiResponse.Success(
+                    action = parsed.copy(isOfflineEngine = false),
+                    usedCloud = true
+                )
+            } else {
+                val trimmed = rawJson.trim()
+                if (trimmed.isNotBlank() && !trimmed.startsWith("{")) {
+                    SuruAiResponse.Success(
+                        action = SuruStructuredAction(
+                            intent = SuruIntent.CHAT,
+                            reply = trimmed,
+                            isOfflineEngine = false
+                        ),
+                        usedCloud = true
+                    )
+                } else {
+                    SuruAiResponse.Error(
+                        SuruAiRouter.CALM_UNAVAILABLE_MESSAGE,
+                        status
+                    )
+                }
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.e(SURU_AI_TAG, "SURU completion timed out", e)
+            SuruAiResponse.Error(SuruAiRouter.CALM_UNAVAILABLE_MESSAGE, status)
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            val detail = AiSecretSanitizer.sanitize(t.message).ifBlank { "Network or API error" }
-            Log.w(SURU_AI_TAG, "Cloud AI gateway failed: $detail")
-            SuruAiResponse.Error(
-                "AI request failed: $detail",
-                status
-            )
+            Log.e(SURU_AI_TAG, "SURU completion failed", t)
+            SuruAiResponse.Error(SuruAiRouter.CALM_UNAVAILABLE_MESSAGE, status)
         }
     }
 
-    private fun classifyTaskKind(
-        userPrompt: String,
-        imageAttachment: SuruImageAttachment?
-    ): SuruRoutingTaskKind {
-        return when {
-            imageAttachment != null -> SuruRoutingTaskKind.VISION_MULTIMODAL
-            userPrompt.contains("plan", ignoreCase = true) ||
-                userPrompt.contains("schedule", ignoreCase = true) ||
-                userPrompt.contains("backlog", ignoreCase = true) -> SuruRoutingTaskKind.PLANNING_REASONING
-            else -> SuruRoutingTaskKind.CHAT
-        }
-    }
-
-    private fun mapGatewayResultToResponse(
-        result: GatewayCompletionResult,
-        context: LifeContextSnapshot,
-        tasks: List<TaskEntity>,
-        events: List<CalendarEventEntity>,
-        todayEpochDay: Long,
-        status: SuruCloudAiStatus
-    ): SuruAiResponse {
-        val rawJson = result.rawText
-        val parsed = parseStructuredJsonToAction(
-            rawJson = rawJson,
-            context = context,
-            tasks = tasks,
-            events = events,
-            todayEpochDay = todayEpochDay
-        )
-        val switchNotice = result.fallbackNote ?: result.routingNote
-        val providerTag = "${result.providerUsed.shortName} · ${result.modelUsed}"
-        return if (parsed != null) {
-            val decoratedReply = if (!switchNotice.isNullOrBlank()) {
-                "${parsed.reply}\n\n($switchNotice)"
-            } else parsed.reply
-            SuruAiResponse.Success(
-                action = parsed.copy(reply = decoratedReply, isOfflineEngine = false),
-                usedCloud = true,
-                providerBadge = providerTag
-            ).also { Log.d(SURU_AI_TAG, "SURU responded via $providerTag") }
-        } else {
-            val trimmed = rawJson.trim()
-            if (trimmed.isNotBlank() && !trimmed.startsWith("{")) {
-                val decoratedReply = if (!switchNotice.isNullOrBlank()) {
-                    "$trimmed\n\n($switchNotice)"
-                } else trimmed
-                SuruAiResponse.Success(
-                    action = SuruStructuredAction(
-                        intent = SuruIntent.CHAT,
-                        reply = decoratedReply,
-                        isOfflineEngine = false
-                    ),
-                    usedCloud = true,
-                    providerBadge = providerTag
-                )
-            } else {
-                SuruAiResponse.Error(
-                    "SURU received an unreadable response format from ${result.providerUsed.shortName}. Please rephrase your request.",
-                    status
-                )
-            }
-        }
-    }
 
     suspend fun generateStudyHelp(
         topic: String,
@@ -390,32 +217,36 @@ class SuruIntelligenceService(
                         appendLine("Give accurate conceptual clarity without inventing page numbers or textbook citations.")
                     }
                 }
-                val result = gateway.generateCompletion(
-                    prefs = prefs,
-                    taskKind = SuruRoutingTaskKind.STUDY_HELP,
+                val result = gateway.generateCompletionBounded(
                     systemInstruction = "Return strictly valid JSON with keys: conceptExplanation, summaryBullets, practiceQuestions, flashcardFronts, flashcardBacks, revisionChecklist, mistakeTips.",
-                    historyTurns = emptyList(),
+                    memoryState = SuruBoundedMemoryState(),
                     userPrompt = prompt,
                     imageAttachment = null,
                     expectJson = true
                 )
                 parseStudyHelpJson(result.rawText, cleanTopic, mode, cleanNotes)?.let { parsed ->
-                    val suffix = buildString {
-                        append("Powered by ${result.providerUsed.shortName}")
-                        if (!result.secondaryReviewedBy.isNullOrBlank()) {
-                            append(" · Verified by ${result.secondaryReviewedBy}")
-                        }
-                    }
-                    return parsed.copy(sourceDisclaimer = "${parsed.sourceDisclaimer} ($suffix)")
+                    return parsed
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                Log.w(SURU_AI_TAG, "Study help gateway fallback (${t.message})")
+                Log.e(SURU_AI_TAG, "Study help fallback", t)
             }
         }
 
         return buildLocalStudyHelp(cleanTopic, mode, cleanNotes)
+    }
+
+    private fun parseStudyHelpJsonDirect(
+        rawJson: String,
+        cleanTopic: String,
+        mode: SuruStudyHelpMode,
+        cleanNotes: String
+    ): SuruStudyHelpResult? {
+        return runCatching {
+            val json = JSONObject(rawJson)
+            buildStudyHelpFromJson(json, cleanTopic, mode, cleanNotes)
+        }.getOrNull()
     }
 
     private fun parseStudyHelpJson(
@@ -427,37 +258,46 @@ class SuruIntelligenceService(
         return runCatching {
             val sanitized = stripMarkdownJsonFence(rawJson)
             val json = JSONObject(sanitized)
-            val explanation = json.optString("conceptExplanation").trim()
-            if (explanation.isBlank()) return@runCatching null
-            val hasNotes = cleanNotes.isNotBlank()
-            val fronts = jsonArrayToList(json.optJSONArray("flashcardFronts"))
-            val backs = jsonArrayToList(json.optJSONArray("flashcardBacks"))
-            val cards = fronts.zip(backs).ifEmpty { buildLocalFlashcards(cleanTopic, cleanNotes) }
-            SuruStudyHelpResult(
-                topic = cleanTopic,
-                mode = mode,
-                isBasedOnUserNotes = hasNotes,
-                sourceDisclaimer = if (hasNotes) {
-                    "Grounded in your pasted study notes + Gemini synthesis."
-                } else {
-                    "Gemini conceptual study guide (not cited from a specific textbook)."
-                },
-                conceptExplanation = explanation,
-                summaryBullets = jsonArrayToList(json.optJSONArray("summaryBullets")).ifEmpty {
-                    buildLocalSummaryBullets(cleanTopic, cleanNotes)
-                },
-                practiceQuestions = jsonArrayToList(json.optJSONArray("practiceQuestions")).ifEmpty {
-                    buildLocalPracticeQuestions(cleanTopic)
-                },
-                flashcards = cards,
-                revisionChecklist = jsonArrayToList(json.optJSONArray("revisionChecklist")).ifEmpty {
-                    buildLocalRevisionChecklist(cleanTopic)
-                },
-                mistakeTips = jsonArrayToList(json.optJSONArray("mistakeTips")).ifEmpty {
-                    buildLocalMistakeTips(cleanTopic)
-                }
-            )
+            buildStudyHelpFromJson(json, cleanTopic, mode, cleanNotes)
         }.getOrNull()
+    }
+
+    private fun buildStudyHelpFromJson(
+        json: JSONObject,
+        cleanTopic: String,
+        mode: SuruStudyHelpMode,
+        cleanNotes: String
+    ): SuruStudyHelpResult? {
+        val explanation = json.optString("conceptExplanation").trim()
+        if (explanation.isBlank()) return null
+        val hasNotes = cleanNotes.isNotBlank()
+        val fronts = jsonArrayToList(json.optJSONArray("flashcardFronts"))
+        val backs = jsonArrayToList(json.optJSONArray("flashcardBacks"))
+        val cards = fronts.zip(backs).ifEmpty { buildLocalFlashcards(cleanTopic, cleanNotes) }
+        return SuruStudyHelpResult(
+            topic = cleanTopic,
+            mode = mode,
+            isBasedOnUserNotes = hasNotes,
+            sourceDisclaimer = if (hasNotes) {
+                "Grounded in your pasted study notes."
+            } else {
+                "Conceptual study guide (paste your notes above for note-grounded summaries)."
+            },
+            conceptExplanation = explanation,
+            summaryBullets = jsonArrayToList(json.optJSONArray("summaryBullets")).ifEmpty {
+                buildLocalSummaryBullets(cleanTopic, cleanNotes)
+            },
+            practiceQuestions = jsonArrayToList(json.optJSONArray("practiceQuestions")).ifEmpty {
+                buildLocalPracticeQuestions(cleanTopic)
+            },
+            flashcards = cards,
+            revisionChecklist = jsonArrayToList(json.optJSONArray("revisionChecklist")).ifEmpty {
+                buildLocalRevisionChecklist(cleanTopic)
+            },
+            mistakeTips = jsonArrayToList(json.optJSONArray("mistakeTips")).ifEmpty {
+                buildLocalMistakeTips(cleanTopic)
+            }
+        )
     }
 
     companion object {
@@ -481,8 +321,13 @@ class SuruIntelligenceService(
             val upcomingEvents = events.filter { it.dateEpochDay > todayEpochDay && it.dateEpochDay <= todayEpochDay + 7 && !it.isCountdown }
                 .sortedWith(compareBy({ it.dateEpochDay }, { it.startMinuteOfDay }))
 
-            val memoryLines = if (enabledMemories.isEmpty()) "None" else {
-                enabledMemories.take(8).joinToString("; ") { "${it.keyLabel}: ${it.valueText}" }
+            val safeMemories = enabledMemories.filter {
+                it.isEnabled &&
+                    !SuruBoundedMemory.isSensitiveText(it.keyLabel) &&
+                    !SuruBoundedMemory.isSensitiveText(it.valueText)
+            }
+            val memoryLines = if (safeMemories.isEmpty()) "None" else {
+                safeMemories.take(6).joinToString("; ") { "${it.keyLabel}: ${it.valueText}" }
             }
             val planLines = if (studyPlans.isEmpty()) "None" else {
                 studyPlans.take(4).joinToString("; ") { "${it.subject} [${it.chaptersCsv}] (${it.status})" }
@@ -912,18 +757,16 @@ class SuruIntelligenceService(
             memories: List<SuruMemoryEntity>
         ): String {
             val name = context.userName.ifBlank { "Friend" }
-            val prefNote = memories.firstOrNull { it.isEnabled }?.let {
-                " (Noted preference: ${it.valueText})"
-            }.orEmpty()
-            val modeNotice = when (status) {
-                SuruCloudAiStatus.MISSING_API_KEY ->
-                    "Cloud Gemini AI is not configured yet (add GEMINI_API_KEY in AI Studio Secrets for full open-ended Q&A and photo understanding)."
-                SuruCloudAiStatus.OFFLINE ->
-                    "You're offline right now, so SURU is running with on-device planning and task tools."
-                else ->
-                    "SURU is running in local mode."
+            val safeMemory = memories.firstOrNull {
+                it.isEnabled && !SuruBoundedMemory.isSensitiveText(it.valueText)
             }
-            return "$modeNotice Hi $name$prefNote — you currently have ${context.pendingTaskTitles.size} pending task(s) and ${context.productivityScore}% productivity.\n\nLocal commands ready anytime:\n• \"Suru, mujhe agle 5 din mein Physics ke 3 chapters complete karne hain\"\n• \"Move today's tasks to tomorrow\"\n• \"Plan my entire week\"\n• \"I completed 2 hours of Chemistry\""
+            val prefNote = safeMemory?.let { " (Noted preference: ${it.valueText})" }.orEmpty()
+            val modeNotice = if (status == SuruCloudAiStatus.OFFLINE) {
+                "You're offline right now, so SURU is helping with on-device planning."
+            } else {
+                "SURU is ready with on-device planning right now."
+            }
+            return "$modeNotice Hi $name$prefNote — you currently have ${context.pendingTaskTitles.size} pending task(s) and ${context.productivityScore}% productivity.\n\nQuick commands you can try:\n• \"Suru, mujhe agle 5 din mein Physics ke 3 chapters complete karne hain\"\n• \"Move today's tasks to tomorrow\"\n• \"Plan my entire week\"\n• \"I completed 2 hours of Chemistry\""
         }
 
         private fun jsonArrayToList(arr: JSONArray?): List<String> {

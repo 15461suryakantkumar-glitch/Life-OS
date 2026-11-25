@@ -3,12 +3,15 @@ package com.example
 import android.content.Context
 import android.graphics.Bitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import androidx.room.Room
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
@@ -25,7 +28,10 @@ import com.example.data.local.TaskPriority
 import com.example.data.local.UserPreferencesState
 import com.example.data.local.WellbeingRange
 import com.example.data.local.WellbeingTelemetryState
+import com.example.data.social.TogetherConnectStatus
+import com.example.data.social.TogetherFriendProfile
 import com.example.data.social.TogetherPrivacyFilter
+import com.example.data.social.TogetherState
 import com.example.notifications.AppPermissionId
 import com.example.notifications.AppPermissionStatus
 import com.example.notifications.FeeloraNotificationCategory
@@ -40,10 +46,15 @@ import com.example.suru.SuruImageProcessor
 import com.example.suru.SuruIntelligenceService
 import com.example.suru.SuruIntent
 import com.example.suru.SuruNluEngine
+import com.example.ui.LifeOsSection
+import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.OpeningSplashScreen
 import com.example.ui.screens.PermissionSetupScreen
 import com.example.ui.screens.PermissionsScreen
+import com.example.ui.screens.TogetherOneScreen
 import com.example.ui.theme.LifeOsTheme
+import com.example.ui.viewmodel.LifeOsUiState
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -344,37 +355,62 @@ class FeeloraUpgradeTest {
     }
 
     @Test
-    fun onboardingScreen_renders7StepFlowCleanlyAcrossAllFeaturePages() {
+    fun onboardingScreen_renders7SlidesSplashAndAuthCleanly() {
         composeRule.setContent {
             LifeOsTheme {
                 OnboardingScreen(
-                    existingPrefs = UserPreferencesState(),
-                    onComplete7Step = { _, _, _, _, _, _, _, _ -> }
+                    initialPage = 0,
+                    onBackToSplash = {},
+                    onSkip = {},
+                    onComplete = {}
                 )
             }
         }
-        // Page 0: Tasks
-        composeRule.onNodeWithText("FEELORA").assertIsDisplayed()
-        composeRule.onNodeWithTag("onboarding_get_started_btn").performScrollTo().assertIsDisplayed()
-        assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+        // Slide 1/7: Manage Your Tasks
+        composeRule.onNodeWithText("Manage Your Tasks").assertIsDisplayed()
+        composeRule.onNodeWithText("Stay organized and never miss anything.").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboarding_skip_btn").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboarding_next_btn").assertIsDisplayed()
 
-        // Advance through Pages 1..5 (Study, Calendar, Wellness, SURU AI, KUTTA Companion)
-        composeRule.onNodeWithTag("onboarding_get_started_btn").performClick()
+        // Advance to Slide 2/7: Plan Your Study
+        composeRule.onNodeWithTag("onboarding_next_btn").performClick()
         composeRule.waitForIdle()
-        for (pageIdx in 1..5) {
-            composeRule.onNodeWithTag("onboarding_next_btn").performScrollTo().assertIsDisplayed()
-            if (pageIdx < 5) {
-                assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
-            } else {
-                composeRule.onNodeWithText("KUTTA Companion").assertIsDisplayed()
-            }
-            composeRule.onNodeWithTag("onboarding_next_btn").performClick()
-            composeRule.waitForIdle()
-        }
+        composeRule.onNodeWithText("Plan Your Study").assertIsDisplayed()
+        composeRule.onNodeWithTag("onboarding_back_btn").assertIsDisplayed()
+    }
 
-        // Page 6: Together One
-        composeRule.onNodeWithTag("onboarding_together_next_btn").performScrollTo().assertIsDisplayed()
-        assertEquals(0, composeRule.onAllNodesWithText("KUTTA", substring = true, ignoreCase = true).fetchSemanticsNodes().size)
+    @Test
+    fun openingSplashAndAuthScreens_renderExpectedOptionsOnly() {
+        composeRule.setContent {
+            LifeOsTheme {
+                OpeningSplashScreen(
+                    initialMuted = true,
+                    onGetStarted = {},
+                    onSignIn = {}
+                )
+            }
+        }
+        composeRule.onNodeWithTag("opening_splash_screen").assertIsDisplayed()
+        composeRule.onNodeWithText("Feel · Heal · Grow").assertIsDisplayed()
+        composeRule.onNodeWithTag("splash_get_started_btn").assertIsDisplayed()
+        composeRule.onNodeWithTag("splash_sign_in_btn").assertIsDisplayed()
+    }
+
+    @Test
+    fun authScreen_showsOnlyGoogleAndEmailOptions() {
+        composeRule.setContent {
+            LifeOsTheme {
+                AuthScreen(
+                    onGoogleSignIn = { _, _, _ -> },
+                    onEmailAuthSubmit = { _, _, _ -> }
+                )
+            }
+        }
+        composeRule.onNodeWithTag("auth_screen").assertIsDisplayed()
+        composeRule.onNodeWithTag("auth_google_btn").assertIsDisplayed()
+        composeRule.onNodeWithTag("auth_email_toggle_btn").assertIsDisplayed()
+        composeRule.onNodeWithText("Continue with Google").assertIsDisplayed()
+        composeRule.onNodeWithText("Continue with Email").assertIsDisplayed()
     }
 
     @Test
@@ -509,5 +545,82 @@ class FeeloraUpgradeTest {
         }
         helper.close()
         context.deleteDatabase(dbName)
+    }
+
+    @Test
+    fun togetherOneScreen_andFiveSlotBottomTabs_renderFrictionlessly() {
+        val primaryTabs = LifeOsSection.entries.filter { it.isPrimaryTab }
+        assertEquals(listOf("Home", "Tasks", "AI", "Calendar", "Together"), primaryTabs.map { it.label })
+
+        val sampleFriend = TogetherFriendProfile(
+            userId = "friend_aria",
+            displayName = "Aria",
+            handle = "@aria.os",
+            friendCode = "FLR-ARIA-4821",
+            presenceStatus = "Focusing now",
+            isFocusingNow = true
+        )
+        var connectedCode = ""
+        var cheeredFriendId = ""
+        var sentNote = ""
+
+        val uiState = LifeOsUiState(
+            prefs = UserPreferencesState(
+                userName = "Malkin",
+                userHandle = "@malkin",
+                friendCode = "FLR-MALK-1010",
+                isSignedIn = true
+            ),
+            togetherState = TogetherState(
+                friends = listOf(sampleFriend),
+                pendingConnectCode = "FLR-KAI-9999",
+                quickConnectStatus = TogetherConnectStatus.Success("Connected with Aria!", "Aria")
+            )
+        )
+
+        composeRule.setContent {
+            LifeOsTheme {
+                TogetherOneScreen(
+                    state = uiState,
+                    onBack = {},
+                    onRefresh = {},
+                    onConnectCode = { connectedCode = it },
+                    onClearConnectFeedback = {},
+                    onSendCheer = { cheeredFriendId = it.userId },
+                    onSendQuickNote = { note, _ -> sentNote = note },
+                    onOpenChat = {},
+                    onRespondToRequest = { _, _ -> },
+                    onReactToActivity = { _, _ -> },
+                    onUpdatePrivacy = { _, _, _, _ -> },
+                    onToggleNearbyRadar = {},
+                    onSyncNearbyPeer = {},
+                    onShowMessage = {}
+                )
+            }
+        }
+
+        // Top card with user's friend code, Copy & Share, and zero login prompts
+        composeRule.onNodeWithTag("together_my_friend_code").assertIsDisplayed()
+        composeRule.onNodeWithText("FLR-MALK-1010").assertIsDisplayed()
+        composeRule.onNodeWithTag("together_copy_code_btn").assertIsDisplayed()
+        composeRule.onNodeWithTag("together_share_code_btn").assertIsDisplayed()
+        assertEquals(0, composeRule.onAllNodesWithText("Sign in with a cloud account", substring = true).fetchSemanticsNodes().size)
+
+        // Quick Connect card + Connect tap
+        composeRule.onNodeWithTag("together_screen").performScrollToNode(hasTestTag("together_quick_connect_btn"))
+        composeRule.onNodeWithTag("together_quick_connect_input").assertIsDisplayed()
+        composeRule.onNodeWithTag("together_quick_connect_btn").performClick()
+        assertEquals("FLR-KAI-9999", connectedCode)
+
+        // Connected friend & Send Cheer action
+        composeRule.onNodeWithTag("together_screen").performScrollToNode(hasTestTag("together_cheer_btn_friend_aria"))
+        composeRule.onNodeWithTag("together_cheer_btn_friend_aria").performClick()
+        assertEquals("friend_aria", cheeredFriendId)
+
+        // Quick Note composer
+        composeRule.onNodeWithTag("together_screen").performScrollToNode(hasTestTag("together_quick_note_send_btn"))
+        composeRule.onNodeWithTag("together_quick_note_input").performTextInput("Studying Physics")
+        composeRule.onNodeWithTag("together_quick_note_send_btn").performClick()
+        assertEquals("Studying Physics", sentNote)
     }
 }

@@ -49,15 +49,16 @@ import com.example.data.local.UserPreferencesState
 import com.example.data.local.WellbeingRange
 import com.example.data.local.WellbeingTelemetryState
 import com.example.data.local.WidgetConfigEntity
-import com.example.data.social.FeeloraSupabase
 import com.example.data.social.FriendSyncCodec
 import com.example.data.social.FriendSyncManager
+import com.example.data.social.NearbyFriendPeer
 import com.example.data.social.SupabaseAuthAndSyncClient
 import com.example.data.social.SupabaseResult
 import com.example.data.social.TogetherCompetitionMode
+import com.example.data.social.TogetherConnectStatus
+import com.example.data.social.TogetherFriendProfile
 import com.example.data.social.TogetherReaction
 import com.example.data.social.TogetherRepository
-import com.example.data.social.TogetherServiceLocator
 import com.example.data.social.TogetherSharedGoal
 import com.example.data.social.TogetherState
 import com.example.kutta.KuttaEvent
@@ -84,7 +85,6 @@ import com.example.suru.SuruIntelligenceService
 import com.example.suru.SuruMascotState
 import com.example.suru.SuruNluEngine
 import com.example.suru.SuruPendingContext
-import com.example.suru.SuruStreamUpdate
 import com.example.suru.SuruStructuredAction
 import com.example.suru.SuruStudyHelpMode
 import com.example.suru.SuruStudyHelpResult
@@ -185,8 +185,6 @@ data class LifeOsUiState(
     val kuttaEventOverride: KuttaVisualState? = null,
     val studyTimer: StudyTimerState = StudyTimerState(),
     val isAiLoading: Boolean = false,
-    val aiStreamingReply: String? = null,
-    val aiStreamingProviderLabel: String? = null,
     val aiErrorMessage: String? = null,
     val petReactionBanner: String? = null,
     val levelUpBanner: Int? = null,
@@ -199,6 +197,8 @@ data class LifeOsUiState(
     val aiProviderDiagnostics: List<ProviderDiagnostic> = emptyList(),
     val aiProviderUsageLogs: List<AiProviderUsageEntity> = emptyList(),
     val notificationHistory: List<NotificationHistoryEntity> = emptyList(),
+    val isPeerRadarActive: Boolean = false,
+    val nearbyPeers: List<NearbyFriendPeer> = emptyList(),
     val suruMemories: List<SuruMemoryEntity> = emptyList(),
     val suruStudyPlans: List<SuruStudyPlanEntity> = emptyList(),
     val suruVoiceState: SuruVoiceState = SuruVoiceState.READY,
@@ -343,15 +343,14 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val suruVoiceManager = SuruVoiceManager(application)
     private val usageBridge = AndroidUsageStatsBridge(application)
     private val friendSyncManager = FriendSyncManager(application)
-    private val supabaseClient = FeeloraSupabase.client(application)
-    private val togetherRepository = TogetherServiceLocator.getRepository(application)
+    private val supabaseClient = SupabaseAuthAndSyncClient(application)
+    private val togetherRepository = TogetherRepository(application, supabaseClient)
     private val soundManager = LifeOsSoundManager(application) {
         suruVoiceManager.voiceState.value == SuruVoiceState.SPEAKING
     }
 
     private val studyTimerState = MutableStateFlow(StudyTimerState())
     private val aiLoadingState = MutableStateFlow(false)
-    private val aiStreamingState = MutableStateFlow<Pair<String?, String?>>(null to null)
     private val aiErrorState = MutableStateFlow<String?>(null)
     private val petReactionState = MutableStateFlow<String?>(null)
     private val levelUpBannerState = MutableStateFlow<Int?>(null)
@@ -415,8 +414,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private data class TransientFlows(
         val timer: StudyTimerState,
         val aiLoading: Boolean,
-        val aiStreamingReply: String?,
-        val aiStreamingProviderLabel: String?,
         val aiError: String?,
         val petReaction: String?,
         val levelUpBanner: Int?,
@@ -432,12 +429,13 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         val confirmation: SuruConfirmationRequest?,
         val undoRecord: SuruUndoRecord?,
         val studyHelp: SuruStudyHelpResult?,
-        val pendingImage: SuruImageAttachment?,
-        val diagnostics: List<ProviderDiagnostic>
+        val pendingImage: SuruImageAttachment?
     )
 
     private data class SocialNetworkFlows(
         val isOnline: Boolean,
+        val isPeerRadarActive: Boolean,
+        val nearbyPeers: List<NearbyFriendPeer>,
         val usageTick: Int,
         val permissions: List<AppPermissionInfo>,
         val togetherState: TogetherState,
@@ -542,10 +540,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private val feedbackBannersFlow = combine(
         petReactionState,
         levelUpBannerState,
-        kuttaEventState,
-        aiStreamingState
-    ) { petReact, lvlBanner, kuttaOverride, streamPair ->
-        listOf<Any?>(petReact, lvlBanner, kuttaOverride, streamPair.first, streamPair.second)
+        kuttaEventState
+    ) { petReact, lvlBanner, kuttaOverride ->
+        Triple(petReact, lvlBanner, kuttaOverride)
     }
 
     private val transientFlow = combine(
@@ -555,17 +552,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         feedbackBannersFlow,
         snackbarState
     ) { timer, loading, err, banners, snack ->
-        TransientFlows(
-            timer = timer,
-            aiLoading = loading,
-            aiStreamingReply = banners[3] as String?,
-            aiStreamingProviderLabel = banners[4] as String?,
-            aiError = err,
-            petReaction = banners[0] as String?,
-            levelUpBanner = banners[1] as Int?,
-            snackbar = snack,
-            kuttaOverride = banners[2] as KuttaVisualState?
-        )
+        TransientFlows(timer, loading, err, banners.first, banners.second, snack, banners.third)
     }
 
     private val suruVoiceFlow = combine(
@@ -588,9 +575,8 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         suruVoiceFlow,
         suruSuccessOverride,
         suruPendingConfirmationState,
-        suruExtrasFlow,
-        suruService.getGateway().diagnosticsFlow
-    ) { voiceTriple, success, confirm, extras, diagnostics ->
+        suruExtrasFlow
+    ) { voiceTriple, success, confirm, extras ->
         SuruUiTransientFlows(
             voiceState = voiceTriple.first,
             partialTranscript = voiceTriple.second,
@@ -599,17 +585,18 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             confirmation = confirm,
             undoRecord = extras.first,
             studyHelp = extras.second,
-            pendingImage = extras.third,
-            diagnostics = diagnostics
+            pendingImage = extras.third
         )
     }
 
     private val networkBasicFlow = combine(
         friendSyncManager.observeNetworkOnline(),
+        friendSyncManager.isPeerRadarActive,
+        friendSyncManager.nearbyPeers,
         usagePermissionTick,
         appPermissionsState
-    ) { online, tick, perms ->
-        Triple(online, tick, perms)
+    ) { online, radar, peers, tick, perms ->
+        listOf(online, radar, peers, tick, perms)
     }
 
     private val togetherExtrasFlow = combine(
@@ -629,9 +616,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     ) { netBasic, tExtras, histAiStudy ->
         @Suppress("UNCHECKED_CAST")
         SocialNetworkFlows(
-            isOnline = netBasic.first,
-            usageTick = netBasic.second,
-            permissions = netBasic.third,
+            isOnline = netBasic[0] as Boolean,
+            isPeerRadarActive = netBasic[1] as Boolean,
+            nearbyPeers = netBasic[2] as List<NearbyFriendPeer>,
+            usageTick = netBasic[3] as Int,
+            permissions = netBasic[4] as List<AppPermissionInfo>,
             togetherState = tExtras[0] as TogetherState,
             authUiState = tExtras[1] as AuthUiState,
             activeChatFriendId = tExtras[2] as String?,
@@ -651,6 +640,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     ) { core, sec, trans, socialPair, suru ->
         val social = socialPair.first
         val studyBundle = socialPair.second
+        val completedChal = sec.challenges.count { it.isClaimed || it.currentProgress >= it.targetCount }
+        val totalChal = sec.challenges.size.coerceAtLeast(1)
+        friendSyncManager.updateOutgoingToken(
+            FriendSyncCodec.buildShareToken(core.prefs, completedChal, totalChal)
+        )
         suruVoiceManager.updateSettings(
             muted = core.prefs.suruVoiceMuted,
             speechRate = core.prefs.suruSpeechSpeed,
@@ -670,7 +664,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             else -> SuruMascotState.IDLE
         }
 
-        suruService.getGateway().syncPreferences(core.prefs)
         val cloudStatus = suruService.getCloudAiStatus()
         LifeOsUiState(
             isPrefsLoaded = true,
@@ -693,8 +686,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             kuttaEventOverride = trans.kuttaOverride,
             studyTimer = trans.timer,
             isAiLoading = trans.aiLoading,
-            aiStreamingReply = trans.aiStreamingReply,
-            aiStreamingProviderLabel = trans.aiStreamingProviderLabel,
             aiErrorMessage = trans.aiError,
             petReactionBanner = trans.petReaction,
             levelUpBanner = trans.levelUpBanner,
@@ -704,9 +695,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
             isOnline = social.isOnline,
             isCloudAiAvailable = cloudStatus.isCloudConfigured,
             cloudAiStatus = cloudStatus,
-            aiProviderDiagnostics = suru.diagnostics,
+            aiProviderDiagnostics = suruService.getGateway().getAllDiagnostics(),
             aiProviderUsageLogs = social.aiUsageLogs,
             notificationHistory = social.notificationHistory,
+            isPeerRadarActive = social.isPeerRadarActive,
+            nearbyPeers = social.nearbyPeers,
             suruMemories = sec.suruMemories,
             suruStudyPlans = sec.suruStudyPlans,
             suruVoiceState = suru.voiceState,
@@ -760,6 +753,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     override fun onCleared() {
         super.onCleared()
+        friendSyncManager.stopNearbyPeerSync()
         togetherRepository.stopRealtimeSync()
         soundManager.release()
         suruVoiceManager.release()
@@ -859,18 +853,14 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun tryAutoRefreshSupabaseSession() {
         val prefs = prefsRepo.preferencesFlow.first()
         if (!prefs.isSignedIn) return
-        ensureSupabaseSessionInternal(prefs)
-    }
-
-    private suspend fun ensureSupabaseSessionInternal(initialPrefs: UserPreferencesState? = null): UserPreferencesState? {
-        val prefs = initialPrefs ?: prefsRepo.preferencesFlow.first()
         if (!supabaseClient.isConfigured()) {
             togetherRepository.refreshConfigurationState()
-            return null
+            return
         }
+        if (prefs.supabaseRefreshToken.isBlank() && prefs.supabaseAccessToken.isBlank()) return
 
         val now = System.currentTimeMillis()
-        if (prefs.hasValidRemoteSession && prefs.supabaseSessionExpiresAt > now + 120_000L) {
+        if (prefs.supabaseSessionExpiresAt > now + 120_000L && prefs.supabaseAccessToken.isNotBlank()) {
             when (val userRes = supabaseClient.fetchCurrentUser(prefs.supabaseAccessToken)) {
                 is SupabaseResult.Success -> {
                     prefsRepo.saveSupabaseSession(
@@ -881,12 +871,11 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                         expiresAtMillis = prefs.supabaseSessionExpiresAt,
                         emailVerified = userRes.value.emailVerified
                     )
-                    val refreshedPrefs = prefsRepo.preferencesFlow.first()
-                    togetherRepository.startRealtimeSync(viewModelScope, refreshedPrefs.supabaseUserId, refreshedPrefs.supabaseAccessToken)
-                    syncSafeProfileToTogether(refreshedPrefs)
-                    return refreshedPrefs
+                    togetherRepository.startRealtimeSync(viewModelScope, userRes.value.userId, prefs.supabaseAccessToken)
+                    syncSafeProfileToTogether()
+                    return
                 }
-                is SupabaseResult.Failure -> if (!userRes.isUnauthorized) return prefs
+                is SupabaseResult.Failure -> if (!userRes.isUnauthorized) return
             }
         }
 
@@ -902,38 +891,15 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                         expiresAtMillis = s.expiresAtMillis,
                         emailVerified = s.emailVerified
                     )
-                    val updatedPrefs = prefsRepo.preferencesFlow.first()
                     togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
-                    syncSafeProfileToTogether(updatedPrefs)
-                    return updatedPrefs
+                    syncSafeProfileToTogether()
                 }
                 is SupabaseResult.Failure -> {
-                    if (refreshed.isUnauthorized && prefs.userEmail.isNotBlank()) {
+                    if (refreshed.isUnauthorized) {
                         authUiStateFlow.update { it.copy(sessionExpiredPrompt = true) }
-                        return null
                     }
                 }
             }
-        }
-
-        // Anonymous auth fallback so Together One works seamlessly after local onboarding
-        return when (val anonRes = supabaseClient.signInAnonymously()) {
-            is SupabaseResult.Success -> {
-                val s = anonRes.value
-                prefsRepo.saveSupabaseSession(
-                    userId = s.userId,
-                    email = s.email,
-                    accessToken = s.accessToken,
-                    refreshToken = s.refreshToken,
-                    expiresAtMillis = s.expiresAtMillis,
-                    emailVerified = s.emailVerified
-                )
-                val updatedPrefs = prefsRepo.preferencesFlow.first()
-                togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
-                syncSafeProfileToTogether(updatedPrefs)
-                updatedPrefs
-            }
-            is SupabaseResult.Failure -> null
         }
     }
 
@@ -1066,6 +1032,193 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun signInWithGoogleCredential(
+        email: String,
+        displayName: String,
+        idToken: String,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+            val cleanEmail = email.trim()
+            val derivedName = displayName.trim()
+                .ifBlank { deriveDisplayNameFromEmail(cleanEmail) }
+                .ifBlank { "Friend" }
+
+            var cloudSynced = false
+            if (supabaseClient.isConfigured() && idToken.isNotBlank()) {
+                when (val res = supabaseClient.signInWithGoogleIdToken(
+                    idToken = idToken,
+                    fallbackEmail = cleanEmail,
+                    fallbackName = derivedName
+                )) {
+                    is SupabaseResult.Success -> {
+                        val s = res.value
+                        if (s.accessToken.isNotBlank()) {
+                            prefsRepo.saveSupabaseSession(
+                                userId = s.userId,
+                                email = s.email.ifBlank { cleanEmail },
+                                accessToken = s.accessToken,
+                                refreshToken = s.refreshToken,
+                                expiresAtMillis = s.expiresAtMillis,
+                                emailVerified = true
+                            )
+                            togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
+                            cloudSynced = true
+                        }
+                    }
+                    is SupabaseResult.Failure -> {
+                        // Google Credential Manager already verified the account on-device;
+                        // proceed with local Feelora session if cloud provider is unavailable.
+                    }
+                }
+            }
+
+            finalizeAuthSignIn(
+                name = derivedName,
+                email = cleanEmail,
+                syncToCloud = cloudSynced
+            )
+            authUiStateFlow.update {
+                it.copy(
+                    isLoading = false,
+                    sessionExpiredPrompt = false,
+                    infoMessage = null
+                )
+            }
+            onSuccess()
+        }
+    }
+
+    fun continueWithEmail(
+        email: String,
+        password: String,
+        isCreateAccount: Boolean,
+        onSuccess: () -> Unit
+    ) {
+        viewModelScope.launch {
+            val cleanEmail = email.trim()
+            val derivedName = uiState.value.prefs.userName
+                .ifBlank { deriveDisplayNameFromEmail(cleanEmail) }
+                .ifBlank { "Friend" }
+
+            authUiStateFlow.update { it.copy(isLoading = true, errorMessage = null, infoMessage = null) }
+
+            if (!supabaseClient.isConfigured()) {
+                finalizeAuthSignIn(
+                    name = derivedName,
+                    email = cleanEmail,
+                    syncToCloud = false
+                )
+                authUiStateFlow.update {
+                    it.copy(
+                        isLoading = false,
+                        sessionExpiredPrompt = false,
+                        infoMessage = null
+                    )
+                }
+                onSuccess()
+                return@launch
+            }
+
+            val result = if (isCreateAccount) {
+                supabaseClient.signUp(cleanEmail, password, derivedName)
+            } else {
+                supabaseClient.signIn(cleanEmail, password)
+            }
+
+            when (result) {
+                is SupabaseResult.Success -> {
+                    val s = result.value
+                    if (s.accessToken.isNotBlank()) {
+                        prefsRepo.saveSupabaseSession(
+                            userId = s.userId,
+                            email = s.email.ifBlank { cleanEmail },
+                            accessToken = s.accessToken,
+                            refreshToken = s.refreshToken,
+                            expiresAtMillis = s.expiresAtMillis,
+                            emailVerified = s.emailVerified
+                        )
+                        togetherRepository.startRealtimeSync(viewModelScope, s.userId, s.accessToken)
+                        finalizeAuthSignIn(
+                            name = s.displayName.ifBlank { derivedName },
+                            email = s.email.ifBlank { cleanEmail },
+                            syncToCloud = true
+                        )
+                        authUiStateFlow.update {
+                            it.copy(
+                                isLoading = false,
+                                sessionExpiredPrompt = false,
+                                verificationEmailPending = if (!s.emailVerified) s.email else null,
+                                infoMessage = null
+                            )
+                        }
+                        onSuccess()
+                    } else {
+                        authUiStateFlow.update {
+                            it.copy(
+                                isLoading = false,
+                                verificationEmailPending = cleanEmail,
+                                infoMessage = "Verification link sent to $cleanEmail. Confirm your email, then sign in."
+                            )
+                        }
+                    }
+                }
+                is SupabaseResult.Failure -> {
+                    authUiStateFlow.update {
+                        it.copy(isLoading = false, errorMessage = result.message)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun deriveDisplayNameFromEmail(email: String): String {
+        val prefix = email.substringBefore("@").trim()
+        if (prefix.isBlank()) return "Friend"
+        return prefix
+            .split('.', '_', '-', '+')
+            .filter { it.isNotBlank() }
+            .take(2)
+            .joinToString(" ") { part ->
+                part.replaceFirstChar { ch -> if (ch.isLowerCase()) ch.titlecase() else ch.toString() }
+            }
+            .ifBlank { "Friend" }
+    }
+
+    private suspend fun finalizeAuthSignIn(
+        name: String,
+        email: String,
+        syncToCloud: Boolean
+    ) {
+        val current = uiState.value.prefs
+        val finalName = current.userName.ifBlank { name }
+        prefsRepo.completeOnboardingSignIn(
+            name = finalName,
+            identityOrEmail = email,
+            focusGoal = current.dailyFocusGoalMinutes,
+            themeMode = current.themeMode,
+            bio = current.userBio,
+            preferredLanguage = current.preferredLanguage,
+            avatarPreset = current.avatarPreset,
+            avatarPhotoUri = current.avatarPhotoUri
+        )
+        prefsRepo.unlockBadge("FIRST_LAUNCH")
+        val updated = prefsRepo.preferencesFlow.first()
+        TaskReminderScheduler.syncSchedule(
+            context = getApplication(),
+            notificationsEnabled = updated.notificationsEnabled,
+            taskRemindersEnabled = updated.taskRemindersEnabled,
+            frequencyHours = updated.reminderFrequencyHours
+        )
+        if (syncToCloud && updated.hasValidRemoteSession && supabaseClient.isConfigured()) {
+            syncSafeProfileToTogether()
+        }
+        emitKuttaEvent(KuttaEvent.AppOpenedMorning)
+        snackbarState.value = "Welcome to FEELORA, ${updated.userName.ifBlank { finalName }}!"
+        syncHomeWidgets()
+    }
+
     fun complete7StepOnboarding(
         name: String,
         handleOrEmail: String,
@@ -1111,12 +1264,9 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 taskRemindersEnabled = updated.taskRemindersEnabled,
                 frequencyHours = updated.reminderFrequencyHours
             )
-            if (supabaseClient.isConfigured()) {
-                val activePrefs = ensureSupabaseSessionInternal(updated)
-                if (activePrefs != null && activePrefs.hasValidRemoteSession) {
-                    togetherRepository.startRealtimeSync(viewModelScope, activePrefs.supabaseUserId, activePrefs.supabaseAccessToken)
-                    syncSafeProfileToTogether(activePrefs)
-                }
+            if (updated.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                togetherRepository.startRealtimeSync(viewModelScope, updated.supabaseUserId, updated.supabaseAccessToken)
+                syncSafeProfileToTogether()
             }
             emitKuttaEvent(KuttaEvent.AppOpenedMorning)
             snackbarState.value = "Welcome to FEELORA, ${updated.userName.ifBlank { name }}!"
@@ -1145,6 +1295,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun signOutLocalSession() {
         viewModelScope.launch {
+            friendSyncManager.stopNearbyPeerSync()
             togetherRepository.stopRealtimeSync()
             // Preserves all local Room user data, XP, tasks, events, habits, Cycle Care & memories
             prefsRepo.signOutSession()
@@ -1193,7 +1344,6 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 soundManager.playCue(LifeOsSoundCue.TASK_COMPLETE, currentPrefs)
             }
         }
-        syncSafeProfileToTogether()
     }
 
     // --- TASKS ---
@@ -2183,40 +2333,174 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // --- TOGETHER ONE ONLINE CONNECTIONS, PROFILE SYNC & CO-STUDY ---
-    fun buildMyShareToken(): String = FriendSyncCodec.buildShareToken(uiState.value.prefs)
+    // --- FRIENDS & ONLINE / PEER SYNC ---
+    fun buildMyShareToken(): String {
+        val state = uiState.value
+        return FriendSyncCodec.buildShareToken(
+            prefs = state.prefs,
+            challengesCompleted = state.completedChallengesCount,
+            challengesTotal = state.challenges.size.coerceAtLeast(1)
+        )
+    }
 
-    fun buildMyInviteLink(): String = FriendSyncCodec.buildInviteLink(uiState.value.prefs)
+    fun buildMyInviteLink(): String {
+        val state = uiState.value
+        return FriendSyncCodec.buildInviteLink(
+            prefs = state.prefs,
+            challengesCompleted = state.completedChallengesCount,
+            challengesTotal = state.challenges.size.coerceAtLeast(1)
+        )
+    }
 
-    fun importFriendFromInput(rawInput: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
-        val codeOrHandle = FriendSyncCodec.extractInviteCode(rawInput)
-        if (codeOrHandle == null) {
-            val err = "Enter a valid Friend Code (FLR-XXXX-1234), @username, or feelora invite link."
-            snackbarState.value = err
-            onResult(false, err)
-            return
+    fun buildMyFriendCodeLink(): String {
+        val prefs = uiState.value.prefs
+        val code = prefs.friendCode.ifBlank {
+            UserPreferencesRepository.generateFriendCode(prefs.userHandle, prefs.userName)
         }
+        return FriendSyncCodec.buildFriendCodeLink(code)
+    }
+
+    fun prepopulateTogetherFriendCode(rawInput: String, autoConnectIfValid: Boolean = true) {
+        togetherRepository.setPendingConnectCode(rawInput)
+        if (autoConnectIfValid && FriendSyncCodec.parseInput(rawInput) != null) {
+            connectTogetherFriendCode(rawInput)
+        }
+    }
+
+    fun connectTogetherFriendCode(rawCode: String) {
         viewModelScope.launch {
-            val activePrefs = ensureSupabaseSessionInternal() ?: uiState.value.prefs
-            if (!supabaseClient.isConfigured() || !activePrefs.hasValidRemoteSession) {
-                val msg = supabaseClient.configurationStatusMessage()
-                snackbarState.value = msg
-                onResult(false, msg)
-                return@launch
-            }
+            val p = uiState.value.prefs
             when (
-                val res = togetherRepository.sendFriendRequest(
-                    query = codeOrHandle,
-                    myUserId = activePrefs.supabaseUserId,
-                    myName = activePrefs.userName,
-                    myHandle = activePrefs.userHandle,
-                    accessToken = activePrefs.supabaseAccessToken
+                val res = togetherRepository.connectByFriendCode(
+                    rawInput = rawCode,
+                    myUserId = p.supabaseUserId,
+                    myFriendCode = p.friendCode,
+                    myName = p.userName,
+                    myHandle = p.userHandle,
+                    accessToken = p.supabaseAccessToken
                 )
             ) {
                 is SupabaseResult.Success -> {
-                    soundManager.playCue(LifeOsSoundCue.TOGETHER_MESSAGE, activePrefs)
+                    soundManager.playCue(LifeOsSoundCue.TOGETHER_MESSAGE, p)
+                    snackbarState.value = "Connected with ${res.value.displayName}"
+                }
+                is SupabaseResult.Failure -> {
+                    snackbarState.value = res.message
+                }
+            }
+        }
+    }
+
+    fun clearTogetherConnectFeedback() {
+        togetherRepository.clearQuickConnectStatus()
+    }
+
+    fun sendCheerToFriend(friend: TogetherFriendProfile) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (
+                val res = togetherRepository.sendCheer(
+                    myUserId = p.supabaseUserId,
+                    myName = p.userName,
+                    friend = friend,
+                    accessToken = p.supabaseAccessToken
+                )
+            ) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.TOGETHER_MESSAGE, p)
                     snackbarState.value = res.value
-                    onResult(true, res.value)
+                }
+                is SupabaseResult.Failure -> {
+                    snackbarState.value = res.message
+                }
+            }
+        }
+    }
+
+    fun sendQuickNoteToTogether(note: String, targetFriend: TogetherFriendProfile?) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (
+                val res = togetherRepository.sendQuickNoteToCircle(
+                    myUserId = p.supabaseUserId,
+                    myName = p.userName,
+                    note = note,
+                    targetFriend = targetFriend,
+                    accessToken = p.supabaseAccessToken
+                )
+            ) {
+                is SupabaseResult.Success -> {
+                    soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, p)
+                    snackbarState.value = res.value
+                }
+                is SupabaseResult.Failure -> {
+                    snackbarState.value = res.message
+                }
+            }
+        }
+    }
+
+    fun updateMyStudyPresence(status: String, isFocusing: Boolean = false) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            togetherRepository.publishStudyPresence(
+                myUserId = p.supabaseUserId,
+                status = status,
+                isFocusing = isFocusing,
+                quickNote = togetherRepository.state.value.myQuickNote,
+                accessToken = p.supabaseAccessToken
+            )
+            snackbarState.value = "Status updated"
+        }
+    }
+
+    fun addFriendByUsername(name: String, handle: String, friendCode: String = "") {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val cleanName = name.trim()
+            val rawHandle = handle.trim().ifEmpty { "@${cleanName.lowercase().replace(" ", "")}" }
+            val cleanHandle = if (rawHandle.startsWith("@")) rawHandle else "@$rawHandle"
+            val code = friendCode.trim().uppercase().ifBlank {
+                UserPreferencesRepository.generateFriendCode(cleanHandle, cleanName)
+            }
+            val existing = db.friendDao().findByCodeOrHandle(code, cleanHandle)
+            val entity = FriendEntity(
+                id = existing?.id ?: 0L,
+                displayName = cleanName,
+                handle = cleanHandle,
+                friendCode = code,
+                level = existing?.level ?: 1,
+                xp = existing?.xp ?: 0,
+                streakDays = existing?.streakDays ?: 0,
+                focusMinutesToday = existing?.focusMinutesToday ?: 0,
+                challengesCompleted = existing?.challengesCompleted ?: 0,
+                challengesTotal = existing?.challengesTotal ?: 4,
+                petStageName = existing?.petStageName ?: "Little Spark",
+                sharesStats = true,
+                statusText = if (existing == null) "Awaiting progress sync" else existing.statusText
+            )
+            db.friendDao().insertFriend(entity)
+            snackbarState.value = "$cleanName added"
+        }
+    }
+
+    fun importFriendFromInput(rawInput: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val p = uiState.value.prefs
+            when (
+                val res = togetherRepository.connectByFriendCode(
+                    rawInput = rawInput,
+                    myUserId = p.supabaseUserId,
+                    myFriendCode = p.friendCode,
+                    myName = p.userName,
+                    myHandle = p.userHandle,
+                    accessToken = p.supabaseAccessToken
+                )
+            ) {
+                is SupabaseResult.Success -> {
+                    val msg = "Connected ${res.value.displayName}"
+                    snackbarState.value = msg
+                    onResult(true, msg)
                 }
                 is SupabaseResult.Failure -> {
                     snackbarState.value = res.message
@@ -2226,24 +2510,58 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun toggleNearbyPeerRadar() {
+        val state = uiState.value
+        if (state.isPeerRadarActive) {
+            friendSyncManager.stopNearbyPeerSync()
+            snackbarState.value = "Nearby Wi-Fi sync paused"
+        } else if (!state.isOnline) {
+            snackbarState.value = "Connect to Wi-Fi to discover nearby devices"
+        } else {
+            val label = state.prefs.userHandle.ifBlank { state.prefs.userName.ifBlank { "Explorer" } }
+            friendSyncManager.startNearbyPeerSync(
+                scope = viewModelScope,
+                serviceLabel = label,
+                outgoingToken = buildMyShareToken()
+            )
+            snackbarState.value = "Scanning Wi-Fi for nearby Life OS users..."
+        }
+    }
+
+    fun stopNearbyPeerRadar() {
+        friendSyncManager.stopNearbyPeerSync()
+    }
+
+    fun syncWithNearbyPeer(peer: NearbyFriendPeer) {
+        viewModelScope.launch {
+            val parsed = friendSyncManager.fetchFromNearbyPeer(peer)
+            if (parsed == null) {
+                snackbarState.value = "Could not fetch progress from ${peer.serviceName}"
+                return@launch
+            }
+            val existing = db.friendDao().findByCodeOrHandle(parsed.friendCode, parsed.handle)
+            val entity = parsed.toFriendEntity(
+                existingId = existing?.id ?: 0L,
+                statusNote = "Synced over Wi-Fi"
+            )
+            db.friendDao().insertFriend(entity)
+            snackbarState.value = "Synced ${entity.displayName} (Lv.${entity.level} · ${entity.xp} XP)"
+        }
+    }
+
     fun removeFriend(friend: FriendEntity) {
         viewModelScope.launch {
-            if (friend.remoteUserId.isNotBlank()) {
-                val p = uiState.value.prefs
-                if (p.hasValidRemoteSession && supabaseClient.isConfigured()) {
-                    togetherRepository.blockOrRemoveFriend(p.supabaseUserId, friend.remoteUserId, block = false, accessToken = p.supabaseAccessToken)
-                }
-            }
             db.friendDao().deleteFriend(friend)
             snackbarState.value = "Removed ${friend.displayName}"
         }
     }
 
+    // --- TOGETHER CLOUD SYNC, REQUESTS, CHATS, SHARED GOALS & COMPETE ---
     fun refreshTogetherData() {
         viewModelScope.launch {
-            val activePrefs = ensureSupabaseSessionInternal() ?: uiState.value.prefs
-            if (activePrefs.hasValidRemoteSession && supabaseClient.isConfigured()) {
-                syncSafeProfileToTogether(activePrefs)
+            val prefs = uiState.value.prefs
+            if (prefs.hasValidRemoteSession && supabaseClient.isConfigured()) {
+                syncSafeProfileToTogether()
                 togetherRepository.refreshAll()
             } else {
                 togetherRepository.refreshConfigurationState()
@@ -2251,10 +2569,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun syncSafeProfileToTogether(overridePrefs: UserPreferencesState? = null) {
+    fun syncSafeProfileToTogether() {
         viewModelScope.launch {
             val state = uiState.value
-            val p = overridePrefs ?: prefsRepo.preferencesFlow.first()
+            val p = state.prefs
             if (!p.hasValidRemoteSession || !supabaseClient.isConfigured()) return@launch
             val today = DateTimeUtils.todayEpochDay()
             val doneToday = state.tasks.count {
@@ -2266,8 +2584,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 prefs = p,
                 tasksCompletedToday = doneToday,
                 consistencyScore = state.productivityScore,
-                challengesCompleted = state.completedChallengesCount,
-                challengesTotal = state.challenges.size.coerceAtLeast(1)
+                challengesCompleted = state.completedChallengesCount
             )
         }
     }
@@ -2536,6 +2853,12 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun upsertSuruMemory(category: String, keyLabel: String, valueText: String) {
         if (keyLabel.isBlank() || valueText.isBlank()) return
+        if (com.example.suru.SuruBoundedMemory.isSensitiveText(keyLabel) ||
+            com.example.suru.SuruBoundedMemory.isSensitiveText(valueText)
+        ) {
+            snackbarState.value = "Sensitive health & journal notes stay strictly private on-device"
+            return
+        }
         viewModelScope.launch {
             db.suruMemoryDao().upsertMemory(
                 SuruMemoryEntity(
@@ -2646,74 +2969,49 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 return@launch
             }
 
-            // 1. Multi-Provider Cloud AI Gateway (streaming + fallback + history preservation)
-            var finalCloudResponse: SuruAiResponse? = null
-            suruService.streamUnifiedPrompt(
-                userPrompt = effectivePrompt,
-                conversationHistory = current.aiMessages,
-                imageAttachment = attachedImage,
-                context = snapshot,
-                tasks = current.tasks,
-                events = current.events,
-                studyPlans = current.suruStudyPlans,
-                enabledMemories = enabledMemories,
-                pendingContext = pendingSuruContext,
-                todayEpochDay = today,
-                prefs = current.prefs
-            ).collect { update ->
-                when (update) {
-                    is SuruStreamUpdate.StreamingText -> {
-                        val badgeLabel = buildString {
-                            append(update.providerLabel)
-                            if (!update.fallbackNote.isNullOrBlank()) {
-                                append(" · Fallback")
-                            }
-                        }
-                        val displayText = buildString {
-                            append(update.partialReply.ifBlank { "..." })
-                            if (!update.fallbackNote.isNullOrBlank()) {
-                                append("\n\n(${update.fallbackNote})")
-                            }
-                        }
-                        aiStreamingState.value = displayText to badgeLabel
-                    }
-                    is SuruStreamUpdate.Completed -> {
-                        finalCloudResponse = update.response
-                    }
-                }
-            }
-            aiStreamingState.value = null to null
-
-            when (val cloudResponse = finalCloudResponse) {
+            // 1. Multi-Provider Cloud AI Gateway first whenever configured & online
+            when (
+                val cloudResponse = suruService.processUnifiedPrompt(
+                    userPrompt = effectivePrompt,
+                    conversationHistory = current.aiMessages,
+                    imageAttachment = attachedImage,
+                    context = snapshot,
+                    tasks = current.tasks,
+                    events = current.events,
+                    studyPlans = current.suruStudyPlans,
+                    enabledMemories = enabledMemories,
+                    pendingContext = pendingSuruContext,
+                    todayEpochDay = today,
+                    prefs = current.prefs
+                )
+            ) {
                 is SuruAiResponse.Success -> {
                     executeSuruActionAndRespond(
                         suruAction = cloudResponse.action,
                         sourcePrompt = effectivePrompt,
                         current = current,
                         today = today,
-                        speakReply = speakReply,
-                        providerBadge = cloudResponse.providerBadge
+                        speakReply = speakReply
                     )
                     aiLoadingState.value = false
                     return@launch
                 }
                 is SuruAiResponse.Error -> {
                     soundManager.playCue(LifeOsSoundCue.SURU_ERROR, current.prefs)
-                    aiErrorState.value = cloudResponse.message
                     db.aiMessageDao().insertMessage(
                         AiMessageEntity(
                             isFromUser = false,
-                            text = cloudResponse.message,
-                            actionBadge = cloudResponse.status.badgeLabel
+                            text = com.example.suru.SuruAiRouter.CALM_UNAVAILABLE_MESSAGE,
+                            actionBadge = null
                         )
                     )
                     aiLoadingState.value = false
                     return@launch
                 }
-                null -> Unit // Cloud is offline or missing key — proceed to deterministic offline SURU tools
+                null -> Unit // Offline or unconfigured — proceed to deterministic on-device SURU tools
             }
 
-            // 2. Deterministic offline NLU & study planner when offline or API key unconfigured
+            // 2. Deterministic on-device NLU & study planner fallback
             val offlineAction = SuruNluEngine.parseAndPlan(
                 userPrompt = effectivePrompt,
                 context = snapshot,
@@ -2742,7 +3040,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                     AiMessageEntity(
                         isFromUser = false,
                         text = honestFallback,
-                        actionBadge = current.cloudAiStatus.badgeLabel
+                        actionBadge = null
                     )
                 )
             }
@@ -2755,8 +3053,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         sourcePrompt: String,
         current: LifeOsUiState,
         today: Long,
-        speakReply: Boolean,
-        providerBadge: String? = null
+        speakReply: Boolean
     ) {
         pendingSuruContext = suruAction.updatedPendingContext
         if (suruAction.studyPlanDraft != null) {
@@ -2764,7 +3061,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         var finalReply = suruAction.reply
-        var badge: String? = providerBadge
+        var badge: String? = null
 
         when {
             suruAction.intent == SuruIntent.STUDY_HELP -> {
@@ -3062,8 +3359,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
         secondaryReviewEnabled: Boolean,
         secondaryProvider: SuruAiProvider,
         secondaryModel: String,
-        autoFallbackEnabled: Boolean,
-        streamingEnabled: Boolean = true
+        autoFallbackEnabled: Boolean
     ) {
         viewModelScope.launch {
             prefsRepo.updateSuruAiGatewaySettings(
@@ -3073,40 +3369,10 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
                 secondaryReviewEnabled = secondaryReviewEnabled,
                 secondaryProvider = secondaryProvider.name,
                 secondaryModel = secondaryModel,
-                autoFallbackEnabled = autoFallbackEnabled,
-                streamingEnabled = streamingEnabled
+                autoFallbackEnabled = autoFallbackEnabled
             )
             soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
-            snackbarState.value = "Primary provider set to ${defaultProvider.displayName} ($defaultModel)"
-        }
-    }
-
-    fun selectAiProviderModel(provider: SuruAiProvider, modelId: String) {
-        viewModelScope.launch {
-            prefsRepo.updateProviderModelSelection(provider.name, modelId)
-            soundManager.playCue(LifeOsSoundCue.UI_CONFIRM, uiState.value.prefs)
-            snackbarState.value = "${provider.shortName} model set to $modelId"
-        }
-    }
-
-    fun testAiProviderConnection(provider: SuruAiProvider) {
-        viewModelScope.launch {
-            val diag = suruService.getGateway().testConnection(provider)
-            val prefsNow = uiState.value.prefs
-            if (diag.status.isLiveVerified) {
-                soundManager.playCue(LifeOsSoundCue.SURU_SUCCESS, prefsNow)
-                snackbarState.value = "${provider.displayName}: Connected (${diag.selectedModel})"
-            } else {
-                soundManager.playCue(LifeOsSoundCue.SURU_ERROR, prefsNow)
-                snackbarState.value = "${provider.displayName}: ${diag.status.label}"
-            }
-        }
-    }
-
-    fun refreshAiProviderModels(provider: SuruAiProvider) {
-        viewModelScope.launch {
-            val models = suruService.getGateway().refreshModels(provider)
-            snackbarState.value = "${provider.shortName}: ${models.size} model(s) loaded"
+            snackbarState.value = "SURU AI routing updated (${defaultProvider.shortName})"
         }
     }
 
@@ -3365,7 +3631,7 @@ class LifeOsViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resetAllLocalData() {
         viewModelScope.launch {
-            togetherRepository.stopRealtimeSync()
+            friendSyncManager.stopNearbyPeerSync()
             db.taskSectionDao().clearAll()
             db.taskDao().clearAll()
             db.calendarEventDao().clearAll()

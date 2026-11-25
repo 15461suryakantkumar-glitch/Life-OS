@@ -42,6 +42,21 @@ val JetBrainsMonoFamily = FontFamily(
     Font(R.font.jetbrains_mono, FontWeight.Bold)
 )
 
+val OutfitFontFamily = FontFamily(
+    Font(R.font.outfit, FontWeight.Normal),
+    Font(R.font.outfit, FontWeight.Medium),
+    Font(R.font.outfit, FontWeight.SemiBold),
+    Font(R.font.outfit, FontWeight.Bold),
+    Font(R.font.outfit, FontWeight.ExtraBold)
+)
+
+val CaveatFontFamily = FontFamily(
+    Font(R.font.caveat, FontWeight.Normal),
+    Font(R.font.caveat, FontWeight.Medium),
+    Font(R.font.caveat, FontWeight.SemiBold),
+    Font(R.font.caveat, FontWeight.Bold)
+)
+
 val FeeloraTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = CormorantGaramondFamily,

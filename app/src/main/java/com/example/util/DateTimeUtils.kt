@@ -82,6 +82,15 @@ object DateTimeUtils {
         return fmt.format(cal.time)
     }
 
+    fun formatRelativeDeadline(epochDay: Long, today: Long = todayEpochDay()): String {
+        return when (epochDay - today) {
+            0L -> "Today"
+            1L -> "Tomorrow"
+            -1L -> "Yesterday"
+            else -> formatFullDate(epochDay)
+        }
+    }
+
     fun formatMonthYear(year: Int, monthZeroBased: Int): String {
         val cal = Calendar.getInstance().apply { set(year, monthZeroBased, 1) }
         val fmt = SimpleDateFormat("MMMM yyyy", Locale.getDefault())

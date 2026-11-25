@@ -217,7 +217,7 @@ fun HomeScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "CALM CLARITY",
-                                style = FeeloraTypeHelpers.editorialEyebrow,
+                                style = FeeloraTypeHelpers.editorialTag,
                                 color = tokens.deepPrimary
                             )
                             Spacer(Modifier.height(4.dp))
@@ -236,7 +236,7 @@ fun HomeScreen(
                                 )
                             }
                         }
-                        FeeloraBrandMark(size = 44.dp, showGlow = false)
+                        FeeloraBrandMark(size = 44.dp, withSoftFrame = false)
                     }
 
                     Spacer(Modifier.height(12.dp))

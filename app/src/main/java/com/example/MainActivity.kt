@@ -39,22 +39,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        intent?.getStringExtra("navigate_to")?.let { route ->
-            widgetRouteRequest = when (route.lowercase()) {
-                "friends", "together", "together_one" -> "together_one"
-                "suru_ai", "life_ai" -> "life_ai"
-                else -> route
+        val extraCode = intent?.getStringExtra("friend_code")
+            ?.ifBlank { intent.getStringExtra("code") }
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        intent?.getStringExtra("navigate_to")?.let { rawRoute ->
+            val trimmed = rawRoute.trim()
+            when {
+                trimmed.equals("friends", ignoreCase = true) ||
+                    trimmed.equals("together", ignoreCase = true) ||
+                    trimmed.equals("together_one", ignoreCase = true) -> {
+                    widgetRouteRequest = "together"
+                }
+                trimmed.startsWith("lifeos://friend", ignoreCase = true) ||
+                    trimmed.startsWith("feelora://invite", ignoreCase = true) -> {
+                    incomingFriendInviteUri = trimmed
+                    widgetRouteRequest = "together"
+                }
+                else -> {
+                    widgetRouteRequest = trimmed
+                }
             }
+        }
+        if (extraCode != null) {
+            incomingFriendInviteUri = extraCode
+            widgetRouteRequest = "together"
         }
         val dataUri = intent?.data
         val isFriendDeepLink = dataUri != null && (
             (dataUri.scheme == "lifeos" && dataUri.host == "friend") ||
-                (dataUri.scheme == "feelora" && dataUri.host == "invite") ||
-                (dataUri.scheme == "https" && dataUri.host == "feelora.app" && dataUri.path?.startsWith("/invite") == true)
+                (dataUri.scheme == "feelora" && dataUri.host == "invite")
             )
         if (isFriendDeepLink) {
             incomingFriendInviteUri = dataUri.toString()
-            widgetRouteRequest = "together_one"
+            widgetRouteRequest = "together"
         }
     }
 }

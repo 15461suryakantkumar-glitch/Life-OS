@@ -30,7 +30,10 @@ import com.example.suru.SuruTimeWindow
 import com.example.suru.SuruVoiceLanguage
 import com.example.suru.SuruVoiceManager
 import com.example.suru.SuruVoiceState
+import com.example.suru.SuruAiProvider
 import com.example.suru.TaskIntelligence
+import com.example.ui.SuruAiViewModel
+import com.example.ui.SuruChatUiState
 import com.example.ui.theme.CreamBackground
 import com.example.ui.theme.PrimaryLavender
 import com.example.ui.theme.VelvetLavenderPrimary
@@ -398,13 +401,34 @@ class SuruUpgradeTest {
         assertFalse(TaskReminderScheduler.shouldFireBriefingForWindow(currentHour = 8, targetHour = 8, lastFiredDay = 101L, todayEpochDay = 101L))
         assertFalse(TaskReminderScheduler.shouldFireBriefingForWindow(currentHour = 9, targetHour = 8, lastFiredDay = 100L, todayEpochDay = 101L))
 
-        // FEELORA Light & Dark editorial palette and distinct identities
+        // FEELORA editorial palette & Gemini AI defaults
         assertEquals(Color(0xFFFAF7F0), CreamBackground)
         assertEquals(Color(0xFF9274D8), PrimaryLavender)
         assertEquals(Color(0xFF161124), VelvetPlumBg)
         assertEquals(Color(0xFFB39CF0), VelvetLavenderPrimary)
         assertEquals("KUTTA", KUTTA_NAME)
         assertEquals(UserAvatarPreset.STAR_BUNNY, UserPreferencesState().avatarPreset)
-        assertEquals("Starry Charm", UserPreferencesState().avatarPreset.label)
+        assertTrue(UserPreferencesState().avatarPreset.label.contains("Starry"))
+
+        assertEquals("gemini-3.8-flash", UserPreferencesState().suruDefaultModel)
+        assertEquals("gemini-3.8-flash", SuruAiProvider.GEMINI.models.first())
+        assertFalse(SuruAiProvider.GEMINI.models.any { it.startsWith("gemini-2.") || it.startsWith("gemini-1.5") })
+
+        val vm = SuruAiViewModel()
+        assertEquals(SuruChatUiState.Idle, vm.uiState.value.generationState)
+        assertEquals("Calm", vm.uiState.value.selectedMood)
+
+        assertEquals(
+            "Take one slow breath first.",
+            com.example.suru.SuruAiRouter.extractOpenRouterContent(
+                """{"choices":[{"message":{"role":"assistant","content":"  Take one slow breath first.  "}}]}"""
+            )
+        )
+        assertEquals(
+            "Step 1\nStep 2",
+            com.example.suru.SuruAiRouter.extractOpenRouterContent(
+                """{"choices":[{"message":{"role":"assistant","content":[{"type":"text","text":"Step 1"},{"type":"text","text":"Step 2"}]}}]}"""
+            )
+        )
     }
 }

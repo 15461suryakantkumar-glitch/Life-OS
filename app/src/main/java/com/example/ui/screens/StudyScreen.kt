@@ -134,7 +134,6 @@ fun StudyScreen(
     onOpenProfile: () -> Unit
 ) {
     val tokens = LifeOsThemeTokensProvider.current
-    val defaultSubjectColor = MaterialTheme.colorScheme.primary
     var activeTab by remember { mutableStateOf(StudySubTab.OVERVIEW) }
     var selectedSubjectId by remember(state.studySubjects) {
         mutableLongStateOf(state.studySubjects.firstOrNull()?.id ?: -1L)
@@ -212,13 +211,13 @@ fun StudyScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "TODAY'S STUDY FLOW",
-                                        style = FeeloraTypeHelpers.editorialEyebrow,
+                                        style = FeeloraTypeHelpers.editorialTag,
                                         color = tokens.deepPrimary
                                     )
                                     Spacer(Modifier.height(4.dp))
                                     Text(
                                         text = DateTimeUtils.formatMinutesCompact(state.prefs.focusMinutesLoggedToday),
-                                        style = FeeloraTypeHelpers.numericDisplay,
+                                        style = FeeloraTypeHelpers.statNumber,
                                         color = tokens.inkPrimary
                                     )
                                     Text(
@@ -401,7 +400,7 @@ fun StudyScreen(
                         selectedSubject?.let { subject ->
                             val chapters = state.studyChapters.filter { it.subjectId == subject.id }
                             val progress = state.progressForSubject(subject.id)
-                            val accent = parseHexColor(subject.colorHex, defaultSubjectColor)
+                            val accent = parseHexColor(subject.colorHex, tokens.primary)
                             item {
                                 ObsidianCard(elevated = true, borderColor = accent.copy(alpha = 0.45f)) {
                                     Row(
@@ -592,7 +591,7 @@ fun StudyScreen(
                                 Column {
                                     Text(
                                         text = if (timer.isBreakPhase) "GENTLE BREAK" else timer.sessionMode.label.uppercase(),
-                                        style = FeeloraTypeHelpers.editorialEyebrow,
+                                        style = FeeloraTypeHelpers.editorialTag,
                                         color = ringColor
                                     )
                                     Text(
@@ -643,7 +642,7 @@ fun StudyScreen(
                                     val secs = timer.remainingSeconds % 60
                                     Text(
                                         text = "%02d:%02d".format(mins, secs),
-                                        style = FeeloraTypeHelpers.numericDisplay,
+                                        style = FeeloraTypeHelpers.timerDisplay,
                                         color = tokens.inkPrimary
                                     )
                                     Text(
